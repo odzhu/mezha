@@ -74,12 +74,22 @@ microsandbox:
       mode: ensure-exists
       kind: disk
       size_mib: 20480
+    - name: docker-data
+      target: /var/lib/docker
+      mode: ensure-exists
+      kind: disk
+      size_mib: 20480
   # network:
   #   default_egress: deny
   #   rules:
   #     - action: allow
   #       direction: egress
   #       destination: public
+
+docker:
+  # The default Dockerfile installs both the Docker client and daemon.
+  # Start dockerd when the sandbox is created or reused.
+  enabled: true
 
 sandbox:
   # name: development
@@ -95,8 +105,13 @@ run: []
 ```
 
 `create.add` and `create.run` are applied only when a sandbox is first created.
-Named volume names are automatically prefixed with the sandbox name, so each
-sandbox receives its own volume. Entries in `run` execute before the requested command. Strings use shell form;
+Set `docker.enabled: true` to start the Docker daemon before configured or
+requested commands. The selected image must include `docker` and `dockerd`; the
+default Dockerfile installs both. The default configuration mounts a dedicated
+`docker-data` volume at `/var/lib/docker` to preserve Docker images, containers,
+and volumes independently of the sandbox filesystem. Named volume names are
+automatically prefixed with the sandbox name, so each sandbox receives its own
+volume. Entries in `run` execute before the requested command. Strings use shell form;
 YAML sequences use exec form.
 
 ## Environment variables

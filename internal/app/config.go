@@ -19,6 +19,12 @@ type MezhaConfig struct {
 	Create       CreateConfig      `yaml:"create,omitempty"`
 	Run          []RunDirective    `yaml:"run,omitempty"`
 	Kubernetes   *bool             `yaml:"kubernetes,omitempty"`
+	Docker       DockerConfig      `yaml:"docker,omitempty"`
+}
+
+// DockerConfig controls the Docker daemon available inside the sandbox.
+type DockerConfig struct {
+	Enabled bool `yaml:"enabled,omitempty"`
 }
 
 // FilesConfig describes local paths to add to the sandbox during mezha run.
@@ -361,6 +367,14 @@ microsandbox:
       kind: "disk"
       size_mib: 20480
 
+    # Keep images, containers, and Docker volumes independent of the sandbox
+    # filesystem. This is used when docker.enabled is true.
+    - name: "docker-data"
+      target: "/var/lib/docker"
+      mode: "ensure-exists"
+      kind: "disk"
+      size_mib: 20480
+
   # Network configuration
   # network:
   #   default_egress: deny
@@ -374,6 +388,10 @@ microsandbox:
   #   - env: API_KEY
   #     value_from_env: API_KEY
   #     allow_hosts: ["api.example.com"]
+
+# Docker is installed in the default image and its daemon starts by default.
+docker:
+  enabled: true
 
 # Initialization applied only when a new sandbox is created.
 create:
