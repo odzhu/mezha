@@ -6,7 +6,7 @@
 
 
   # https://devenv.sh/packages/
-  packages = [ pkgs.git ];
+  packages = [ pkgs.git pkgs.gitleaks ];
 
   # https://devenv.sh/languages/
   languages.go.enable = true;
@@ -49,6 +49,29 @@
 
   # https://devenv.sh/git-hooks/
   # git-hooks.hooks.shellcheck.enable = true;
+  git-hooks.hooks.golangci-lint.enable = true;
+  git-hooks.hooks.golines.enable = true;
+  git-hooks.hooks.check-added-large-files.enable = true;
+  git-hooks.hooks.check-case-conflicts.enable = true;
+  git-hooks.hooks.check-merge-conflicts.enable = true;
+  git-hooks.hooks.check-executables-have-shebangs.enable = true;
+  git-hooks.hooks.check-shebang-scripts-are-executable.enable = true;
+  git-hooks.hooks.check-symlinks.enable = true;
+  git-hooks.hooks.end-of-file-fixer.enable = true;
+  git-hooks.hooks.trim-trailing-whitespace.enable = true;
+  git-hooks.hooks.check-json.enable = true;
+  git-hooks.hooks.check-toml.enable = true;
+  git-hooks.hooks.check-yaml.enable = true;
+  git-hooks.hooks.check-vcs-permalinks.enable = true;
+  git-hooks.hooks.actionlint.enable = true;
 
   # See full reference at https://devenv.sh/reference/options/
+
+  git-hooks.hooks.gitleaks = {
+    enable = true;
+    name = "gitleaks";
+    entry = "${pkgs.gitleaks}/bin/gitleaks protect --staged --verbose";
+    language = "system";
+    pass_filenames = false;
+  };
 }
