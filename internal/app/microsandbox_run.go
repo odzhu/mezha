@@ -93,7 +93,15 @@ func runMicrosandbox(ctx context.Context, rc RepoContext, params RunParams, cfg 
 
 	for i, directive := range cfg.Run {
 		var output *msb.ExecOutput
-		if directive.Shell {
+		if cfg.Docker.Enabled {
+			if directive.Shell {
+				command, args := dockerCommand("sh", []string{"-c", directive.Command[0]})
+				output, err = sandbox.Exec(ctx, command, args, msb.WithExecCwd(workdir))
+			} else {
+				command, args := dockerCommand(directive.Command[0], directive.Command[1:])
+				output, err = sandbox.Exec(ctx, command, args, msb.WithExecCwd(workdir))
+			}
+		} else if directive.Shell {
 			output, err = sandbox.Shell(ctx, directive.Command[0], msb.WithExecCwd(workdir))
 		} else {
 			output, err = sandbox.Exec(ctx, directive.Command[0], directive.Command[1:], msb.WithExecCwd(workdir))
@@ -109,6 +117,9 @@ func runMicrosandbox(ctx context.Context, rc RepoContext, params RunParams, cfg 
 	}
 	if len(params.RemoteCommand) != 0 {
 		command, args := remoteCommand(params.RemoteCommand, params.NoLoginShell)
+		if cfg.Docker.Enabled {
+			command, args = dockerCommand(command, args)
+		}
 		if interactiveTTYEnabled(params.TTY) {
 			code, err := sandbox.AttachWith(ctx, command, args, msb.WithAttachCwd(workdir))
 			if err != nil {
@@ -139,7 +150,11 @@ func runMicrosandbox(ctx context.Context, rc RepoContext, params RunParams, cfg 
 		return err
 	}
 	if devenv != "" {
-		code, err := sandbox.AttachWith(ctx, devenv, []string{"shell", "--no-reload"}, msb.WithAttachCwd(workdir))
+		command, args := devenv, []string{"shell", "--no-reload"}
+		if cfg.Docker.Enabled {
+			command, args = dockerCommand(command, args)
+		}
+		code, err := sandbox.AttachWith(ctx, command, args, msb.WithAttachCwd(workdir))
 		if err != nil {
 			return err
 		}
@@ -168,6 +183,9 @@ func runMicrosandbox(ctx context.Context, rc RepoContext, params RunParams, cfg 
 	var shellArgs []string
 	if !params.NoLoginShell && filepath.Base(shell) == "bash" {
 		shellArgs = []string{"-lc", shellBootstrap + "; exec \"$0\" -l", shell}
+	}
+	if cfg.Docker.Enabled {
+		shell, shellArgs = dockerCommand(shell, shellArgs)
 	}
 	code, err := sandbox.AttachWith(ctx, shell, shellArgs, msb.WithAttachCwd(workdir))
 	if err != nil {

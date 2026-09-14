@@ -67,12 +67,12 @@ const defaultNixDockerfile = `FROM debian:trixie-slim
 # nix-bin is packaged under /usr, so it stays executable when the persistent
 # named volume is mounted at /nix during sandbox creation.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git nix-bin procps \
+    && apt-get install -y --no-install-recommends ca-certificates docker-cli docker.io git nix-bin procps \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /nix /etc/nix \
     && printf 'sandbox = false\nbuild-users-group =\nexperimental-features = nix-command flakes\n' > /etc/nix/nix.conf
 
-ENV PATH=/usr/bin:/bin
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 `
 
 // InitHome creates the home-level configuration without requiring a Git
