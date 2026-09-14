@@ -12,7 +12,12 @@ import (
 	msb "github.com/superradcompany/microsandbox/sdk/go"
 )
 
-func runMicrosandbox(ctx context.Context, rc RepoContext, params RunParams, cfg *MezhaConfig) error {
+func runMicrosandbox(
+	ctx context.Context,
+	rc RepoContext,
+	params RunParams,
+	cfg *MezhaConfig,
+) error {
 	if err := msb.EnsureInstalled(ctx); err != nil {
 		return fmt.Errorf("install Microsandbox runtime: %w", err)
 	}
@@ -52,13 +57,6 @@ func runMicrosandbox(ctx context.Context, rc RepoContext, params RunParams, cfg 
 			return err
 		}
 	}
-
-	if params.Kubernetes {
-		if err := configureNativeKubernetes(ctx, sandbox, params.SandboxName); err != nil {
-			return err
-		}
-	}
-
 	// The repository is the default working directory. A microsandbox.workdir
 	// explicitly overrides it for commands that intentionally run elsewhere.
 	repoDir := params.RemoteRepoDir
@@ -86,25 +84,45 @@ func runMicrosandbox(ctx context.Context, rc RepoContext, params RunParams, cfg 
 		needsPublish = !hasBranch
 	}
 	if needsPublish {
-		if err := publishBranchToMicrosandbox(ctx, sandbox, rc, params.SandboxName, repoDir, params.ReplaceSandboxRemote); err != nil {
+		if err := publishBranchToMicrosandbox(
+			ctx,
+			sandbox,
+			rc,
+			params.SandboxName,
+			repoDir,
+			params.ReplaceSandboxRemote,
+		); err != nil {
 			return err
 		}
 	}
 
 	for i, directive := range cfg.Run {
 		var output *msb.ExecOutput
-		if cfg.Docker.Enabled {
+		if cfg.Docker.Enabled || params.Kubernetes {
 			if directive.Shell {
-				command, args := dockerCommand("sh", []string{"-c", directive.Command[0]})
+				command, args := dockerCommand(
+					"sh",
+					[]string{"-c", directive.Command[0]},
+					params.Kubernetes,
+				)
 				output, err = sandbox.Exec(ctx, command, args, msb.WithExecCwd(workdir))
 			} else {
-				command, args := dockerCommand(directive.Command[0], directive.Command[1:])
+				command, args := dockerCommand(
+					directive.Command[0],
+					directive.Command[1:],
+					params.Kubernetes,
+				)
 				output, err = sandbox.Exec(ctx, command, args, msb.WithExecCwd(workdir))
 			}
 		} else if directive.Shell {
 			output, err = sandbox.Shell(ctx, directive.Command[0], msb.WithExecCwd(workdir))
 		} else {
-			output, err = sandbox.Exec(ctx, directive.Command[0], directive.Command[1:], msb.WithExecCwd(workdir))
+			output, err = sandbox.Exec(
+				ctx,
+				directive.Command[0],
+				directive.Command[1:],
+				msb.WithExecCwd(workdir),
+			)
 		}
 		if err != nil {
 			return fmt.Errorf("run directive %d: %w", i, err)
@@ -117,8 +135,8 @@ func runMicrosandbox(ctx context.Context, rc RepoContext, params RunParams, cfg 
 	}
 	if len(params.RemoteCommand) != 0 {
 		command, args := remoteCommand(params.RemoteCommand, params.NoLoginShell)
-		if cfg.Docker.Enabled {
-			command, args = dockerCommand(command, args)
+		if cfg.Docker.Enabled || params.Kubernetes {
+			command, args = dockerCommand(command, args, params.Kubernetes)
 		}
 		if interactiveTTYEnabled(params.TTY) {
 			code, err := sandbox.AttachWith(ctx, command, args, msb.WithAttachCwd(workdir))
@@ -151,8 +169,8 @@ func runMicrosandbox(ctx context.Context, rc RepoContext, params RunParams, cfg 
 	}
 	if devenv != "" {
 		command, args := devenv, []string{"shell", "--no-reload"}
-		if cfg.Docker.Enabled {
-			command, args = dockerCommand(command, args)
+		if cfg.Docker.Enabled || params.Kubernetes {
+			command, args = dockerCommand(command, args, params.Kubernetes)
 		}
 		code, err := sandbox.AttachWith(ctx, command, args, msb.WithAttachCwd(workdir))
 		if err != nil {
@@ -184,8 +202,8 @@ func runMicrosandbox(ctx context.Context, rc RepoContext, params RunParams, cfg 
 	if !params.NoLoginShell && filepath.Base(shell) == "bash" {
 		shellArgs = []string{"-lc", shellBootstrap + "; exec \"$0\" -l", shell}
 	}
-	if cfg.Docker.Enabled {
-		shell, shellArgs = dockerCommand(shell, shellArgs)
+	if cfg.Docker.Enabled || params.Kubernetes {
+		shell, shellArgs = dockerCommand(shell, shellArgs, params.Kubernetes)
 	}
 	code, err := sandbox.AttachWith(ctx, shell, shellArgs, msb.WithAttachCwd(workdir))
 	if err != nil {
@@ -199,8 +217,17 @@ func runMicrosandbox(ctx context.Context, rc RepoContext, params RunParams, cfg 
 
 // sandboxCommandPath returns the path of a command available in the sandbox.
 // The bootstrap is needed because devenv may be installed in the Nix profile.
-func sandboxCommandPath(ctx context.Context, sandbox *msb.Sandbox, workdir, name string) (string, error) {
-	output, err := sandbox.Exec(ctx, "/bin/sh", []string{"-c", shellBootstrap + "; command -v " + name}, msb.WithExecCwd(workdir))
+func sandboxCommandPath(
+	ctx context.Context,
+	sandbox *msb.Sandbox,
+	workdir, name string,
+) (string, error) {
+	output, err := sandbox.Exec(
+		ctx,
+		"/bin/sh",
+		[]string{"-c", shellBootstrap + "; command -v " + name},
+		msb.WithExecCwd(workdir),
+	)
 	if err != nil {
 		return "", fmt.Errorf("check for %s in sandbox: %w", name, err)
 	}
@@ -274,8 +301,17 @@ func applyCreateConfig(ctx context.Context, sandbox *msb.Sandbox, create CreateC
 
 // microsandboxBranchExists identifies sandboxes that were created before a
 // repository branch was successfully published, so they can be repaired by run.
-func microsandboxBranchExists(ctx context.Context, sandbox *msb.Sandbox, repoDir, branch string) (bool, error) {
-	output, err := sandbox.Exec(ctx, "git", []string{"rev-parse", "--verify", "--quiet", "refs/heads/" + branch}, msb.WithExecCwd(repoDir))
+func microsandboxBranchExists(
+	ctx context.Context,
+	sandbox *msb.Sandbox,
+	repoDir, branch string,
+) (bool, error) {
+	output, err := sandbox.Exec(
+		ctx,
+		"git",
+		[]string{"rev-parse", "--verify", "--quiet", "refs/heads/" + branch},
+		msb.WithExecCwd(repoDir),
+	)
 	if err != nil {
 		return false, fmt.Errorf("check Microsandbox repository branch: %w", err)
 	}

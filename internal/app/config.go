@@ -136,8 +136,7 @@ type SandboxConfig struct {
 	Name      string `yaml:"name,omitempty"`
 	RemoteDir string `yaml:"remote_dir,omitempty"`
 	Recreate  bool   `yaml:"recreate,omitempty"`
-	// Kubernetes creates a companion microsandbox running k3s and configures
-	// kubectl and Docker clients in this sandbox to use it.
+	// Kubernetes runs k3s alongside each requested command in this sandbox.
 	Kubernetes bool `yaml:"kubernetes,omitempty"`
 	// Upload and Download are retained only for backwards-compatible parsing.
 	// Repository content is now synchronized exclusively through Git.
@@ -174,7 +173,10 @@ func HomeConfigPath() (string, error) {
 // values from the home-level configuration.
 func LoadConfig(repoRoot string) (*MezhaConfig, string, error) {
 
-	projectPaths := []string{filepath.Join(repoRoot, "mezha.yaml"), filepath.Join(repoRoot, "mezha.yml")}
+	projectPaths := []string{
+		filepath.Join(repoRoot, "mezha.yaml"),
+		filepath.Join(repoRoot, "mezha.yml"),
+	}
 	var project map[string]any
 	var projectPath string
 	for _, path := range projectPaths {
@@ -375,6 +377,13 @@ microsandbox:
       kind: "disk"
       size_mib: 20480
 
+    # Keep k3s cluster data when Kubernetes is enabled; its images use Docker.
+    - name: "k3s-data"
+      target: "/var/lib/rancher/k3s"
+      mode: "ensure-exists"
+      kind: "disk"
+      size_mib: 20480
+
   # Network configuration
   # network:
   #   default_egress: deny
@@ -392,6 +401,11 @@ microsandbox:
 # Docker is installed in the default image and its daemon starts by default.
 docker:
   enabled: true
+
+# Set this to run a k3s server in the primary sandbox. kubectl and Docker
+# commands share the primary sandbox's Docker daemon.
+# sandbox:
+#   kubernetes: true
 
 # Initialization applied only when a new sandbox is created.
 create:
@@ -446,7 +460,10 @@ func resolveFilePatterns(baseDir string, patterns []string) ([]string, error) {
 				return nil, fmt.Errorf("read file %q: %w", pattern, err)
 			}
 			if info.IsDir() {
-				return nil, fmt.Errorf("path %q is a directory, expected a file or glob pattern", pattern)
+				return nil, fmt.Errorf(
+					"path %q is a directory, expected a file or glob pattern",
+					pattern,
+				)
 			}
 			if _, ok := seen[fullPattern]; !ok {
 				seen[fullPattern] = struct{}{}

@@ -9,7 +9,7 @@ Declarative agent sandboxes powered by Microsandbox.
 - synchronize committed changes through a sandbox Git remote
 - upload and download dirty working-tree changes or selected files
 - build and import a Dockerfile image into Microsandbox
-- optionally create a companion single-node k3s Microsandbox
+- optionally run a single-node k3s server in the primary Microsandbox
 
 ## Requirements
 
@@ -79,6 +79,11 @@ microsandbox:
       mode: ensure-exists
       kind: disk
       size_mib: 20480
+    - name: k3s-data
+      target: /var/lib/rancher/k3s
+      mode: ensure-exists
+      kind: disk
+      size_mib: 20480
   # network:
   #   default_egress: deny
   #   rules:
@@ -95,6 +100,7 @@ sandbox:
   # name: development
   # remote_dir: /sandbox/my-project
   # policy_advisor: true
+  # Run a k3s server in this sandbox.
   # kubernetes: true
 
 create:
@@ -107,11 +113,16 @@ run: []
 `create.add` and `create.run` are applied only when a sandbox is first created.
 Set `docker.enabled: true` to start the Docker daemon before configured or
 requested commands. The selected image must include `docker` and `dockerd`; the
-default Dockerfile installs both. The default configuration mounts a dedicated
-`docker-data` volume at `/var/lib/docker` to preserve Docker images, containers,
-and volumes independently of the sandbox filesystem. Named volume names are
-automatically prefixed with the sandbox name, so each sandbox receives its own
-volume. Entries in `run` execute before the requested command. Strings use shell form;
+default Dockerfile installs both. It also installs `kubectl`: set
+`sandbox.kubernetes: true` to run the bundled k3s server directly alongside
+the requested command in the primary sandbox. Mezha configures `kubectl` to
+use that local cluster. The default configuration mounts dedicated `docker-data`
+and `k3s-data` volumes at `/var/lib/docker` and `/var/lib/rancher/k3s` to preserve
+Docker images, containers, and volumes plus k3s cluster state independently of
+the sandbox filesystem. k3s uses Docker as its container runtime, so Docker-built
+images are immediately available to Kubernetes. Named volume names are automatically prefixed with the
+sandbox name, so each sandbox receives its own volume. Entries in `run` execute
+before the requested command. Strings use shell form;
 YAML sequences use exec form.
 
 ## Environment variables
