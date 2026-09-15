@@ -4,9 +4,10 @@ package app
 
 import "strings"
 
-const dockerPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+const managedDevenvPath = "/opt/mezha"
 
-// dockerCommand runs a command with Docker and optional k3s in the same exec job.
+// dockerCommand runs a command in Mezha's managed devenv environment with
+// Docker and optional k3s in the same exec job.
 func dockerCommand(command string, args []string, kubernetes bool) (string, []string) {
 	commandLine := shellQuote(command)
 	for _, arg := range args {
@@ -14,8 +15,6 @@ func dockerCommand(command string, args []string, kubernetes bool) (string, []st
 	}
 
 	script := `set -eu
-PATH=` + dockerPath + `
-export PATH
 `
 	script += `if ! docker --context default info >/dev/null 2>&1; then
   rm -f /var/run/docker.pid
@@ -39,11 +38,16 @@ docker context use default >/dev/null
 	// Do not exec here: the shell must remain alive to run the k3s cleanup trap.
 	script += commandLine
 
-	return "sh", []string{"-c", strings.TrimSpace(script)}
+	return "devenv", []string{
+		"shell",
+		"--from", "path:" + managedDevenvPath,
+		"--",
+		"sh", "-c", strings.TrimSpace(script),
+	}
 }
 
 const kubernetesBootstrap = `
-command -v k3s >/dev/null 2>&1 || { echo "k3s is required when sandbox.kubernetes is enabled; rebuild the Mezha image" >&2; exit 1; }
+command -v k3s >/dev/null 2>&1 || { echo "k3s is required when sandbox.kubernetes is enabled; restore it to .mezha/devenv.nix and recreate the sandbox" >&2; exit 1; }
 command -v kubectl >/dev/null 2>&1 || { echo "kubectl is required when sandbox.kubernetes is enabled" >&2; exit 1; }
 # Exec jobs have isolated runtime namespaces. Start k3s in this job, alongside
 # the requested command, just as Mezha starts dockerd above. Use that Docker

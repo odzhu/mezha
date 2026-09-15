@@ -39,9 +39,9 @@ func newInitCommand() *cli.Command {
 
 func Init(_ context.Context, rc RepoContext, force bool) error {
 	configPath := filepath.Join(rc.RepoRoot, "mezha.yaml")
-	dockerfilePath := filepath.Join(rc.RepoRoot, ".mezha", "Dockerfile")
+	devenvPath := filepath.Join(rc.RepoRoot, ".mezha", "devenv.nix")
 	if !force {
-		for _, path := range []string{configPath, filepath.Join(rc.RepoRoot, "mezha.yml"), dockerfilePath} {
+		for _, path := range []string{configPath, filepath.Join(rc.RepoRoot, "mezha.yml"), devenvPath} {
 			if _, err := os.Stat(path); err == nil {
 				return fmt.Errorf(
 					"configuration file already exists: %s (use --force to overwrite)",
@@ -57,36 +57,33 @@ func Init(_ context.Context, rc RepoContext, force bool) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(dockerfilePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(devenvPath), 0o755); err != nil {
 		return fmt.Errorf("create project configuration directory: %w", err)
 	}
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write configuration file: %w", err)
 	}
-	if err := os.WriteFile(dockerfilePath, []byte(defaultNixDockerfile), 0o644); err != nil {
-		return fmt.Errorf("write project Dockerfile: %w", err)
+	if err := os.WriteFile(devenvPath, []byte(defaultManagedDevenv), 0o644); err != nil {
+		return fmt.Errorf("write managed devenv configuration: %w", err)
 	}
 
 	fmt.Printf("Created %s\n", configPath)
-	fmt.Printf("Created %s\n", dockerfilePath)
+	fmt.Printf("Created %s\n", devenvPath)
 	return nil
 }
 
-const defaultNixDockerfile = `FROM debian:trixie-slim
+const defaultManagedDevenv = `{ pkgs, ... }:
 
-# nix-bin is packaged under /usr, so it stays executable when the persistent
-# named volume is mounted at /nix during sandbox creation.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl docker-cli docker.io git kubernetes-client nix-bin procps \
-    && arch="$(dpkg --print-architecture)" \
-    && case "$arch" in amd64) k3s_arch="" ;; arm64) k3s_arch="-arm64" ;; *) echo "unsupported k3s architecture: $arch" >&2; exit 1 ;; esac \
-    && curl -sfL "https://github.com/k3s-io/k3s/releases/download/v1.32.3%2Bk3s1/k3s${k3s_arch}" -o /usr/local/bin/k3s \
-    && chmod 755 /usr/local/bin/k3s \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /nix /etc/nix \
-    && printf 'sandbox = false\nbuild-users-group =\nexperimental-features = nix-command flakes\n' > /etc/nix/nix.conf
-
-ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+{
+  # Mezha enters this environment before starting Docker or k3s.
+  packages = [
+    pkgs.docker
+    pkgs.k3s
+    pkgs.kubectl
+    pkgs.git
+    pkgs.procps
+  ];
+}
 `
 
 // InitHome creates the home-level configuration without requiring a Git
@@ -96,9 +93,9 @@ func InitHome(force bool) error {
 	if err != nil {
 		return err
 	}
-	dockerfilePath := filepath.Join(filepath.Dir(configPath), ".mezha", "Dockerfile")
+	devenvPath := filepath.Join(filepath.Dir(configPath), ".mezha", "devenv.nix")
 	if !force {
-		for _, path := range []string{configPath, dockerfilePath} {
+		for _, path := range []string{configPath, devenvPath} {
 			if _, err := os.Stat(path); err == nil {
 				return fmt.Errorf(
 					"configuration file already exists: %s (use --force to overwrite)",
@@ -112,17 +109,17 @@ func InitHome(force bool) error {
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		return fmt.Errorf("create home configuration directory: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(dockerfilePath), 0o755); err != nil {
-		return fmt.Errorf("create home Dockerfile directory: %w", err)
+	if err := os.MkdirAll(filepath.Dir(devenvPath), 0o755); err != nil {
+		return fmt.Errorf("create home configuration directory: %w", err)
 	}
 	if err := os.WriteFile(configPath, []byte(DefaultConfigTemplate()), 0o644); err != nil {
 		return fmt.Errorf("write home configuration file: %w", err)
 	}
-	if err := os.WriteFile(dockerfilePath, []byte(defaultNixDockerfile), 0o644); err != nil {
-		return fmt.Errorf("write default Dockerfile: %w", err)
+	if err := os.WriteFile(devenvPath, []byte(defaultManagedDevenv), 0o644); err != nil {
+		return fmt.Errorf("write managed devenv configuration: %w", err)
 	}
 	fmt.Printf("Created %s\n", configPath)
-	fmt.Printf("Created %s\n", dockerfilePath)
+	fmt.Printf("Created %s\n", devenvPath)
 	return nil
 }
 

@@ -14,14 +14,9 @@ import (
 // follows Microsandbox's resource model. Relative bind paths are resolved
 // from the declaring mezha.yaml.
 type MicrosandboxSpec struct {
-	// Image is an OCI image reference. It is mutually exclusive with Dockerfile.
-	Image string `yaml:"image,omitempty"`
-	// Dockerfile is a local Dockerfile to build with `mezha build`.
-	Dockerfile  string               `yaml:"dockerfile,omitempty"`
 	CPUs        uint8                `yaml:"cpus,omitempty"`
 	MemoryMiB   uint32               `yaml:"memory_mib,omitempty"`
 	Workdir     string               `yaml:"workdir,omitempty"`
-	User        string               `yaml:"user,omitempty"`
 	Environment map[string]string    `yaml:"env,omitempty"`
 	Mounts      []MicrosandboxMount  `yaml:"mounts,omitempty"`
 	Volumes     []MicrosandboxVolume `yaml:"volumes,omitempty"`
@@ -79,11 +74,10 @@ type MicrosandboxSecret struct {
 // sandboxOptions converts a declarative Mezha sandbox to native SDK options.
 // Named volumes are isolated by sandbox name. Secrets deliberately source values
 // from the host environment at creation; their guest values remain placeholders.
-func (s MicrosandboxSpec) sandboxOptions(configDir, sandboxName string) ([]msb.SandboxOption, error) {
-	image, err := s.imageReference()
-	if err != nil {
-		return nil, err
-	}
+func (s MicrosandboxSpec) sandboxOptions(
+	configDir, sandboxName string,
+) ([]msb.SandboxOption, error) {
+	image := defaultDevenvImage
 	opts := []msb.SandboxOption{msb.WithImage(image), msb.WithDetached()}
 	if s.CPUs != 0 {
 		opts = append(opts, msb.WithCPUs(s.CPUs))
@@ -94,9 +88,10 @@ func (s MicrosandboxSpec) sandboxOptions(configDir, sandboxName string) ([]msb.S
 	if s.Workdir != "" {
 		opts = append(opts, msb.WithWorkdir(s.Workdir))
 	}
-	if s.User != "" {
-		opts = append(opts, msb.WithUser(s.User))
-	}
+	// The native devenv image declares its user as "1000:100", which the
+	// Microsandbox guest-user resolver cannot resolve. Docker and k3s also
+	// require root privileges, so always use root's numeric UID.
+	opts = append(opts, msb.WithUser("0"))
 	if len(s.Environment) != 0 {
 		opts = append(opts, msb.WithEnv(s.Environment))
 	}
@@ -112,18 +107,42 @@ func (s MicrosandboxSpec) sandboxOptions(configDir, sandboxName string) ([]msb.S
 		if !filepath.IsAbs(mount.Source) {
 			mount.Source = filepath.Join(configDir, mount.Source)
 		}
-		mounts[mount.Target] = msb.Mount.Bind(mount.Source, msb.MountOptions{Readonly: mount.ReadOnly, Noexec: mount.NoExec, Nosuid: mount.NoSUID, Nodev: mount.NoDev})
+		mounts[mount.Target] = msb.Mount.Bind(
+			mount.Source,
+			msb.MountOptions{
+				Readonly: mount.ReadOnly,
+				Noexec:   mount.NoExec,
+				Nosuid:   mount.NoSUID,
+				Nodev:    mount.NoDev,
+			},
+		)
 	}
 	for _, volume := range s.Volumes {
+		if image == defaultDevenvImage && filepath.Clean(volume.Target) == "/nix" {
+			// Backwards-compatible migration from the original /nix volume.
+			volume.Target = "/nix/store"
+		}
 		if volume.Name == "" || volume.Target == "" {
 			return nil, fmt.Errorf("sandbox.volumes require name and target")
 		}
 		if _, exists := mounts[volume.Target]; exists {
 			return nil, fmt.Errorf("sandbox volume and mount share target %q", volume.Target)
 		}
-		mounts[volume.Target] = msb.Mount.NamedWith(sandboxName+"-"+volume.Name,
-			msb.MountOptions{Readonly: volume.ReadOnly, Noexec: volume.NoExec, Nosuid: volume.NoSUID, Nodev: volume.NoDev},
-			msb.NamedVolumeOptions{Mode: volume.Mode, Kind: volume.Kind, SizeMiB: volume.SizeMiB, QuotaMiB: volume.QuotaMiB})
+		mounts[volume.Target] = msb.Mount.NamedWith(
+			sandboxName+"-"+volume.Name,
+			msb.MountOptions{
+				Readonly: volume.ReadOnly,
+				Noexec:   volume.NoExec,
+				Nosuid:   volume.NoSUID,
+				Nodev:    volume.NoDev,
+			},
+			msb.NamedVolumeOptions{
+				Mode:     volume.Mode,
+				Kind:     volume.Kind,
+				SizeMiB:  volume.SizeMiB,
+				QuotaMiB: volume.QuotaMiB,
+			},
+		)
 	}
 	if len(mounts) != 0 {
 		opts = append(opts, msb.WithMounts(mounts))
@@ -145,7 +164,18 @@ func (s MicrosandboxSpec) sandboxOptions(configDir, sandboxName string) ([]msb.S
 		if len(secret.AllowHosts) == 0 && len(secret.AllowHostPatterns) == 0 {
 			return nil, fmt.Errorf("sandbox secret %q requires an allowlist", secret.EnvVar)
 		}
-		secrets = append(secrets, msb.Secret.Env(secret.EnvVar, os.Getenv(secret.ValueFromEnv), msb.SecretEnvOptions{AllowHosts: secret.AllowHosts, AllowHostPatterns: secret.AllowHostPatterns, RequireTLS: secret.RequireTLS}))
+		secrets = append(
+			secrets,
+			msb.Secret.Env(
+				secret.EnvVar,
+				os.Getenv(secret.ValueFromEnv),
+				msb.SecretEnvOptions{
+					AllowHosts:        secret.AllowHosts,
+					AllowHostPatterns: secret.AllowHostPatterns,
+					RequireTLS:        secret.RequireTLS,
+				},
+			),
+		)
 	}
 	if len(secrets) != 0 {
 		opts = append(opts, msb.WithSecrets(secrets...))
@@ -154,7 +184,8 @@ func (s MicrosandboxSpec) sandboxOptions(configDir, sandboxName string) ([]msb.S
 }
 
 func (s MicrosandboxSpec) networkConfig() (*msb.NetworkConfig, error) {
-	if s.Network.DefaultEgress == "" && s.Network.DefaultIngress == "" && !s.Network.Strict && len(s.Network.Rules) == 0 {
+	if s.Network.DefaultEgress == "" && s.Network.DefaultIngress == "" && !s.Network.Strict &&
+		len(s.Network.Rules) == 0 {
 		return nil, nil
 	}
 	n := &msb.NetworkConfig{Strict: s.Network.Strict}
@@ -171,14 +202,24 @@ func (s MicrosandboxSpec) networkConfig() (*msb.NetworkConfig, error) {
 			return nil, fmt.Errorf("sandbox.network.rules action: %w", err)
 		}
 		d := msb.PolicyDirection(rule.Direction)
-		if d != msb.PolicyDirectionEgress && d != msb.PolicyDirectionIngress && d != msb.PolicyDirectionAny {
+		if d != msb.PolicyDirectionEgress && d != msb.PolicyDirectionIngress &&
+			d != msb.PolicyDirectionAny {
 			return nil, fmt.Errorf("sandbox.network.rules has invalid direction %q", rule.Direction)
 		}
 		protocols := make([]msb.PolicyProtocol, len(rule.Protocols))
 		for i, p := range rule.Protocols {
 			protocols[i] = msb.PolicyProtocol(p)
 		}
-		n.Rules = append(n.Rules, msb.PolicyRule{Action: a, Direction: d, Destination: rule.Destination, Protocols: protocols, Ports: rule.Ports})
+		n.Rules = append(
+			n.Rules,
+			msb.PolicyRule{
+				Action:      a,
+				Direction:   d,
+				Destination: rule.Destination,
+				Protocols:   protocols,
+				Ports:       rule.Ports,
+			},
+		)
 	}
 	return n, nil
 }

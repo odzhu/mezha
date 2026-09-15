@@ -11,6 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const defaultDevenvImage = "ghcr.io/cachix/devenv/devenv:latest"
+
 type MezhaConfig struct {
 	Version      uint32            `yaml:"version,omitempty"`
 	Microsandbox *MicrosandboxSpec `yaml:"microsandbox,omitempty"`
@@ -328,19 +330,17 @@ func DefaultConfigTemplate() string {
 }
 
 func ProjectDefaultConfigTemplate() string {
-	return defaultConfigTemplate(".mezha/Dockerfile")
+	return defaultConfigTemplate()
 }
 
-func defaultConfigTemplate(dockerfile string) string {
-	return fmt.Sprintf(`# Mezha configuration file
+func defaultConfigTemplate() string {
+	return `# Mezha configuration file
 # For details, see: https://github.com/odzhu/mezha
 version: 1
 
 # Native local Microsandbox configuration
 microsandbox:
-  # Set either an OCI image, or a Dockerfile built with mezha build.
-  # image: "nixos/nix"
-  dockerfile: "%s"
+  # Mezha always uses the native devenv container and runs it as UID 0.
 
   # Sandbox resources. Nixpkgs evaluation needs more than Microsandbox's
   # 512 MiB default.
@@ -359,12 +359,11 @@ microsandbox:
   #   - source: "."
   #     target: "/workspace"
 
-  # Persistent Nix packages and store data. Names are automatically prefixed
-  # with the sandbox name. The default Dockerfile uses a Debian-packaged Nix
-  # bootstrap that remains available when /nix is mounted.
   volumes:
+    # Persistent Nix package store. Mezha seeds it from the native image
+    # before mounting it at /nix/store.
     - name: "nix-packages"
-      target: "/nix"
+      target: "/nix/store"
       mode: "ensure-exists"
       kind: "disk"
       size_mib: 20480
@@ -398,29 +397,28 @@ microsandbox:
   #     value_from_env: API_KEY
   #     allow_hosts: ["api.example.com"]
 
-# Docker is installed in the default image and its daemon starts by default.
+# Docker and k3s are declaratively installed by .mezha/devenv.nix. Mezha
+# uploads that configuration when the sandbox is created and enters it before
+# starting either service.
 docker:
   enabled: true
 
-# Set this to run a k3s server in the primary sandbox. kubectl and Docker
-# commands share the primary sandbox's Docker daemon.
-# sandbox:
-#   kubernetes: true
+# Run a k3s server alongside each Mezha session. kubectl and Docker commands
+# share the primary sandbox's Docker daemon.
+sandbox:
+  kubernetes: true
 
 # Initialization applied only when a new sandbox is created.
 create:
-  # add:
-  #   - ["./local-file", "/workspace/local-file"]
-  run:
-    - nix-channel --update
-    - nix --extra-experimental-features nix-command --extra-experimental-features flakes profile install nixpkgs#devenv
+  add:
+    - [".mezha/devenv.nix", "/opt/mezha/devenv.nix"]
 
 # Commands executed in the sandbox before the requested command.
 # A string uses a shell; a nested list is an exec-form command.
 run: []
   # - apk add --no-cache git
   # - ["git", "config", "--global", "init.defaultBranch", "main"]
-`, dockerfile)
+`
 }
 
 func resolveFilePatterns(baseDir string, patterns []string) ([]string, error) {
