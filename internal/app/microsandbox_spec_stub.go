@@ -5,12 +5,9 @@ package app
 // These declarations keep configuration parsing available in non-CGO builds.
 // Creating a local Microsandbox requires CGO and uses microsandbox_spec.go.
 type MicrosandboxSpec struct {
-	Image       string               `yaml:"image,omitempty"`
-	Dockerfile  string               `yaml:"dockerfile,omitempty"`
 	CPUs        uint8                `yaml:"cpus,omitempty"`
 	MemoryMiB   uint32               `yaml:"memory_mib,omitempty"`
 	Workdir     string               `yaml:"workdir,omitempty"`
-	User        string               `yaml:"user,omitempty"`
 	Environment map[string]string    `yaml:"env,omitempty"`
 	Mounts      []MicrosandboxMount  `yaml:"mounts,omitempty"`
 	Volumes     []MicrosandboxVolume `yaml:"volumes,omitempty"`

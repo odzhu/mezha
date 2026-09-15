@@ -14,7 +14,6 @@ import (
 const rootUsageText = `Usage:
   mezha init [options]
   mezha run [options] [-- command...]
-  mezha build [options]
   mezha destroy [options]
   mezha upload [options] [local-path] [remote-path]
   mezha download [options] [remote-path] [local-path]
@@ -33,9 +32,8 @@ Pass paths to transfer an individual file or folder. Use "mezha pull" and "mezha
 Use the run command to pass options and, optionally, a command after --
 to run it in the repo directory instead of opening an interactive shell.
 
-Set microsandbox.dockerfile in mezha.yaml to build a project image with
-mezha build. Mezha uses the resulting local image when it creates the
-Microsandbox.
+Mezha uses ghcr.io/cachix/devenv/devenv:latest and provisions Docker and k3s
+through its managed devenv environment.
 
 Examples:
   mezha init
@@ -45,8 +43,6 @@ Examples:
   mezha run --tty
   mezha run -- ls -la
   mezha run -- bash -lc 'git status && pwd'
-  mezha build
-  mezha build --recreate
   mezha destroy
   mezha destroy --force
   mezha upload # synchronize local dirty changes and untracked files
@@ -77,7 +73,6 @@ func New() *cli.Command {
 		Commands: []*cli.Command{
 			newInitCommand(),
 			newRunCommand(),
-			newBuildCommand(),
 			newDestroyCommand(),
 			newUploadCommand(),
 			newDownloadCommand(),
@@ -110,16 +105,36 @@ func newSSHProxyCommand() *cli.Command {
 
 func newRunCommand() *cli.Command {
 	flags := []cli.Flag{
-		&cli.BoolFlag{Name: "recreate", Usage: "Delete and recreate the sandbox if it already exists"},
-		&cli.BoolFlag{Name: "no-advisor", Aliases: []string{"no-policy-advisor"}, Usage: "Disable the Microsandbox policy advisor"},
-		&cli.BoolFlag{Name: "policy-advisor", Aliases: []string{"advisor"}, Usage: "Enable the Microsandbox policy advisor (default: true)"},
+		&cli.BoolFlag{
+			Name:  "recreate",
+			Usage: "Delete and recreate the sandbox if it already exists",
+		},
+		&cli.BoolFlag{
+			Name:    "no-advisor",
+			Aliases: []string{"no-policy-advisor"},
+			Usage:   "Disable the Microsandbox policy advisor",
+		},
+		&cli.BoolFlag{
+			Name:    "policy-advisor",
+			Aliases: []string{"advisor"},
+			Usage:   "Enable the Microsandbox policy advisor (default: true)",
+		},
 		&cli.BoolFlag{Name: "tty", Usage: "Force an interactive terminal session"},
 		&cli.BoolFlag{Name: "no-tty", Usage: "Disable interactive terminal mode"},
-		&cli.StringFlag{Name: "editor", Usage: "Open a remote editor instead of an interactive shell"},
+		&cli.StringFlag{
+			Name:  "editor",
+			Usage: "Open a remote editor instead of an interactive shell",
+		},
 		&cli.StringFlag{Name: "name", Usage: "Override the generated sandbox name"},
 		&cli.StringFlag{Name: "remote-dir", Usage: "Destination directory in the sandbox"},
-		&cli.BoolFlag{Name: "replace-sandbox-remote", Usage: "Replace an existing non-Mezha sandbox Git remote"},
-		&cli.BoolFlag{Name: "no-login-shell", Usage: "Skip shell login/profile startup files when running the command or session"},
+		&cli.BoolFlag{
+			Name:  "replace-sandbox-remote",
+			Usage: "Replace an existing non-Mezha sandbox Git remote",
+		},
+		&cli.BoolFlag{
+			Name:  "no-login-shell",
+			Usage: "Skip shell login/profile startup files when running the command or session",
+		},
 	}
 	return &cli.Command{
 		Name:      "run",
@@ -161,8 +176,20 @@ func newRunCommand() *cli.Command {
 			}
 
 			params := RunParams{
-				SandboxName:          resolveParam(cmd, "name", os.Getenv("SANDBOX_NAME"), cfg.Sandbox.Name, rc.DefaultSandboxName),
-				RemoteRepoDir:        resolveParam(cmd, "remote-dir", os.Getenv("MICROSANDBOX_REMOTE_REPO_DIR"), cfg.Sandbox.RemoteDir, filepath.ToSlash(filepath.Join("/sandbox", rc.RepoName))),
+				SandboxName: resolveParam(
+					cmd,
+					"name",
+					os.Getenv("SANDBOX_NAME"),
+					cfg.Sandbox.Name,
+					rc.DefaultSandboxName,
+				),
+				RemoteRepoDir: resolveParam(
+					cmd,
+					"remote-dir",
+					os.Getenv("MICROSANDBOX_REMOTE_REPO_DIR"),
+					cfg.Sandbox.RemoteDir,
+					filepath.ToSlash(filepath.Join("/sandbox", rc.RepoName)),
+				),
 				Recreate:             recreate,
 				Kubernetes:           kubernetes,
 				ReplaceSandboxRemote: cmd.Bool("replace-sandbox-remote"),
@@ -170,7 +197,11 @@ func newRunCommand() *cli.Command {
 				RemoteCommand:        remoteArgs,
 				TTY:                  tty,
 				PolicyAdvisor:        advisor,
-				NoLoginShell:         resolveBoolParam(cmd, "no-login-shell", cfg.Sandbox.NoLoginShell),
+				NoLoginShell: resolveBoolParam(
+					cmd,
+					"no-login-shell",
+					cfg.Sandbox.NoLoginShell,
+				),
 			}
 
 			if params.Editor != "" && len(params.RemoteCommand) > 0 {
@@ -185,7 +216,11 @@ func newRunCommand() *cli.Command {
 func newDestroyCommand() *cli.Command {
 	flags := []cli.Flag{
 		&cli.StringFlag{Name: "name", Usage: "Override the generated sandbox name"},
-		&cli.BoolFlag{Name: "force", Aliases: []string{"f"}, Usage: "Delete without prompting for confirmation"},
+		&cli.BoolFlag{
+			Name:    "force",
+			Aliases: []string{"f"},
+			Usage:   "Delete without prompting for confirmation",
+		},
 	}
 	return &cli.Command{
 		Name:  "destroy",
@@ -204,8 +239,14 @@ func newDestroyCommand() *cli.Command {
 				cfg = &MezhaConfig{}
 			}
 			params := DestroyParams{
-				SandboxName: resolveParam(cmd, "name", os.Getenv("SANDBOX_NAME"), cfg.Sandbox.Name, rc.DefaultSandboxName),
-				Force:       cmd.Bool("force"),
+				SandboxName: resolveParam(
+					cmd,
+					"name",
+					os.Getenv("SANDBOX_NAME"),
+					cfg.Sandbox.Name,
+					rc.DefaultSandboxName,
+				),
+				Force: cmd.Bool("force"),
 			}
 			return Destroy(ctx, rc, params)
 		},
@@ -218,7 +259,13 @@ func transferCommandFlags(includeRecreate bool) []cli.Flag {
 		&cli.StringFlag{Name: "remote-dir", Usage: "Sandbox repository directory"},
 	}
 	if includeRecreate {
-		flags = append(flags, &cli.BoolFlag{Name: "recreate", Usage: "Delete and recreate the sandbox before uploading"})
+		flags = append(
+			flags,
+			&cli.BoolFlag{
+				Name:  "recreate",
+				Usage: "Delete and recreate the sandbox before uploading",
+			},
+		)
 	}
 	return flags
 }
@@ -232,9 +279,21 @@ func loadTransferParams(cmd *cli.Command, rc RepoContext) (TransferParams, error
 		cfg = &MezhaConfig{}
 	}
 	return TransferParams{
-		SandboxName:   resolveParam(cmd, "name", os.Getenv("SANDBOX_NAME"), cfg.Sandbox.Name, rc.DefaultSandboxName),
-		RemoteRepoDir: resolveParam(cmd, "remote-dir", os.Getenv("MICROSANDBOX_REMOTE_REPO_DIR"), cfg.Sandbox.RemoteDir, filepath.ToSlash(filepath.Join("/sandbox", rc.RepoName))),
-		Recreate:      cmd.Bool("recreate"),
+		SandboxName: resolveParam(
+			cmd,
+			"name",
+			os.Getenv("SANDBOX_NAME"),
+			cfg.Sandbox.Name,
+			rc.DefaultSandboxName,
+		),
+		RemoteRepoDir: resolveParam(
+			cmd,
+			"remote-dir",
+			os.Getenv("MICROSANDBOX_REMOTE_REPO_DIR"),
+			cfg.Sandbox.RemoteDir,
+			filepath.ToSlash(filepath.Join("/sandbox", rc.RepoName)),
+		),
+		Recreate: cmd.Bool("recreate"),
 	}, nil
 }
 
@@ -258,7 +317,9 @@ func newUploadCommand() *cli.Command {
 			}
 			if cmd.NArg() == 0 {
 				return Upload(ctx, rc, UploadParams{
-					SandboxName: params.SandboxName, RemoteRepoDir: params.RemoteRepoDir, Recreate: params.Recreate,
+					SandboxName:   params.SandboxName,
+					RemoteRepoDir: params.RemoteRepoDir,
+					Recreate:      params.Recreate,
 				})
 			}
 			remotePath := ""
@@ -302,34 +363,11 @@ func newDownloadCommand() *cli.Command {
 	}
 }
 
-func newBuildCommand() *cli.Command {
-	flags := []cli.Flag{
-		&cli.BoolFlag{Name: "recreate", Usage: "Rebuild the image without using the Docker build cache"},
-	}
-	return &cli.Command{
-		Name:  "build",
-		Usage: "Build the image configured by microsandbox.dockerfile",
-		Flags: flags,
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			rc, err := ResolveRepoContext(ctx)
-			if err != nil {
-				return err
-			}
-			cfg, _, err := LoadConfig(rc.RepoRoot)
-			if err != nil {
-				return fmt.Errorf("load mezha configuration: %w", err)
-			}
-			if cfg == nil {
-				cfg = &MezhaConfig{}
-			}
-			params := BuildParams{Recreate: resolveBoolParam(cmd, "recreate", false)}
-			return Build(ctx, rc, params)
-		},
-	}
-}
-
 func gitCommandFlags() []cli.Flag {
-	return []cli.Flag{&cli.StringFlag{Name: "name", Usage: "Override the generated sandbox name"}, &cli.StringFlag{Name: "remote-dir", Usage: "Sandbox repository directory"}}
+	return []cli.Flag{
+		&cli.StringFlag{Name: "name", Usage: "Override the generated sandbox name"},
+		&cli.StringFlag{Name: "remote-dir", Usage: "Sandbox repository directory"},
+	}
 }
 
 func loadGitParams(cmd *cli.Command, rc RepoContext) (GitParams, error) {
@@ -340,75 +378,147 @@ func loadGitParams(cmd *cli.Command, rc RepoContext) (GitParams, error) {
 	if cfg == nil {
 		cfg = &MezhaConfig{}
 	}
-	return GitParams{SandboxName: resolveParam(cmd, "name", os.Getenv("SANDBOX_NAME"), cfg.Sandbox.Name, rc.DefaultSandboxName), RemoteRepoDir: resolveParam(cmd, "remote-dir", os.Getenv("MICROSANDBOX_REMOTE_REPO_DIR"), cfg.Sandbox.RemoteDir, filepath.ToSlash(filepath.Join("/sandbox", rc.RepoName)))}, nil
+	return GitParams{
+		SandboxName: resolveParam(
+			cmd,
+			"name",
+			os.Getenv("SANDBOX_NAME"),
+			cfg.Sandbox.Name,
+			rc.DefaultSandboxName,
+		),
+		RemoteRepoDir: resolveParam(
+			cmd,
+			"remote-dir",
+			os.Getenv("MICROSANDBOX_REMOTE_REPO_DIR"),
+			cfg.Sandbox.RemoteDir,
+			filepath.ToSlash(filepath.Join("/sandbox", rc.RepoName)),
+		),
+	}, nil
 }
 
 func newPullCommand() *cli.Command {
-	return &cli.Command{Name: "pull", Usage: "Fast-forward the current branch from the sandbox Git remote", Flags: append(gitCommandFlags(), &cli.BoolFlag{Name: "rebase", Usage: "Rebase instead of fast-forward only"}, &cli.BoolFlag{Name: "merge", Usage: "Allow a merge commit"}), Action: func(ctx context.Context, cmd *cli.Command) error {
-		if cmd.Bool("rebase") && cmd.Bool("merge") {
-			return errors.New("--rebase cannot be used together with --merge")
-		}
-		rc, err := ResolveRepoContext(ctx)
-		if err != nil {
-			return err
-		}
-		params, err := loadGitParams(cmd, rc)
-		if err != nil {
-			return err
-		}
-		return PullSandboxBranch(ctx, rc, params, cmd.Bool("rebase"), cmd.Bool("merge"))
-	}}
+	return &cli.Command{
+		Name:  "pull",
+		Usage: "Fast-forward the current branch from the sandbox Git remote",
+		Flags: append(
+			gitCommandFlags(),
+			&cli.BoolFlag{Name: "rebase", Usage: "Rebase instead of fast-forward only"},
+			&cli.BoolFlag{Name: "merge", Usage: "Allow a merge commit"},
+		),
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			if cmd.Bool("rebase") && cmd.Bool("merge") {
+				return errors.New("--rebase cannot be used together with --merge")
+			}
+			rc, err := ResolveRepoContext(ctx)
+			if err != nil {
+				return err
+			}
+			params, err := loadGitParams(cmd, rc)
+			if err != nil {
+				return err
+			}
+			return PullSandboxBranch(ctx, rc, params, cmd.Bool("rebase"), cmd.Bool("merge"))
+		},
+	}
 }
 
 func newPushCommand() *cli.Command {
-	return &cli.Command{Name: "push", Usage: "Push the current branch to the sandbox Git remote", Flags: append(gitCommandFlags(), &cli.BoolFlag{Name: "force-with-lease", Usage: "Force push only when the sandbox branch has not changed"}), Action: func(ctx context.Context, cmd *cli.Command) error {
-		rc, err := ResolveRepoContext(ctx)
-		if err != nil {
-			return err
-		}
-		params, err := loadGitParams(cmd, rc)
-		if err != nil {
-			return err
-		}
-		return PushSandboxBranch(ctx, rc, params, cmd.Bool("force-with-lease"))
-	}}
+	return &cli.Command{
+		Name:  "push",
+		Usage: "Push the current branch to the sandbox Git remote",
+		Flags: append(
+			gitCommandFlags(),
+			&cli.BoolFlag{
+				Name:  "force-with-lease",
+				Usage: "Force push only when the sandbox branch has not changed",
+			},
+		),
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			rc, err := ResolveRepoContext(ctx)
+			if err != nil {
+				return err
+			}
+			params, err := loadGitParams(cmd, rc)
+			if err != nil {
+				return err
+			}
+			return PushSandboxBranch(ctx, rc, params, cmd.Bool("force-with-lease"))
+		},
+	}
 }
 
 func newStatusCommand() *cli.Command {
-	return &cli.Command{Name: "status", Usage: "Show local and sandbox Git synchronization status", Flags: gitCommandFlags(), Action: func(ctx context.Context, cmd *cli.Command) error {
-		rc, err := ResolveRepoContext(ctx)
-		if err != nil {
-			return err
-		}
-		params, err := loadGitParams(cmd, rc)
-		if err != nil {
-			return err
-		}
-		return SandboxGitStatus(ctx, rc, params)
-	}}
+	return &cli.Command{
+		Name:  "status",
+		Usage: "Show local and sandbox Git synchronization status",
+		Flags: gitCommandFlags(),
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			rc, err := ResolveRepoContext(ctx)
+			if err != nil {
+				return err
+			}
+			params, err := loadGitParams(cmd, rc)
+			if err != nil {
+				return err
+			}
+			return SandboxGitStatus(ctx, rc, params)
+		},
+	}
 }
 
 func newRemoteCommand() *cli.Command {
-	return &cli.Command{Name: "remote", Usage: "Manage the sandbox Git remote", Commands: []*cli.Command{{Name: "repair", Usage: "Refresh the sandbox remote SSH configuration", Flags: append(gitCommandFlags(), &cli.BoolFlag{Name: "replace-sandbox-remote", Usage: "Replace an existing non-Mezha sandbox Git remote"}), Action: func(ctx context.Context, cmd *cli.Command) error {
-		rc, err := ResolveRepoContext(ctx)
-		if err != nil {
-			return err
-		}
-		params, err := loadGitParams(cmd, rc)
-		if err != nil {
-			return err
-		}
-		return RepairSandboxGitRemote(ctx, rc, params, cmd.Bool("replace-sandbox-remote"))
-	}}}}
+	return &cli.Command{
+		Name:  "remote",
+		Usage: "Manage the sandbox Git remote",
+		Commands: []*cli.Command{
+			{
+				Name:  "repair",
+				Usage: "Refresh the sandbox remote SSH configuration",
+				Flags: append(
+					gitCommandFlags(),
+					&cli.BoolFlag{
+						Name:  "replace-sandbox-remote",
+						Usage: "Replace an existing non-Mezha sandbox Git remote",
+					},
+				),
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					rc, err := ResolveRepoContext(ctx)
+					if err != nil {
+						return err
+					}
+					params, err := loadGitParams(cmd, rc)
+					if err != nil {
+						return err
+					}
+					return RepairSandboxGitRemote(
+						ctx,
+						rc,
+						params,
+						cmd.Bool("replace-sandbox-remote"),
+					)
+				},
+			},
+		},
+	}
 }
 
 func newLogsCommand() *cli.Command {
 	flags := []cli.Flag{
 		&cli.StringFlag{Name: "name", Usage: "Override the generated sandbox name"},
 		&cli.UintFlag{Name: "tail", Usage: "Maximum number of log lines to return", Value: 100},
-		&cli.BoolFlag{Name: "follow", Aliases: []string{"f"}, Usage: "Follow logs until interrupted"},
-		&cli.DurationFlag{Name: "since", Usage: "Only show logs from the last duration (for example, 15m or 1h)"},
-		&cli.StringSliceFlag{Name: "source", Usage: "Filter by Microsandbox log source; repeat for multiple sources"},
+		&cli.BoolFlag{
+			Name:    "follow",
+			Aliases: []string{"f"},
+			Usage:   "Follow logs until interrupted",
+		},
+		&cli.DurationFlag{
+			Name:  "since",
+			Usage: "Only show logs from the last duration (for example, 15m or 1h)",
+		},
+		&cli.StringSliceFlag{
+			Name:  "source",
+			Usage: "Filter by Microsandbox log source; repeat for multiple sources",
+		},
 		&cli.StringFlag{Name: "level", Usage: "Minimum log level to include (for example, WARN)"},
 	}
 	return &cli.Command{
@@ -425,12 +535,18 @@ func newLogsCommand() *cli.Command {
 				cfg = &MezhaConfig{}
 			}
 			return Logs(ctx, rc, LogsParams{
-				SandboxName: resolveParam(cmd, "name", os.Getenv("SANDBOX_NAME"), cfg.Sandbox.Name, rc.DefaultSandboxName),
-				Tail:        cmd.Uint("tail"),
-				Follow:      cmd.Bool("follow"),
-				Since:       cmd.Duration("since"),
-				Sources:     cmd.StringSlice("source"),
-				MinLevel:    cmd.String("level"),
+				SandboxName: resolveParam(
+					cmd,
+					"name",
+					os.Getenv("SANDBOX_NAME"),
+					cfg.Sandbox.Name,
+					rc.DefaultSandboxName,
+				),
+				Tail:     cmd.Uint("tail"),
+				Follow:   cmd.Bool("follow"),
+				Since:    cmd.Duration("since"),
+				Sources:  cmd.StringSlice("source"),
+				MinLevel: cmd.String("level"),
 			})
 		},
 	}
@@ -453,7 +569,13 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func resolveParam(cmd *cli.Command, flagName string, envVal string, cfgVal string, defaultVal string) string {
+func resolveParam(
+	cmd *cli.Command,
+	flagName string,
+	envVal string,
+	cfgVal string,
+	defaultVal string,
+) string {
 	var value string
 	switch {
 	case cmd != nil && cmd.IsSet(flagName):
@@ -494,7 +616,11 @@ func resolveAdvisorParam(cmd *cli.Command, cfg *MezhaConfig) *bool {
 		}
 	}
 
-	if envAdvisor := firstNonEmpty(os.Getenv("MICROSANDBOX_POLICY_ADVISOR"), os.Getenv("MEZHA_POLICY_ADVISOR"), os.Getenv("MICROSANDBOX_ADVISOR")); envAdvisor != "" {
+	if envAdvisor := firstNonEmpty(
+		os.Getenv("MICROSANDBOX_POLICY_ADVISOR"),
+		os.Getenv("MEZHA_POLICY_ADVISOR"),
+		os.Getenv("MICROSANDBOX_ADVISOR"),
+	); envAdvisor != "" {
 		val := parseBool(envAdvisor, true)
 		return &val
 	}

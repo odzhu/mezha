@@ -39,9 +39,9 @@ func newInitCommand() *cli.Command {
 
 func Init(_ context.Context, rc RepoContext, force bool) error {
 	configPath := filepath.Join(rc.RepoRoot, "mezha.yaml")
-	dockerfilePath := filepath.Join(rc.RepoRoot, ".mezha", "Dockerfile")
+	devenvPath := filepath.Join(rc.RepoRoot, ".mezha", "devenv.nix")
 	if !force {
-		for _, path := range []string{configPath, filepath.Join(rc.RepoRoot, "mezha.yml"), dockerfilePath} {
+		for _, path := range []string{configPath, filepath.Join(rc.RepoRoot, "mezha.yml"), devenvPath} {
 			if _, err := os.Stat(path); err == nil {
 				return fmt.Errorf(
 					"configuration file already exists: %s (use --force to overwrite)",
@@ -57,36 +57,79 @@ func Init(_ context.Context, rc RepoContext, force bool) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(dockerfilePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(devenvPath), 0o755); err != nil {
 		return fmt.Errorf("create project configuration directory: %w", err)
 	}
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write configuration file: %w", err)
 	}
-	if err := os.WriteFile(dockerfilePath, []byte(defaultNixDockerfile), 0o644); err != nil {
-		return fmt.Errorf("write project Dockerfile: %w", err)
+	if err := os.WriteFile(devenvPath, []byte(defaultManagedDevenv), 0o644); err != nil {
+		return fmt.Errorf("write managed devenv configuration: %w", err)
 	}
 
 	fmt.Printf("Created %s\n", configPath)
-	fmt.Printf("Created %s\n", dockerfilePath)
+	fmt.Printf("Created %s\n", devenvPath)
 	return nil
 }
 
-const defaultNixDockerfile = `FROM debian:trixie-slim
+const defaultManagedDevenv = `{ pkgs, ... }:
 
-# nix-bin is packaged under /usr, so it stays executable when the persistent
-# named volume is mounted at /nix during sandbox creation.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl docker-cli docker.io git kubernetes-client nix-bin procps \
-    && arch="$(dpkg --print-architecture)" \
-    && case "$arch" in amd64) k3s_arch="" ;; arm64) k3s_arch="-arm64" ;; *) echo "unsupported k3s architecture: $arch" >&2; exit 1 ;; esac \
-    && curl -sfL "https://github.com/k3s-io/k3s/releases/download/v1.32.3%2Bk3s1/k3s${k3s_arch}" -o /usr/local/bin/k3s \
-    && chmod 755 /usr/local/bin/k3s \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /nix /etc/nix \
-    && printf 'sandbox = false\nbuild-users-group =\nexperimental-features = nix-command flakes\n' > /etc/nix/nix.conf
+{
+  packages = [
+    pkgs.docker
+    pkgs.k3s
+    pkgs.kubectl
+    pkgs.git
+    pkgs.procps
+  ];
 
-ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  # These task-managed services run in the same Microsandbox exec namespace as
+  # the devenv shell and its requested command.
+  tasks = {
+    "mezha:docker".exec = ''
+      set -eu
+      if docker --context default info >/dev/null 2>&1; then
+        exit 0
+      fi
+      rm -f /var/run/docker.pid
+      dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs >/tmp/mezha-dockerd.log 2>&1 &
+      for _ in $(seq 1 30); do
+        docker --context default info >/dev/null 2>&1 && exit 0
+        sleep 1
+      done
+      cat /tmp/mezha-dockerd.log >&2 || true
+      exit 1
+    '';
+
+    "mezha:k3s" = {
+      after = [ "mezha:docker" ];
+      exec = ''
+        set -eu
+        k3s_dir=/var/lib/rancher/k3s
+        kubeconfig="$k3s_dir/k3s.yaml"
+        mkdir -p "$k3s_dir"
+        k3s server --data-dir "$k3s_dir" --node-name mezha-k3s --https-listen-port=16443 --docker --write-kubeconfig "$kubeconfig" --write-kubeconfig-mode 644 >/tmp/mezha-k3s.log 2>&1 &
+        k3s_pid=$!
+        for _ in $(seq 1 90); do
+          if kubectl --kubeconfig "$kubeconfig" get nodes --no-headers 2>/dev/null | awk '$2 ~ /^Ready/ { ready=1 } END { exit !ready }'; then
+            mkdir -p "$HOME/.kube"
+            cp "$kubeconfig" "$HOME/.kube/config"
+            exit 0
+          fi
+          if ! kill -0 "$k3s_pid" 2>/dev/null; then
+            cat /tmp/mezha-k3s.log >&2 || true
+            exit 1
+          fi
+          sleep 1
+        done
+        cat /tmp/mezha-k3s.log >&2 || true
+        exit 1
+      '';
+    };
+
+    "devenv:enterShell".after = [ "mezha:k3s" ];
+  };
+}
 `
 
 // InitHome creates the home-level configuration without requiring a Git
@@ -96,9 +139,9 @@ func InitHome(force bool) error {
 	if err != nil {
 		return err
 	}
-	dockerfilePath := filepath.Join(filepath.Dir(configPath), ".mezha", "Dockerfile")
+	devenvPath := filepath.Join(filepath.Dir(configPath), ".mezha", "devenv.nix")
 	if !force {
-		for _, path := range []string{configPath, dockerfilePath} {
+		for _, path := range []string{configPath, devenvPath} {
 			if _, err := os.Stat(path); err == nil {
 				return fmt.Errorf(
 					"configuration file already exists: %s (use --force to overwrite)",
@@ -112,17 +155,17 @@ func InitHome(force bool) error {
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		return fmt.Errorf("create home configuration directory: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(dockerfilePath), 0o755); err != nil {
-		return fmt.Errorf("create home Dockerfile directory: %w", err)
+	if err := os.MkdirAll(filepath.Dir(devenvPath), 0o755); err != nil {
+		return fmt.Errorf("create home configuration directory: %w", err)
 	}
 	if err := os.WriteFile(configPath, []byte(DefaultConfigTemplate()), 0o644); err != nil {
 		return fmt.Errorf("write home configuration file: %w", err)
 	}
-	if err := os.WriteFile(dockerfilePath, []byte(defaultNixDockerfile), 0o644); err != nil {
-		return fmt.Errorf("write default Dockerfile: %w", err)
+	if err := os.WriteFile(devenvPath, []byte(defaultManagedDevenv), 0o644); err != nil {
+		return fmt.Errorf("write managed devenv configuration: %w", err)
 	}
 	fmt.Printf("Created %s\n", configPath)
-	fmt.Printf("Created %s\n", dockerfilePath)
+	fmt.Printf("Created %s\n", devenvPath)
 	return nil
 }
 

@@ -1,34 +1,50 @@
+//go:build cgo
+
 package app
 
 import (
-	"crypto/sha256"
+	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
+
+	"github.com/odzhu/mezha/internal/execx"
+	msb "github.com/superradcompany/microsandbox/sdk/go"
 )
 
-// imageReference returns the configured OCI image or the stable local tag
-// assigned to a Dockerfile build.
-func (s MicrosandboxSpec) imageReference() (string, error) {
-	image := strings.TrimSpace(s.Image)
-	dockerfile := strings.TrimSpace(s.Dockerfile)
-	if image != "" && dockerfile != "" {
-		return "", fmt.Errorf("microsandbox.image and microsandbox.dockerfile cannot both be set")
+// ensureDevenvImage imports the fixed native devenv image through Docker.
+// Docker archives normalize registry layer encodings that Microsandbox's
+// direct image puller cannot materialize.
+func ensureDevenvImage(ctx context.Context, workdir string) error {
+	if _, err := msb.Image.Get(ctx, defaultDevenvImage); err == nil {
+		return nil
 	}
-	if image != "" {
-		return image, nil
-	}
-	if dockerfile == "" {
-		return "", fmt.Errorf("microsandbox.image or microsandbox.dockerfile is required")
+	fmt.Printf("Importing image %s into Microsandbox...\n", defaultDevenvImage)
+	if err := execx.Stream(ctx, workdir, "docker", "pull", defaultDevenvImage); err != nil {
+		return fmt.Errorf("pull image %q: %w", defaultDevenvImage, err)
 	}
 
-	// The tag includes the Dockerfile contents so changing a generated or
-	// project Dockerfile causes `mezha run` to build and import a fresh image.
-	contents, err := os.ReadFile(dockerfile)
+	archive, err := os.CreateTemp("", "mezha-image-*.tar")
 	if err != nil {
-		return "", fmt.Errorf("read microsandbox.dockerfile %q: %w", dockerfile, err)
+		return fmt.Errorf("create Docker image archive: %w", err)
 	}
-	sum := sha256.Sum256(append([]byte(filepath.Clean(dockerfile)+"\x00"), contents...))
-	return fmt.Sprintf("mezha-%s-%x:latest", slugify(filepath.Base(filepath.Dir(dockerfile))), sum[:6]), nil
+	archivePath := archive.Name()
+	if err := archive.Close(); err != nil {
+		return fmt.Errorf("close Docker image archive: %w", err)
+	}
+	defer func() { _ = os.Remove(archivePath) }()
+	if err := execx.Stream(
+		ctx,
+		workdir,
+		"docker",
+		"save",
+		"--output",
+		archivePath,
+		defaultDevenvImage,
+	); err != nil {
+		return fmt.Errorf("export image %q: %w", defaultDevenvImage, err)
+	}
+	if _, err := msb.Image.Load(ctx, archivePath, defaultDevenvImage); err != nil {
+		return fmt.Errorf("import image %q into Microsandbox: %w", defaultDevenvImage, err)
+	}
+	return nil
 }

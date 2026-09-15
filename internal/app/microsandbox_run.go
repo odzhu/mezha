@@ -31,15 +31,12 @@ func runMicrosandbox(
 		}
 		sandboxExisted = false
 	}
-	if !sandboxExisted && cfg.Microsandbox.Dockerfile != "" {
-		image, err := cfg.Microsandbox.imageReference()
-		if err != nil {
-			return err
+	if !sandboxExisted {
+		if err := ensureDevenvImage(ctx, rc.RepoRoot); err != nil {
+			return fmt.Errorf("import Microsandbox image: %w", err)
 		}
-		if _, err := msb.Image.Get(ctx, image); err != nil {
-			if err := buildMicrosandbox(ctx, rc, BuildParams{}, cfg); err != nil {
-				return fmt.Errorf("build Microsandbox image: %w", err)
-			}
+		if err := ensureNixVolume(ctx, params.SandboxName, cfg.Microsandbox.Volumes); err != nil {
+			return err
 		}
 	}
 	opts, err := cfg.Microsandbox.sandboxOptions(rc.RepoRoot, params.SandboxName)
@@ -170,7 +167,9 @@ func runMicrosandbox(
 	if devenv != "" {
 		command, args := devenv, []string{"shell", "--no-reload"}
 		if cfg.Docker.Enabled || params.Kubernetes {
-			command, args = dockerCommand(command, args, params.Kubernetes)
+			// dockerCommand already starts the managed devenv shell. Wrapping a
+			// second `devenv shell` here runs its enterShell tasks twice.
+			command, args = dockerCommand("bash", nil, params.Kubernetes)
 		}
 		code, err := sandbox.AttachWith(ctx, command, args, msb.WithAttachCwd(workdir))
 		if err != nil {
@@ -224,7 +223,7 @@ func sandboxCommandPath(
 ) (string, error) {
 	output, err := sandbox.Exec(
 		ctx,
-		"/bin/sh",
+		"sh",
 		[]string{"-c", shellBootstrap + "; command -v " + name},
 		msb.WithExecCwd(workdir),
 	)
@@ -243,11 +242,8 @@ func sandboxCommandPath(
 // fail with EINVAL.
 const shellBootstrap = `if [ -t 0 ]; then stty rows 24 cols 80 2>/dev/null || :; fi; if [ -d "$HOME/.nix-profile/bin" ]; then PATH="$HOME/.nix-profile/bin:$PATH"; export PATH; fi`
 
-// remoteCommand runs commands through a login shell by default so the sandbox
-// profile configures tools such as Nix-installed devenv. Nix profiles are not
-// consistently loaded by Debian's login-shell setup, so add the user profile
-// explicitly. The fixed script preserves every command argument without shell
-// interpolation.
+// remoteCommand runs commands through a login shell by default. The fixed
+// script preserves every command argument without shell interpolation.
 func remoteCommand(command []string, noLoginShell bool) (string, []string) {
 	if noLoginShell {
 		return command[0], command[1:]
@@ -255,7 +251,7 @@ func remoteCommand(command []string, noLoginShell bool) (string, []string) {
 	args := make([]string, 0, len(command)+4)
 	args = append(args, "-lc", shellBootstrap+`; exec "$@"`, "mezha-run")
 	args = append(args, command...)
-	return "/bin/bash", args
+	return "bash", args
 }
 
 // applyCreateConfig applies declarative initialization only after a sandbox
