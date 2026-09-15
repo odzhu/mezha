@@ -411,7 +411,7 @@ sandbox:
 # Initialization applied only when a new sandbox is created.
 create:
   add:
-    - [".mezha/devenv.nix", "/opt/mezha/devenv.nix"]
+    - [".mezha/devenv.nix", "/sandbox/devenv.nix"]
 
 # Commands executed in the sandbox before the requested command.
 # A string uses a shell; a nested list is an exec-form command.

@@ -2,7 +2,7 @@
 
 package app
 
-const managedDevenvPath = "/opt/mezha"
+const managedDevenvPath = "/sandbox"
 
 // dockerCommand enters Mezha's managed devenv environment. Its enterShell
 // tasks provision Docker and k3s before the requested command is started.

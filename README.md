@@ -110,7 +110,7 @@ sandbox:
 create:
   # This devenv.nix declaratively provides Docker, k3s, and kubectl.
   add:
-    - [.mezha/devenv.nix, /opt/mezha/devenv.nix]
+    - [.mezha/devenv.nix, /sandbox/devenv.nix]
 
 run: []
 ```
@@ -120,7 +120,7 @@ Mezha seeds the default 20 GiB `nix-packages` volume from the native image
 before mounting it at `/nix/store`, preserving the image runtime and profiles
 while keeping Nix packages and devenv downloads persistent. The default `create.add` installs
 Mezha's `.mezha/devenv.nix` at
-`/opt/mezha/devenv.nix`. It uses devenv `packages` for Docker, k3s, and kubectl
+`/sandbox/devenv.nix`. It uses devenv `packages` for Docker, k3s, and kubectl
 and `devenv:enterShell` tasks to start Docker and k3s, wait for readiness, and
 configure `kubectl`. Mezha enters that environment for every requested command
 or interactive session. Update that file and run `mezha run --recreate` to
