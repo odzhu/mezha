@@ -167,7 +167,9 @@ func runMicrosandbox(
 	if devenv != "" {
 		command, args := devenv, []string{"shell", "--no-reload"}
 		if cfg.Docker.Enabled || params.Kubernetes {
-			command, args = dockerCommand(command, args, params.Kubernetes)
+			// dockerCommand already starts the managed devenv shell. Wrapping a
+			// second `devenv shell` here runs its enterShell tasks twice.
+			command, args = dockerCommand("bash", nil, params.Kubernetes)
 		}
 		code, err := sandbox.AttachWith(ctx, command, args, msb.WithAttachCwd(workdir))
 		if err != nil {
