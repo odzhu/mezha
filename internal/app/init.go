@@ -75,7 +75,6 @@ func Init(_ context.Context, rc RepoContext, force bool) error {
 const defaultManagedDevenv = `{ pkgs, ... }:
 
 {
-  # Mezha enters this environment before starting Docker or k3s.
   packages = [
     pkgs.docker
     pkgs.k3s
@@ -83,6 +82,53 @@ const defaultManagedDevenv = `{ pkgs, ... }:
     pkgs.git
     pkgs.procps
   ];
+
+  # These task-managed services run in the same Microsandbox exec namespace as
+  # the devenv shell and its requested command.
+  tasks = {
+    "mezha:docker".exec = ''
+      set -eu
+      if docker --context default info >/dev/null 2>&1; then
+        exit 0
+      fi
+      rm -f /var/run/docker.pid
+      dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs >/tmp/mezha-dockerd.log 2>&1 &
+      for _ in $(seq 1 30); do
+        docker --context default info >/dev/null 2>&1 && exit 0
+        sleep 1
+      done
+      cat /tmp/mezha-dockerd.log >&2 || true
+      exit 1
+    '';
+
+    "mezha:k3s" = {
+      after = [ "mezha:docker" ];
+      exec = ''
+        set -eu
+        k3s_dir=/var/lib/rancher/k3s
+        kubeconfig="$k3s_dir/k3s.yaml"
+        mkdir -p "$k3s_dir"
+        k3s server --data-dir "$k3s_dir" --node-name mezha-k3s --https-listen-port=16443 --docker --write-kubeconfig "$kubeconfig" --write-kubeconfig-mode 644 >/tmp/mezha-k3s.log 2>&1 &
+        k3s_pid=$!
+        for _ in $(seq 1 90); do
+          if kubectl --kubeconfig "$kubeconfig" get nodes --no-headers 2>/dev/null | awk '$2 ~ /^Ready/ { ready=1 } END { exit !ready }'; then
+            mkdir -p "$HOME/.kube"
+            cp "$kubeconfig" "$HOME/.kube/config"
+            exit 0
+          fi
+          if ! kill -0 "$k3s_pid" 2>/dev/null; then
+            cat /tmp/mezha-k3s.log >&2 || true
+            exit 1
+          fi
+          sleep 1
+        done
+        cat /tmp/mezha-k3s.log >&2 || true
+        exit 1
+      '';
+    };
+
+    "devenv:enterShell".after = [ "mezha:k3s" ];
+  };
 }
 `
 
