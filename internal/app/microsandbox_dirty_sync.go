@@ -12,13 +12,21 @@ import (
 	msb "github.com/superradcompany/microsandbox/sdk/go"
 )
 
-func uploadDirtyRepoToMicrosandbox(ctx context.Context, sandboxName, remoteRepoDir, repoRoot string, dirty dirtyPaths) error {
+func uploadDirtyRepoToMicrosandbox(
+	ctx context.Context,
+	sandboxName, remoteRepoDir, repoRoot string,
+	dirty dirtyPaths,
+) error {
 	knownUntracked, err := loadSyncedUntrackedPaths(repoRoot)
 	if err != nil {
 		return err
 	}
 	for _, relativePath := range knownUntracked {
-		if _, err := os.Lstat(filepath.Join(repoRoot, filepath.FromSlash(relativePath))); os.IsNotExist(err) {
+		if _, err := os.Lstat(
+			filepath.Join(repoRoot, filepath.FromSlash(relativePath)),
+		); os.IsNotExist(
+			err,
+		) {
 			dirty.delete = append(dirty.delete, relativePath)
 		}
 	}
@@ -54,7 +62,11 @@ func uploadDirtyRepoToMicrosandbox(ctx context.Context, sandboxName, remoteRepoD
 					return fmt.Errorf("create remote directory for %s: %w", relativePath, err)
 				}
 				if !out.Success() {
-					return fmt.Errorf("create remote directory for %s: %s", relativePath, strings.TrimSpace(out.Stderr()))
+					return fmt.Errorf(
+						"create remote directory for %s: %s",
+						relativePath,
+						strings.TrimSpace(out.Stderr()),
+					)
 				}
 				createdDirs[remoteDir] = struct{}{}
 			}
@@ -76,7 +88,10 @@ func uploadDirtyRepoToMicrosandbox(ctx context.Context, sandboxName, remoteRepoD
 	return saveSyncedUntrackedPaths(repoRoot, untracked)
 }
 
-func downloadDirtyRepoFromMicrosandbox(ctx context.Context, sandboxName, remoteRepoDir, repoRoot string) error {
+func downloadDirtyRepoFromMicrosandbox(
+	ctx context.Context,
+	sandboxName, remoteRepoDir, repoRoot string,
+) error {
 	handle, err := msb.GetSandbox(ctx, sandboxName)
 	if err != nil {
 		return err
@@ -86,23 +101,39 @@ func downloadDirtyRepoFromMicrosandbox(ctx context.Context, sandboxName, remoteR
 		return err
 	}
 	defer sandbox.Detach(context.Background())
-	out, err := sandbox.Exec(ctx, "git", []string{"diff", "--name-status", "-z", "HEAD"}, msb.WithExecCwd(remoteRepoDir))
+	out, err := sandbox.Exec(
+		ctx,
+		"git",
+		[]string{"diff", "--name-status", "-z", "HEAD"},
+		msb.WithExecCwd(remoteRepoDir),
+	)
 	if err != nil {
 		return fmt.Errorf("find sandbox tracked working-tree changes: %w", err)
 	}
 	if !out.Success() {
-		return fmt.Errorf("find sandbox tracked working-tree changes: %s", strings.TrimSpace(out.Stderr()))
+		return fmt.Errorf(
+			"find sandbox tracked working-tree changes: %s",
+			strings.TrimSpace(out.Stderr()),
+		)
 	}
 	dirty, err := parseDirtyPaths(out.StdoutBytes())
 	if err != nil {
 		return err
 	}
-	outUntracked, err := sandbox.Exec(ctx, "git", []string{"ls-files", "--others", "--exclude-standard", "-z"}, msb.WithExecCwd(remoteRepoDir))
+	outUntracked, err := sandbox.Exec(
+		ctx,
+		"git",
+		[]string{"ls-files", "--others", "--exclude-standard", "-z"},
+		msb.WithExecCwd(remoteRepoDir),
+	)
 	if err != nil {
 		return fmt.Errorf("find sandbox untracked files: %w", err)
 	}
 	if !outUntracked.Success() {
-		return fmt.Errorf("find sandbox untracked files: %s", strings.TrimSpace(outUntracked.Stderr()))
+		return fmt.Errorf(
+			"find sandbox untracked files: %s",
+			strings.TrimSpace(outUntracked.Stderr()),
+		)
 	}
 	for _, raw := range bytesSplit(outUntracked.StdoutBytes(), 0) {
 		if path := string(raw); path != "" {

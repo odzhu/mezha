@@ -11,7 +11,12 @@ import (
 	"github.com/odzhu/mezha/internal/execx"
 )
 
-func PullSandboxBranch(ctx context.Context, rc RepoContext, params GitParams, rebase, merge bool) error {
+func PullSandboxBranch(
+	ctx context.Context,
+	rc RepoContext,
+	params GitParams,
+	rebase, merge bool,
+) error {
 	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		if err := RepairSandboxGitRemote(ctx, rc, params, false); err != nil {
 			return err
@@ -20,7 +25,13 @@ func PullSandboxBranch(ctx context.Context, rc RepoContext, params GitParams, re
 	}
 	return fmt.Errorf("microsandbox configuration missing in mezha.yaml")
 }
-func PushSandboxBranch(ctx context.Context, rc RepoContext, params GitParams, forceWithLease bool) error {
+
+func PushSandboxBranch(
+	ctx context.Context,
+	rc RepoContext,
+	params GitParams,
+	forceWithLease bool,
+) error {
 	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		if err := RepairSandboxGitRemote(ctx, rc, params, false); err != nil {
 			return err
@@ -33,7 +44,13 @@ func PushSandboxBranch(ctx context.Context, rc RepoContext, params GitParams, fo
 	}
 	return fmt.Errorf("microsandbox configuration missing in mezha.yaml")
 }
-func RepairSandboxGitRemote(ctx context.Context, rc RepoContext, params GitParams, replace bool) error {
+
+func RepairSandboxGitRemote(
+	ctx context.Context,
+	rc RepoContext,
+	params GitParams,
+	replace bool,
+) error {
 	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		return repairMicrosandboxGitRemote(ctx, rc, params, replace)
 	}
@@ -60,9 +77,21 @@ func SSHProxy(ctx context.Context, sandboxName string) error {
 }
 
 func currentBranch(ctx context.Context, repoRoot string) (string, error) {
-	output, err := execx.Output(ctx, "git", "-C", repoRoot, "symbolic-ref", "--quiet", "--short", "HEAD")
+	output, err := execx.Output(
+		ctx,
+		"git",
+		"-C",
+		repoRoot,
+		"symbolic-ref",
+		"--quiet",
+		"--short",
+		"HEAD",
+	)
 	if err != nil {
-		return "", fmt.Errorf("current Git HEAD is detached or unborn; check out a branch with a commit before synchronizing it: %w", err)
+		return "", fmt.Errorf(
+			"current Git HEAD is detached or unborn; check out a branch with a commit before synchronizing it: %w",
+			err,
+		)
 	}
 	branch := strings.TrimSpace(string(output))
 	if branch == "" {
@@ -81,7 +110,11 @@ func gitIdentityValue(ctx context.Context, repoRoot, key string) (string, error)
 	return "", nil
 }
 
-func setSandboxGitRemote(ctx context.Context, repoRoot, remoteName, url string, replace bool) error {
+func setSandboxGitRemote(
+	ctx context.Context,
+	repoRoot, remoteName, url string,
+	replace bool,
+) error {
 	if err := validateSandboxGitRemoteName(remoteName); err != nil {
 		return err
 	}
@@ -93,7 +126,10 @@ func setSandboxGitRemote(ctx context.Context, repoRoot, remoteName, url string, 
 		return nil
 	}
 	if !replace && !strings.Contains(string(output), "ssh://root@mezha-sandbox-") {
-		return fmt.Errorf("existing %q remote is not managed by mezha; use --replace-sandbox-remote to replace it", remoteName)
+		return fmt.Errorf(
+			"existing %q remote is not managed by mezha; use --replace-sandbox-remote to replace it",
+			remoteName,
+		)
 	}
 	if err := execx.Stream(ctx, repoRoot, "git", "remote", "set-url", remoteName, url); err != nil {
 		return fmt.Errorf("update sandbox Git remote: %w", err)
@@ -101,7 +137,12 @@ func setSandboxGitRemote(ctx context.Context, repoRoot, remoteName, url string, 
 	return nil
 }
 
-func pushSandboxBranchInternal(ctx context.Context, rc RepoContext, remoteName, branch string, forceWithLease bool) error {
+func pushSandboxBranchInternal(
+	ctx context.Context,
+	rc RepoContext,
+	remoteName, branch string,
+	forceWithLease bool,
+) error {
 	if err := requireSandboxGitRemote(ctx, rc.RepoRoot, remoteName); err != nil {
 		return err
 	}
@@ -117,7 +158,12 @@ func pushSandboxBranchInternal(ctx context.Context, rc RepoContext, remoteName, 
 	return nil
 }
 
-func pullSandboxBranchInternal(ctx context.Context, rc RepoContext, params GitParams, rebase, merge bool) error {
+func pullSandboxBranchInternal(
+	ctx context.Context,
+	rc RepoContext,
+	params GitParams,
+	rebase, merge bool,
+) error {
 	branch, err := currentBranch(ctx, rc.RepoRoot)
 	if err != nil {
 		return err
@@ -144,8 +190,19 @@ func requireSandboxGitRemote(ctx context.Context, repoRoot, remoteName string) e
 	if err := validateSandboxGitRemoteName(remoteName); err != nil {
 		return err
 	}
-	if _, err := execx.Output(ctx, "git", "-C", repoRoot, "remote", "get-url", remoteName); err != nil {
-		return fmt.Errorf("sandbox Git remote is not configured; create the sandbox with `mezha run` first: %w", err)
+	if _, err := execx.Output(
+		ctx,
+		"git",
+		"-C",
+		repoRoot,
+		"remote",
+		"get-url",
+		remoteName,
+	); err != nil {
+		return fmt.Errorf(
+			"sandbox Git remote is not configured; create the sandbox with `mezha run` first: %w",
+			err,
+		)
 	}
 	return nil
 }
@@ -188,7 +245,11 @@ func ensureSandboxSSHConfig(_, _, sandboxName string) (string, error) {
 		"    LogLevel ERROR",
 		"    ServerAliveInterval 15",
 		"    ServerAliveCountMax 3",
-		"    ProxyCommand " + shellQuote(executable) + " ssh-proxy --name " + shellQuote(sandboxName),
+		"    ProxyCommand " + shellQuote(
+			executable,
+		) + " ssh-proxy --name " + shellQuote(
+			sandboxName,
+		),
 		end,
 		"",
 	}, "\n")

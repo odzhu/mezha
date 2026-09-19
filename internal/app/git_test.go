@@ -24,7 +24,11 @@ func TestGitTrackedAndUntracked(t *testing.T) {
 	}
 
 	// 1. Empty repo with untracked file
-	if err := os.WriteFile(filepath.Join(tempDir, "untracked1.txt"), []byte("1"), 0o644); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(tempDir, "untracked1.txt"),
+		[]byte("1"),
+		0o644,
+	); err != nil {
 		t.Fatal(err)
 	}
 	paths, err := gitTrackedAndUntracked(tempDir)
@@ -36,16 +40,28 @@ func TestGitTrackedAndUntracked(t *testing.T) {
 	}
 
 	// 2. Add gitignore
-	if err := os.WriteFile(filepath.Join(tempDir, ".gitignore"), []byte("ignored.txt\nignored_dir/\n"), 0o644); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(tempDir, ".gitignore"),
+		[]byte("ignored.txt\nignored_dir/\n"),
+		0o644,
+	); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, "ignored.txt"), []byte("secret"), 0o644); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(tempDir, "ignored.txt"),
+		[]byte("secret"),
+		0o644,
+	); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(tempDir, "ignored_dir"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, "ignored_dir", "sub.txt"), []byte("secret2"), 0o644); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(tempDir, "ignored_dir", "sub.txt"),
+		[]byte("secret2"),
+		0o644,
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -59,7 +75,11 @@ func TestGitTrackedAndUntracked(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(tempDir, "pkg", "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, "pkg", "sub", "mod.go"), []byte("package sub"), 0o644); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(tempDir, "pkg", "sub", "mod.go"),
+		[]byte("package sub"),
+		0o644,
+	); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := worktree.Add("pkg/sub/mod.go"); err != nil {
@@ -78,7 +98,11 @@ func TestGitTrackedAndUntracked(t *testing.T) {
 	}
 
 	// 4. Create new untracked file
-	if err := os.WriteFile(filepath.Join(tempDir, "new_untracked.txt"), []byte("new"), 0o644); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(tempDir, "new_untracked.txt"),
+		[]byte("new"),
+		0o644,
+	); err != nil {
 		t.Fatal(err)
 	}
 

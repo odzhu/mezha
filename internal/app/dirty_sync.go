@@ -19,10 +19,19 @@ type dirtyPaths struct {
 	delete []string
 }
 
-func uploadDirtyRepoToSandbox(ctx context.Context, sdk interface{}, sandboxName, remoteRepoDir, repoRoot string) error {
+func uploadDirtyRepoToSandbox(
+	ctx context.Context,
+	sdk interface{},
+	sandboxName, remoteRepoDir, repoRoot string,
+) error {
 	return nil
 }
-func downloadDirtyRepoFromSandbox(ctx context.Context, sdk interface{}, sandboxName, remoteRepoDir, repoRoot string) error {
+
+func downloadDirtyRepoFromSandbox(
+	ctx context.Context,
+	sdk interface{},
+	sandboxName, remoteRepoDir, repoRoot string,
+) error {
 	return nil
 }
 
@@ -147,7 +156,11 @@ func gitOutput(ctx context.Context, repoRoot string, args ...string) ([]byte, er
 	output, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(exitErr.Stderr)))
+			return nil, fmt.Errorf(
+				"git %s: %s",
+				strings.Join(args, " "),
+				strings.TrimSpace(string(exitErr.Stderr)),
+			)
 		}
 		return nil, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}

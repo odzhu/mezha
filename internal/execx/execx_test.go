@@ -29,10 +29,15 @@ func TestRun(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("basic capture stdout and stderr", func(t *testing.T) {
-		stdout, stderr, err := Run(ctx, "sh", []string{"-c", "echo hello && echo error >&2"}, RunOptions{
-			CaptureStdout: true,
-			CaptureStderr: true,
-		})
+		stdout, stderr, err := Run(
+			ctx,
+			"sh",
+			[]string{"-c", "echo hello && echo error >&2"},
+			RunOptions{
+				CaptureStdout: true,
+				CaptureStderr: true,
+			},
+		)
 		if err != nil {
 			t.Fatalf("Run failed: %v", err)
 		}
@@ -74,11 +79,16 @@ func TestRun(t *testing.T) {
 	})
 
 	t.Run("ignore exit code", func(t *testing.T) {
-		stdout, stderr, err := Run(ctx, "sh", []string{"-c", "echo out; echo err >&2; exit 42"}, RunOptions{
-			CaptureStdout:  true,
-			CaptureStderr:  true,
-			IgnoreExitCode: true,
-		})
+		stdout, stderr, err := Run(
+			ctx,
+			"sh",
+			[]string{"-c", "echo out; echo err >&2; exit 42"},
+			RunOptions{
+				CaptureStdout:  true,
+				CaptureStderr:  true,
+				IgnoreExitCode: true,
+			},
+		)
 		if err != nil {
 			t.Fatalf("expected error to be ignored, got: %v", err)
 		}
