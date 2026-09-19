@@ -35,7 +35,7 @@ func logsMicrosandbox(ctx context.Context, params LogsParams) error {
 		if err != nil {
 			return err
 		}
-		defer stream.Close()
+		defer func() { _ = stream.Close() }()
 		for {
 			entry, err := stream.Recv(ctx)
 			if ctx.Err() != nil {

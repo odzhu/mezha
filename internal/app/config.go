@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -419,59 +418,6 @@ run: []
   # - apk add --no-cache git
   # - ["git", "config", "--global", "init.defaultBranch", "main"]
 `
-}
-
-func resolveFilePatterns(baseDir string, patterns []string) ([]string, error) {
-	var resolved []string
-	seen := make(map[string]struct{})
-
-	for _, pattern := range patterns {
-		pattern = strings.TrimSpace(pattern)
-		if pattern == "" {
-			continue
-		}
-
-		var fullPattern string
-		if filepath.IsAbs(pattern) {
-			fullPattern = pattern
-		} else {
-			fullPattern = filepath.Join(baseDir, pattern)
-		}
-
-		if strings.ContainsAny(pattern, "*?[]") {
-			matches, err := filepath.Glob(fullPattern)
-			if err != nil {
-				return nil, fmt.Errorf("expand pattern %q: %w", pattern, err)
-			}
-			for _, match := range matches {
-				info, err := os.Stat(match)
-				if err == nil && !info.IsDir() {
-					if _, ok := seen[match]; !ok {
-						seen[match] = struct{}{}
-						resolved = append(resolved, match)
-					}
-				}
-			}
-		} else {
-			info, err := os.Stat(fullPattern)
-			if err != nil {
-				return nil, fmt.Errorf("read file %q: %w", pattern, err)
-			}
-			if info.IsDir() {
-				return nil, fmt.Errorf(
-					"path %q is a directory, expected a file or glob pattern",
-					pattern,
-				)
-			}
-			if _, ok := seen[fullPattern]; !ok {
-				seen[fullPattern] = struct{}{}
-				resolved = append(resolved, fullPattern)
-			}
-		}
-	}
-
-	sort.Strings(resolved)
-	return resolved, nil
 }
 
 func expandEnvValue(val string) string {

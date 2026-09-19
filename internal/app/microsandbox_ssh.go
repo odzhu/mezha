@@ -23,11 +23,11 @@ func microsandboxSSHProxy(ctx context.Context, name string) error {
 	if err != nil {
 		return fmt.Errorf("connect to Microsandbox %q: %w", name, err)
 	}
-	defer sandbox.Detach(context.Background())
+	defer func() { _ = sandbox.Detach(context.Background()) }()
 	server, err := sandbox.SSH().PrepareServer(ctx)
 	if err != nil {
 		return fmt.Errorf("prepare Microsandbox SSH server: %w", err)
 	}
-	defer server.Close(context.Background())
+	defer func() { _ = server.Close(context.Background()) }()
 	return server.ServeConnection(ctx)
 }

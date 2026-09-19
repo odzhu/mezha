@@ -19,22 +19,6 @@ type dirtyPaths struct {
 	delete []string
 }
 
-func uploadDirtyRepoToSandbox(
-	ctx context.Context,
-	sdk interface{},
-	sandboxName, remoteRepoDir, repoRoot string,
-) error {
-	return nil
-}
-
-func downloadDirtyRepoFromSandbox(
-	ctx context.Context,
-	sdk interface{},
-	sandboxName, remoteRepoDir, repoRoot string,
-) error {
-	return nil
-}
-
 // trackedDirtyPaths returns paths whose working-tree state differs from HEAD.
 func trackedDirtyPaths(ctx context.Context, repoRoot string) (dirtyPaths, error) {
 	output, err := gitOutput(ctx, repoRoot, "diff", "--name-status", "-z", "HEAD")

@@ -68,6 +68,9 @@ func downloadPathMicrosandbox(
 	if targetDir {
 		localPath = filepath.Join(localPath, filepath.Base(filepath.Clean(remote)))
 	}
+	if err := assertLocalPathIsSafe(rc.InvocationCWD, localPath); err != nil {
+		return err
+	}
 	fmt.Printf("Downloading %s from Microsandbox...\n", remote)
 	return nativeDownload(ctx, sandbox, filepath.ToSlash(remote), localPath)
 }
