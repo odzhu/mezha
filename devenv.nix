@@ -3,6 +3,7 @@
 {
   # https://devenv.sh/basics/
   env.GREET = "devenv";
+  env.CGO_ENABLED = "1";
 
 
   # https://devenv.sh/packages/

@@ -68,7 +68,7 @@ func sandboxGitStatusMicrosandbox(
 	if err != nil {
 		return fmt.Errorf("connect to Microsandbox %q: %w", params.SandboxName, err)
 	}
-	defer sandbox.Detach(context.Background())
+	defer func() { _ = sandbox.Detach(context.Background()) }()
 	out, err := sandbox.Exec(
 		ctx,
 		"sh",

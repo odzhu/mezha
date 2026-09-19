@@ -316,11 +316,7 @@ func newUploadCommand() *cli.Command {
 				return err
 			}
 			if cmd.NArg() == 0 {
-				return Upload(ctx, rc, UploadParams{
-					SandboxName:   params.SandboxName,
-					RemoteRepoDir: params.RemoteRepoDir,
-					Recreate:      params.Recreate,
-				})
+				return Upload(ctx, rc, UploadParams(params))
 			}
 			remotePath := ""
 			if cmd.NArg() == 2 {

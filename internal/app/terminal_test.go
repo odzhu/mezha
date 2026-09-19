@@ -31,7 +31,7 @@ func TestMakeRawTerminalWithPtmx(t *testing.T) {
 	if err != nil {
 		t.Skipf("cannot open /dev/ptmx: %v", err)
 	}
-	defer ptmx.Close()
+	defer func() { _ = ptmx.Close() }()
 
 	cols, rows := terminalSize(int(ptmx.Fd()))
 	if cols == 0 || rows == 0 {

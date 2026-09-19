@@ -47,7 +47,7 @@ func runMicrosandbox(
 	if err != nil {
 		return fmt.Errorf("start Microsandbox %q: %w", params.SandboxName, err)
 	}
-	defer sandbox.Detach(context.Background())
+	defer func() { _ = sandbox.Detach(context.Background()) }()
 
 	if !sandboxExisted {
 		if err := applyCreateConfig(ctx, sandbox, cfg.Create); err != nil {
