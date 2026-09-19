@@ -120,7 +120,10 @@ func slugify(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	const hashLength = 7
 	prefixLength := maxSandboxNameLength - hashLength - 1
-	return strings.TrimRight(value[:prefixLength], "-") + "-" + fmt.Sprintf("%x", sum[:])[:hashLength]
+	return strings.TrimRight(
+		value[:prefixLength],
+		"-",
+	) + "-" + fmt.Sprintf("%x", sum[:])[:hashLength]
 }
 
 // assertLocalPathIsSafe verifies that target is within root and that resolving
@@ -130,7 +133,8 @@ func assertLocalPathIsSafe(root, target string) error {
 	root = filepath.Clean(root)
 	target = filepath.Clean(target)
 	rel, err := filepath.Rel(root, target)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) ||
+		filepath.IsAbs(rel) {
 		return fmt.Errorf("path is outside the working directory: %s", target)
 	}
 

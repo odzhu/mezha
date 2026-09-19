@@ -9,7 +9,12 @@ import (
 	"path/filepath"
 )
 
-func uploadPathMicrosandbox(ctx context.Context, rc RepoContext, params TransferParams, localPath, remotePath string) error {
+func uploadPathMicrosandbox(
+	ctx context.Context,
+	rc RepoContext,
+	params TransferParams,
+	localPath, remotePath string,
+) error {
 	localPath = resolveLocalTransferPath(rc.InvocationCWD, localPath)
 	info, err := os.Lstat(localPath)
 	if err != nil {
@@ -41,7 +46,12 @@ func uploadPathMicrosandbox(ctx context.Context, rc RepoContext, params Transfer
 	return nativeUpload(ctx, sandbox, localPath, filepath.ToSlash(remote))
 }
 
-func downloadPathMicrosandbox(ctx context.Context, rc RepoContext, params TransferParams, remotePath, localPath string) error {
+func downloadPathMicrosandbox(
+	ctx context.Context,
+	rc RepoContext,
+	params TransferParams,
+	remotePath, localPath string,
+) error {
 	sandbox, _, closeSandbox, err := openMicrosandbox(ctx, rc, params, false)
 	if err != nil {
 		return err

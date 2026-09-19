@@ -58,10 +58,21 @@ func Run(ctx context.Context, name string, args []string, opts RunOptions) ([]by
 }
 
 func Output(ctx context.Context, name string, args ...string) ([]byte, error) {
-	stdout, stderr, err := Run(ctx, name, args, RunOptions{CaptureStdout: true, CaptureStderr: true})
+	stdout, stderr, err := Run(
+		ctx,
+		name,
+		args,
+		RunOptions{CaptureStdout: true, CaptureStderr: true},
+	)
 	if err != nil {
 		if len(stderr) > 0 {
-			return nil, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(string(stderr)))
+			return nil, fmt.Errorf(
+				"%s %s: %w: %s",
+				name,
+				strings.Join(args, " "),
+				err,
+				strings.TrimSpace(string(stderr)),
+			)
 		}
 		return nil, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
 	}

@@ -28,7 +28,10 @@ func logsMicrosandbox(ctx context.Context, params LogsParams) error {
 		since = time.Now().Add(-params.Since)
 	}
 	if params.Follow {
-		stream, err := handle.LogStream(ctx, msb.LogStreamOptions{Sources: sources, Since: since, Follow: true})
+		stream, err := handle.LogStream(
+			ctx,
+			msb.LogStreamOptions{Sources: sources, Since: since, Follow: true},
+		)
 		if err != nil {
 			return err
 		}
@@ -47,7 +50,10 @@ func logsMicrosandbox(ctx context.Context, params LogsParams) error {
 			printMicrosandboxLog(*entry)
 		}
 	}
-	entries, err := handle.Logs(ctx, msb.LogOptions{Tail: uint64(params.Tail), Since: since, Sources: sources})
+	entries, err := handle.Logs(
+		ctx,
+		msb.LogOptions{Tail: uint64(params.Tail), Since: since, Sources: sources},
+	)
 	if err != nil {
 		return err
 	}
@@ -81,7 +87,12 @@ func microsandboxLogSources(values []string) ([]msb.LogSource, error) {
 	return result, nil
 }
 func printMicrosandboxLog(entry msb.LogEntry) {
-	fmt.Printf("%s %s: %s", entry.Timestamp.Local().Format(time.RFC3339), entry.Source, entry.Text())
+	fmt.Printf(
+		"%s %s: %s",
+		entry.Timestamp.Local().Format(time.RFC3339),
+		entry.Source,
+		entry.Text(),
+	)
 	if !strings.HasSuffix(entry.Text(), "\n") {
 		fmt.Println()
 	}

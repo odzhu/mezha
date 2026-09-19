@@ -24,13 +24,24 @@ func Upload(ctx context.Context, rc RepoContext, params UploadParams) error {
 		if err != nil {
 			return err
 		}
-		return uploadDirtyRepoToMicrosandbox(ctx, params.SandboxName, params.RemoteRepoDir, rc.RepoRoot, dirty)
+		return uploadDirtyRepoToMicrosandbox(
+			ctx,
+			params.SandboxName,
+			params.RemoteRepoDir,
+			rc.RepoRoot,
+			dirty,
+		)
 	}
 	return fmt.Errorf("microsandbox configuration missing in mezha.yaml")
 }
 func Download(ctx context.Context, rc RepoContext, params DownloadParams) error {
 	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
-		return downloadDirtyRepoFromMicrosandbox(ctx, params.SandboxName, params.RemoteRepoDir, rc.RepoRoot)
+		return downloadDirtyRepoFromMicrosandbox(
+			ctx,
+			params.SandboxName,
+			params.RemoteRepoDir,
+			rc.RepoRoot,
+		)
 	}
 	return fmt.Errorf("microsandbox configuration missing in mezha.yaml")
 }

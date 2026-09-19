@@ -11,7 +11,13 @@ import (
 	msb "github.com/superradcompany/microsandbox/sdk/go"
 )
 
-func publishBranchToMicrosandbox(ctx context.Context, sandbox *msb.Sandbox, rc RepoContext, name, remoteDir string, replace bool) error {
+func publishBranchToMicrosandbox(
+	ctx context.Context,
+	sandbox *msb.Sandbox,
+	rc RepoContext,
+	name, remoteDir string,
+	replace bool,
+) error {
 	branch, err := currentBranch(ctx, rc.RepoRoot)
 	if err != nil {
 		return err
@@ -35,18 +41,29 @@ git -C "$repo" config user.email "$git_email"
 # old custom hook because it overrides updateInstead and prevented initial sync.
 rm -f "$repo/.git/hooks/push-to-checkout"
 if ! git -C "$repo" rev-parse --verify HEAD >/dev/null 2>&1; then git -C "$repo" symbolic-ref HEAD "refs/heads/$branch"; fi`
-	out, err := sandbox.Exec(ctx, "sh", []string{"-lc", script, "_", remoteDir, branch, userName, userEmail})
+	out, err := sandbox.Exec(
+		ctx,
+		"sh",
+		[]string{"-lc", script, "_", remoteDir, branch, userName, userEmail},
+	)
 	if err != nil {
 		return fmt.Errorf("initialize Microsandbox git repository: %w", err)
 	}
 	if !out.Success() {
-		return fmt.Errorf("initialize Microsandbox git repository: %s", strings.TrimSpace(out.Stderr()))
+		return fmt.Errorf(
+			"initialize Microsandbox git repository: %s",
+			strings.TrimSpace(out.Stderr()),
+		)
 	}
 	host, err := ensureSandboxSSHConfig("", "", name)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("ssh://root@%s//%s/.git", host, strings.TrimPrefix(filepath.ToSlash(remoteDir), "/"))
+	url := fmt.Sprintf(
+		"ssh://root@%s//%s/.git",
+		host,
+		strings.TrimPrefix(filepath.ToSlash(remoteDir), "/"),
+	)
 	if err := setSandboxGitRemote(ctx, rc.RepoRoot, name, url, replace); err != nil {
 		return err
 	}
