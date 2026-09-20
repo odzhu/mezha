@@ -136,7 +136,7 @@ run: []
 `mezha provision` performs this initialization and starts the configured core
 devenv services, but does not publish, upload, or otherwise synchronize repository
 data. Mezha seeds the complete `/nix` directory into the shared `state` volume, which
-is mounted at `/nix`. It then symlinks `/root`, `/sandbox`,
+is mounted at `/nix`. It then symlinks `/home`, `/root`, `/sandbox`,
 `/var/lib/docker`, and `/var/lib/rancher/k3s` into that volume before any
 initialization command or devenv shell runs. Mezha defaults `GOPATH` to `/sandbox/go` unless it is
 explicitly configured in `microsandbox.env`. The default `provision.add` installs
@@ -156,7 +156,7 @@ k3s uses Docker as its container runtime, so Docker-built images are immediately
 available to Kubernetes. Named volume names are automatically prefixed with the
 sandbox name, so each sandbox receives its own volume. Volumes are retained when
 the sandbox is recreated or destroyed; this includes the Nix store, the complete
-`/sandbox` workspace, and `/root` with its caches and configuration, avoiding
+`/sandbox` workspace, `/home`, and `/root` with their caches and configuration, avoiding
 repeated downloads and evaluation after
 `mezha
 run --recreate`. Use `--volumes-flush` with
