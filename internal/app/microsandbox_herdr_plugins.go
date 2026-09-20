@@ -42,6 +42,9 @@ func syncHerdrPlugins(ctx context.Context, sandbox *msb.Sandbox) error {
 		return fmt.Errorf("parse local Herdr plugins: %w", err)
 	}
 	for _, plugin := range list.Result.Plugins {
+		if plugin.ID == herdrPluginID {
+			continue
+		}
 		if err := syncHerdrPlugin(ctx, sandbox, plugin); err != nil {
 			return err
 		}

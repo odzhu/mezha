@@ -1,0 +1,88 @@
+id = "dev.mezha"
+name = "Mezha"
+version = "0.1.0"
+min_herdr_version = "0.9.1"
+description = "Manage Mezha sandboxes from Herdr."
+platforms = ["linux", "macos"]
+
+[[actions]]
+id = "run"
+title = "Open sandbox shell"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "dispatch", "run"]
+
+[[actions]]
+id = "provision"
+title = "Provision sandbox"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "provision"]
+
+[[actions]]
+id = "start"
+title = "Start sandbox"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "start"]
+
+[[actions]]
+id = "stop"
+title = "Stop sandbox"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "stop"]
+
+[[actions]]
+id = "status"
+title = "Show sandbox status"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "dispatch", "status"]
+
+[[actions]]
+id = "upload"
+title = "Upload changes"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "upload"]
+
+[[actions]]
+id = "download"
+title = "Download changes"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "download"]
+
+[[actions]]
+id = "pull"
+title = "Pull changes from sandbox"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "pull"]
+
+[[actions]]
+id = "push"
+title = "Push changes to sandbox"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "push"]
+
+[[actions]]
+id = "destroy"
+title = "Destroy sandbox"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "dispatch", "destroy"]
+
+[[panes]]
+id = "run"
+title = "Mezha sandbox"
+placement = "tab"
+command = ["mezha", "herdr", "execute", "run"]
+
+[[panes]]
+id = "status"
+title = "Mezha status"
+placement = "popup"
+width = "80%"
+height = "80%"
+command = ["mezha", "herdr", "execute", "--wait", "status"]
+
+[[panes]]
+id = "destroy"
+title = "Destroy Mezha sandbox"
+placement = "popup"
+width = "70%"
+height = 20
+command = ["mezha", "herdr", "execute", "destroy"]

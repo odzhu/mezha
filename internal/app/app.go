@@ -95,6 +95,7 @@ func New() *cli.Command {
 			newRemoteCommand(),
 			newLogsCommand(),
 			newSSHProxyCommand(),
+			newHerdrPluginCommand(),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return cli.ShowRootCommandHelp(cmd)

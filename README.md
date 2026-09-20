@@ -199,6 +199,25 @@ plugin builds; add other plugin-specific build tools there. `mezha destroy`
 removes the corresponding saved Herdr machine profile. Herdr
 is optional: if its command is not on `PATH`, Mezha skips both operations.
 
+### Herdr plugin
+
+The plugin in `herdr` exposes `run`, `provision`, `start`, `stop`,
+`status`, `upload`, `download`, `pull`, `push`, and `destroy` as Herdr actions.
+It does not install keybindings; bind the qualified `dev.mezha.<action>` names
+in your Herdr configuration as desired.
+
+Install it from GitHub:
+
+```bash
+herdr plugin install odzhu/mezha/herdr
+```
+
+The `mezha` executable must be available on the environment inherited by Herdr.
+The run action opens the interactive sandbox shell in a new tab, while status
+and destroy use popups. Other operations run in the background and report their
+result through a Herdr notification. See `herdr/README.md` for local
+development instructions and the complete action list.
+
 ## Environment variables
 
 - `SANDBOX_NAME`
