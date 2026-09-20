@@ -15,6 +15,8 @@ import (
 const rootUsageText = `Usage:
   mezha init [options]
   mezha run [options] [-- command...]
+  mezha start [options]
+  mezha stop [options]
   mezha destroy [options]
   mezha upload [options] [local-path] [remote-path]
   mezha download [options] [remote-path] [local-path]
@@ -45,6 +47,8 @@ Examples:
   mezha run --tty
   mezha run -- ls -la
   mezha run -- bash -lc 'git status && pwd'
+  mezha stop
+  mezha start
   mezha destroy
   mezha destroy --force
   mezha upload # synchronize local dirty changes and untracked files
@@ -75,6 +79,8 @@ func New() *cli.Command {
 		Commands: []*cli.Command{
 			newInitCommand(),
 			newRunCommand(),
+			newStartCommand(),
+			newStopCommand(),
 			newDestroyCommand(),
 			newUploadCommand(),
 			newDownloadCommand(),
@@ -231,6 +237,41 @@ func newRunCommand() *cli.Command {
 			}
 
 			return Run(ctx, rc, params)
+		},
+	}
+}
+
+func newStartCommand() *cli.Command {
+	return newLifecycleCommand("start", "Start an existing Microsandbox", Start)
+}
+
+func newStopCommand() *cli.Command {
+	return newLifecycleCommand("stop", "Stop the Microsandbox without deleting it", Stop)
+}
+
+func newLifecycleCommand(
+	name, usage string,
+	action func(context.Context, LifecycleParams) error,
+) *cli.Command {
+	return &cli.Command{
+		Name:  name,
+		Usage: usage,
+		Flags: []cli.Flag{sandboxFlag()},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			rc, err := ResolveRepoContext(ctx)
+			if err != nil {
+				return err
+			}
+			cfg, _, err := LoadConfig(rc.RepoRoot)
+			if err != nil {
+				return fmt.Errorf("load mezha configuration: %w", err)
+			}
+			if cfg == nil {
+				cfg = &MezhaConfig{}
+			}
+			return action(ctx, LifecycleParams{
+				SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
+			})
 		},
 	}
 }

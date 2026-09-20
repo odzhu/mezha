@@ -63,3 +63,7 @@ type DestroyParams struct {
 	Force        bool
 	VolumesFlush bool
 }
+
+type LifecycleParams struct {
+	SandboxName string
+}

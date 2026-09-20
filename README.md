@@ -5,7 +5,7 @@ Declarative agent sandboxes powered by Microsandbox.
 ## Features
 
 - project configuration in `mezha.yaml`
-- create, run, rebuild, and destroy Microsandbox sandboxes
+- create, start, stop, run, rebuild, and destroy Microsandbox sandboxes
 - synchronize committed changes through a sandbox Git remote
 - upload and download dirty working-tree changes or selected files
 - use the native `ghcr.io/cachix/devenv/devenv:latest` image for sandbox tooling
@@ -31,6 +31,8 @@ make build
 ```bash
 mezha init [options]
 mezha run [options] [-- command...]
+mezha start [options]
+mezha stop [options]
 mezha destroy [options]
 mezha upload [options] [local-path] [remote-path]
 mezha download [options] [remote-path] [local-path]
@@ -54,6 +56,9 @@ mezha upload
 mezha download reports/result.json ./result.json
 mezha pull
 mezha push
+# Stop the sandbox while retaining it, then start it again later.
+mezha stop
+mezha start
 mezha destroy
 # Remove the sandbox and its retained named volumes.
 mezha destroy --volumes-flush
