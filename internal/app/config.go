@@ -17,7 +17,7 @@ type MezhaConfig struct {
 	Microsandbox *MicrosandboxSpec `yaml:"microsandbox,omitempty"`
 	Sandbox      SandboxConfig     `yaml:"sandbox,omitempty"`
 	Files        FilesConfig       `yaml:"files,omitempty"`
-	Create       CreateConfig      `yaml:"create,omitempty"`
+	Provision    ProvisionConfig   `yaml:"provision,omitempty"`
 	Run          []RunDirective    `yaml:"run,omitempty"`
 	Kubernetes   *bool             `yaml:"kubernetes,omitempty"`
 	Docker       DockerConfig      `yaml:"docker,omitempty"`
@@ -36,8 +36,8 @@ type FilesConfig struct {
 	Add []FileAdd `yaml:"add,omitempty"`
 }
 
-// CreateConfig describes initialization applied only to a new Microsandbox.
-type CreateConfig struct {
+// ProvisionConfig describes initialization applied only to a new Microsandbox.
+type ProvisionConfig struct {
 	Add []FileAdd      `yaml:"add,omitempty"`
 	Run []RunDirective `yaml:"run,omitempty"`
 }
@@ -316,7 +316,7 @@ func resolveConfigPaths(config map[string]any, baseDir string) {
 		}
 	}
 	resolveAdds("files")
-	resolveAdds("create")
+	resolveAdds("provision")
 }
 
 func resolveConfigPath(baseDir, value string) string {
@@ -399,8 +399,8 @@ sandbox:
   herdr: false
   kubernetes: true
 
-# Initialization applied only when a new sandbox is created.
-create:
+# Initialization applied only when a new sandbox is provisioned.
+provision:
   add:
     - [".mezha/devenv.nix", "/sandbox/devenv.nix"]
 

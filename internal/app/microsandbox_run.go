@@ -64,7 +64,7 @@ func runMicrosandbox(
 		return err
 	}
 	if !sandboxExisted {
-		if err := applyCreateConfig(ctx, sandbox, cfg.Create); err != nil {
+		if err := applyProvisionConfig(ctx, sandbox, cfg.Provision); err != nil {
 			return err
 		}
 	}
@@ -294,26 +294,26 @@ func remoteCommand(command []string, noLoginShell bool) (string, []string) {
 	return "bash", args
 }
 
-// applyCreateConfig applies declarative initialization only after a sandbox
+// applyProvisionConfig applies declarative initialization only after a sandbox
 // has been created. It is deliberately not repeated for existing sandboxes.
-func applyCreateConfig(ctx context.Context, sandbox *msb.Sandbox, create CreateConfig) error {
-	for i, add := range create.Add {
+func applyProvisionConfig(ctx context.Context, sandbox *msb.Sandbox, provision ProvisionConfig) error {
+	for i, add := range provision.Add {
 		if add.Source == "" || add.Target == "" {
-			return fmt.Errorf("create.add entry %d requires source and target", i)
+			return fmt.Errorf("provision.add entry %d requires source and target", i)
 		}
 		target := add.Target
 		info, err := os.Stat(add.Source)
 		if err != nil {
-			return fmt.Errorf("create.add entry %d: %w", i, err)
+			return fmt.Errorf("provision.add entry %d: %w", i, err)
 		}
 		if !info.IsDir() && strings.HasSuffix(target, "/") {
 			target = filepath.ToSlash(filepath.Join(target, filepath.Base(add.Source)))
 		}
 		if err := nativeUpload(ctx, sandbox, add.Source, target); err != nil {
-			return fmt.Errorf("create.add entry %d: %w", i, err)
+			return fmt.Errorf("provision.add entry %d: %w", i, err)
 		}
 	}
-	for i, directive := range create.Run {
+	for i, directive := range provision.Run {
 		var (
 			output *msb.ExecOutput
 			err    error
@@ -324,12 +324,12 @@ func applyCreateConfig(ctx context.Context, sandbox *msb.Sandbox, create CreateC
 			output, err = sandbox.Exec(ctx, directive.Command[0], directive.Command[1:])
 		}
 		if err != nil {
-			return fmt.Errorf("create.run directive %d: %w", i, err)
+			return fmt.Errorf("provision.run directive %d: %w", i, err)
 		}
 		fmt.Print(output.Stdout())
 		fmt.Fprint(os.Stderr, output.Stderr())
 		if !output.Success() {
-			return fmt.Errorf("create.run directive %d exited with code %d", i, output.ExitCode())
+			return fmt.Errorf("provision.run directive %d exited with code %d", i, output.ExitCode())
 		}
 	}
 	return nil

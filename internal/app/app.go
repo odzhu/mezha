@@ -15,6 +15,7 @@ import (
 const rootUsageText = `Usage:
   mezha init [options]
   mezha run [options] [-- command...]
+  mezha provision [options]
   mezha start [options]
   mezha stop [options]
   mezha destroy [options]
@@ -43,6 +44,9 @@ Examples:
   mezha init --home
   mezha run
   mezha run --recreate
+  mezha provision
+  mezha provision --herdr true
+  mezha provision --sandbox shared-dev
   mezha run --sandbox shared-dev
   mezha run --tty
   mezha run -- ls -la
@@ -79,6 +83,7 @@ func New() *cli.Command {
 		Commands: []*cli.Command{
 			newInitCommand(),
 			newRunCommand(),
+			newProvisionCommand(),
 			newStartCommand(),
 			newStopCommand(),
 			newDestroyCommand(),
@@ -237,6 +242,77 @@ func newRunCommand() *cli.Command {
 			}
 
 			return Run(ctx, rc, params)
+		},
+	}
+}
+
+func newProvisionCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "provision",
+		Usage: "Create and provision a sandbox without synchronizing repository data",
+		Flags: []cli.Flag{
+			sandboxFlag(),
+			&cli.StringFlag{Name: "remote-dir", Usage: "Destination directory in the sandbox"},
+			&cli.StringFlag{
+				Name:  "herdr",
+				Value: "false",
+				Usage: "Register the sandbox as a Herdr machine when Herdr is installed (true or false)",
+			},
+			&cli.BoolFlag{
+				Name:  "recreate",
+				Usage: "Delete and recreate the sandbox if it already exists",
+			},
+			&cli.StringFlag{
+				Name:  "volumes-flush",
+				Value: "false",
+				Usage: "Delete persistent sandbox volumes when recreating (true or false)",
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			rc, err := ResolveRepoContext(ctx)
+			if err != nil {
+				return err
+			}
+			cfg, _, err := LoadConfig(rc.RepoRoot)
+			if err != nil {
+				return fmt.Errorf("load mezha configuration: %w", err)
+			}
+			if cfg == nil {
+				cfg = &MezhaConfig{}
+			}
+			herdr := cfg.Sandbox.Herdr
+			if cmd.IsSet("herdr") {
+				herdr, err = strconv.ParseBool(cmd.String("herdr"))
+				if err != nil {
+					return fmt.Errorf("parse --herdr: %w", err)
+				}
+			}
+			volumesFlush, err := strconv.ParseBool(cmd.String("volumes-flush"))
+			if err != nil {
+				return fmt.Errorf("parse --volumes-flush: %w", err)
+			}
+			recreate := resolveBoolParam(cmd, "recreate", cfg.Sandbox.Recreate)
+			if volumesFlush && !recreate {
+				return errors.New("--volumes-flush requires --recreate")
+			}
+			kubernetes := cfg.Sandbox.Kubernetes
+			if cfg.Kubernetes != nil {
+				kubernetes = *cfg.Kubernetes
+			}
+			return Provision(ctx, rc, ProvisionParams{
+				SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
+				RemoteRepoDir: resolveParam(
+					cmd,
+					"remote-dir",
+					os.Getenv("MICROSANDBOX_REMOTE_REPO_DIR"),
+					cfg.Sandbox.RemoteDir,
+					filepath.ToSlash(filepath.Join("/sandbox", rc.RepoName)),
+				),
+				Recreate:     recreate,
+				Kubernetes:   kubernetes,
+				Herdr:        herdr,
+				VolumesFlush: volumesFlush,
+			})
 		},
 	}
 }

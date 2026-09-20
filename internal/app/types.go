@@ -67,3 +67,12 @@ type DestroyParams struct {
 type LifecycleParams struct {
 	SandboxName string
 }
+
+type ProvisionParams struct {
+	SandboxName   string
+	RemoteRepoDir string
+	Recreate      bool
+	Kubernetes    bool
+	Herdr         bool
+	VolumesFlush  bool
+}
