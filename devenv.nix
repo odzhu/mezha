@@ -75,4 +75,12 @@
     language = "system";
     pass_filenames = false;
   };
+
+  # Install hooks only when this checkout does not yet have a pre-commit hook.
+  tasks."devenv:git-hooks:install".status = ''
+    test -x "$(git rev-parse --git-path hooks/pre-commit)"
+  '';
+
+  # Hooks run on git commit, not whenever the devenv shell is entered.
+  tasks."devenv:git-hooks:run".exec = lib.mkForce null;
 }
