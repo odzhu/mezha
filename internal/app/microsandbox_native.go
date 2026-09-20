@@ -101,7 +101,8 @@ func ensureStateVolume(
 set -o pipefail
 rm -rf /mnt/mezha/* /mnt/mezha/.[!.]* /mnt/mezha/..?*
 tar -C /nix -cf - . | tar -C /mnt/mezha -xpf -
-mkdir -p /mnt/mezha/mezha/root /mnt/mezha/mezha/sandbox /mnt/mezha/mezha/docker /mnt/mezha/mezha/k3s
+mkdir -p /mnt/mezha/mezha/root /mnt/mezha/mezha/home /mnt/mezha/mezha/sandbox /mnt/mezha/mezha/docker /mnt/mezha/mezha/k3s
+cp -a /home/. /mnt/mezha/mezha/home/
 touch /mnt/mezha/.mezha-state-v2
 sync`})
 	if err != nil {
@@ -172,6 +173,12 @@ persist_link() {
   rm -rf "$target"
   ln -s "$source" "$target"
 }
+home_source=/nix/mezha/home
+mkdir -p "$home_source"
+if [ -d /home ] && [ -z "$(find "$home_source" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+  cp -a /home/. "$home_source"/
+fi
+persist_link /home "$home_source"
 persist_link /sandbox /nix/mezha/sandbox
 persist_link /var/lib/docker /nix/mezha/docker
 persist_link /var/lib/rancher/k3s /nix/mezha/k3s

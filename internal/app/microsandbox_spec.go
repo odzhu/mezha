@@ -238,7 +238,7 @@ func (s MicrosandboxSpec) networkConfig() (*msb.NetworkConfig, error) {
 
 func persistentSymlinkTarget(target string) bool {
 	switch filepath.Clean(target) {
-	case "/nix/store", "/root", "/root/.cache/go-build", "/root/.cache/nix",
+	case "/nix/store", "/home", "/root", "/root/.cache/go-build", "/root/.cache/nix",
 		"/sandbox", "/sandbox/.devenv", "/var/lib/docker", "/var/lib/rancher/k3s":
 		return true
 	default:

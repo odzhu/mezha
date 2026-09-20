@@ -5,7 +5,7 @@ Declarative agent sandboxes powered by Microsandbox.
 ## Features
 
 - project configuration in `mezha.yaml`
-- create, run, rebuild, and destroy Microsandbox sandboxes
+- create, provision, start, stop, run, rebuild, and destroy Microsandbox sandboxes
 - synchronize committed changes through a sandbox Git remote
 - upload and download dirty working-tree changes or selected files
 - use the native `ghcr.io/cachix/devenv/devenv:latest` image for sandbox tooling
@@ -31,6 +31,9 @@ make build
 ```bash
 mezha init [options]
 mezha run [options] [-- command...]
+mezha provision [options]
+mezha start [options]
+mezha stop [options]
 mezha destroy [options]
 mezha upload [options] [local-path] [remote-path]
 mezha download [options] [remote-path] [local-path]
@@ -48,12 +51,18 @@ mezha init
 mezha run
 mezha run -- git status
 mezha run --herdr true -- git status
+# Create the sandbox and start its core services without synchronizing the repository.
+mezha provision
+mezha provision --herdr true
 # Reuse one sandbox for this and other projects.
 mezha run --sandbox shared-dev -- git status
 mezha upload
 mezha download reports/result.json ./result.json
 mezha pull
 mezha push
+# Stop the sandbox while retaining it, then start it again later.
+mezha stop
+mezha start
 mezha destroy
 # Remove the sandbox and its retained named volumes.
 mezha destroy --volumes-flush
@@ -75,7 +84,7 @@ at `~/.mezha/mezha.yaml`. Mezha always uses
 `ghcr.io/cachix/devenv/devenv:latest` and runs it as UID 0: Docker and k3s
 require it, and Microsandbox cannot resolve the native image's `1000:100` user
 declaration. Mezha uploads its managed devenv configuration during sandbox
-creation. Relative paths in `create.add` are resolved relative to the
+creation. Relative paths in `provision.add` are resolved relative to the
 configuration file.
 
 ```yaml
@@ -98,10 +107,14 @@ microsandbox:
   #       direction: egress
   #       destination: public
 
-docker:
-  # Docker is supplied by the Mezha-managed devenv environment.
-  # Start dockerd when the sandbox is created or reused.
-  enabled: true
+services:
+  docker:
+    # Docker is supplied by the Mezha-managed devenv environment.
+    # Start dockerd when the sandbox is created or reused.
+    enabled: true
+  k3s:
+    # Run a k3s server alongside each Mezha session.
+    enabled: true
 
 sandbox:
   # Default sandbox selection; --sandbox overrides it.
@@ -110,10 +123,8 @@ sandbox:
   # policy_advisor: true
   # Register the sandbox with Herdr and synchronize local plugins.
   herdr: false
-  # Run a k3s server alongside each Mezha session.
-  kubernetes: true
 
-create:
+provision:
   # This devenv.nix declaratively provides Docker, k3s, and kubectl.
   add:
     - [.mezha/devenv.nix, /sandbox/devenv.nix]
@@ -121,12 +132,14 @@ create:
 run: []
 ```
 
-`create.add` and `create.run` are applied only when a sandbox is first created.
-Mezha seeds the complete `/nix` directory into the shared `state` volume, which
-is mounted at `/nix`. It then symlinks `/root`, `/sandbox`,
+`provision.add` and `provision.run` are applied only when a sandbox is first created.
+`mezha provision` performs this initialization and starts the configured core
+devenv services, but does not publish, upload, or otherwise synchronize repository
+data. Mezha seeds the complete `/nix` directory into the shared `state` volume, which
+is mounted at `/nix`. It then symlinks `/home`, `/root`, `/sandbox`,
 `/var/lib/docker`, and `/var/lib/rancher/k3s` into that volume before any
 initialization command or devenv shell runs. Mezha defaults `GOPATH` to `/sandbox/go` unless it is
-explicitly configured in `microsandbox.env`. The default `create.add` installs
+explicitly configured in `microsandbox.env`. The default `provision.add` installs
 Mezha's `.mezha/devenv.nix` at
 `/sandbox/devenv.nix`. It uses devenv `packages` for Docker, k3s, and kubectl
 and `devenv:enterShell` tasks to start Docker and k3s, wait for readiness, and
@@ -134,16 +147,16 @@ configure `kubectl`. Mezha enters that environment for every requested command
 or interactive session. Update that file and run `mezha run --recreate` to
 apply a changed managed environment.
 
-Set `docker.enabled: true` to start the Docker daemon before configured or
-requested commands. `sandbox.kubernetes` defaults to `true`, so Mezha runs k3s
-alongside each command or interactive session and configures `kubectl` to use
-the local cluster. Set it to `false` to disable k3s. Docker images, containers,
+Set `services.docker.enabled: true` to start the Docker daemon before configured
+or requested commands. Set `services.k3s.enabled: true` to run k3s alongside
+each command or interactive session and configure `kubectl` to use the local
+cluster. Set it to `false` to disable k3s. Docker images, containers,
 and volumes plus k3s cluster state are stored in the shared persistent volume.
 k3s uses Docker as its container runtime, so Docker-built images are immediately
 available to Kubernetes. Named volume names are automatically prefixed with the
 sandbox name, so each sandbox receives its own volume. Volumes are retained when
 the sandbox is recreated or destroyed; this includes the Nix store, the complete
-`/sandbox` workspace, and `/root` with its caches and configuration, avoiding
+`/sandbox` workspace, `/home`, and `/root` with their caches and configuration, avoiding
 repeated downloads and evaluation after
 `mezha
 run --recreate`. Use `--volumes-flush` with
@@ -155,9 +168,11 @@ shell form; YAML sequences use exec form.
 ## Herdr integration
 
 When the local `herdr` command is installed, register the sandbox as a saved
-Herdr SSH machine with:
+Herdr SSH machine while provisioning or running it with:
 
 ```bash
+mezha provision --herdr true
+# Or provision, synchronize the repository, and open a session.
 mezha run --herdr true
 ```
 
@@ -169,8 +184,8 @@ sandbox:
   herdr: true
 ```
 
-The default is `false`; an explicit `--herdr true` or `--herdr false` overrides
-the configured value for that invocation.
+The default is `false`; an explicit `--herdr true` or `--herdr false` on
+`provision` or `run` overrides the configured value for that invocation.
 
 The registration is idempotent and uses Mezha's sandbox SSH proxy. Mezha
 installs the matching Linux Herdr release in the sandbox before registration,

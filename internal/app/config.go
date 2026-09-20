@@ -16,15 +16,20 @@ type MezhaConfig struct {
 	Version      uint32            `yaml:"version,omitempty"`
 	Microsandbox *MicrosandboxSpec `yaml:"microsandbox,omitempty"`
 	Sandbox      SandboxConfig     `yaml:"sandbox,omitempty"`
+	Services     ServicesConfig    `yaml:"services,omitempty"`
 	Files        FilesConfig       `yaml:"files,omitempty"`
-	Create       CreateConfig      `yaml:"create,omitempty"`
+	Provision    ProvisionConfig   `yaml:"provision,omitempty"`
 	Run          []RunDirective    `yaml:"run,omitempty"`
-	Kubernetes   *bool             `yaml:"kubernetes,omitempty"`
-	Docker       DockerConfig      `yaml:"docker,omitempty"`
 }
 
-// DockerConfig controls the Docker daemon available inside the sandbox.
-type DockerConfig struct {
+// ServicesConfig controls services available inside the sandbox.
+type ServicesConfig struct {
+	Docker ServiceConfig `yaml:"docker,omitempty"`
+	K3s    ServiceConfig `yaml:"k3s,omitempty"`
+}
+
+// ServiceConfig controls an individual sandbox service.
+type ServiceConfig struct {
 	Enabled bool `yaml:"enabled,omitempty"`
 }
 
@@ -36,8 +41,8 @@ type FilesConfig struct {
 	Add []FileAdd `yaml:"add,omitempty"`
 }
 
-// CreateConfig describes initialization applied only to a new Microsandbox.
-type CreateConfig struct {
+// ProvisionConfig describes initialization applied only to a new Microsandbox.
+type ProvisionConfig struct {
 	Add []FileAdd      `yaml:"add,omitempty"`
 	Run []RunDirective `yaml:"run,omitempty"`
 }
@@ -137,8 +142,6 @@ type SandboxConfig struct {
 	Name      string `yaml:"name,omitempty"`
 	RemoteDir string `yaml:"remote_dir,omitempty"`
 	Recreate  bool   `yaml:"recreate,omitempty"`
-	// Kubernetes runs k3s alongside each requested command in this sandbox.
-	Kubernetes bool `yaml:"kubernetes,omitempty"`
 	// Herdr registers the sandbox and synchronizes local Herdr plugins.
 	Herdr bool `yaml:"herdr,omitempty"`
 	// Upload and Download are retained only for backwards-compatible parsing.
@@ -316,7 +319,7 @@ func resolveConfigPaths(config map[string]any, baseDir string) {
 		}
 	}
 	resolveAdds("files")
-	resolveAdds("create")
+	resolveAdds("provision")
 }
 
 func resolveConfigPath(baseDir, value string) string {
@@ -387,20 +390,23 @@ microsandbox:
 # Docker and k3s are declaratively installed and started by the packages and
 # enterShell tasks in .mezha/devenv.nix. Mezha uploads that configuration when
 # the sandbox is created.
-docker:
-  enabled: true
+services:
+  docker:
+    enabled: true
+  # Run a k3s server alongside each Mezha session. kubectl and Docker commands
+  # share the primary sandbox's Docker daemon.
+  k3s:
+    enabled: true
 
-# Run a k3s server alongside each Mezha session. kubectl and Docker commands
-# share the primary sandbox's Docker daemon. Set name to reuse one sandbox by
-# default, or select one per command with --sandbox.
+# Set name to reuse one sandbox by default, or select one per command with
+# --sandbox.
 sandbox:
   # name: shared-dev
   # Register the sandbox with Herdr and synchronize local plugins.
   herdr: false
-  kubernetes: true
 
-# Initialization applied only when a new sandbox is created.
-create:
+# Initialization applied only when a new sandbox is provisioned.
+provision:
   add:
     - [".mezha/devenv.nix", "/sandbox/devenv.nix"]
 
