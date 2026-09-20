@@ -92,9 +92,14 @@ func (s MicrosandboxSpec) sandboxOptions(
 	// Microsandbox guest-user resolver cannot resolve. Docker and k3s also
 	// require root privileges, so always use root's numeric UID.
 	opts = append(opts, msb.WithUser("0"))
-	if len(s.Environment) != 0 {
-		opts = append(opts, msb.WithEnv(s.Environment))
+	environment := make(map[string]string, len(s.Environment)+1)
+	for name, value := range s.Environment {
+		environment[name] = value
 	}
+	if _, exists := environment["GOPATH"]; !exists {
+		environment["GOPATH"] = "/sandbox/go"
+	}
+	opts = append(opts, msb.WithEnv(environment))
 	if len(s.Scripts) != 0 {
 		opts = append(opts, msb.WithScripts(s.Scripts))
 	}
@@ -144,23 +149,16 @@ func (s MicrosandboxSpec) sandboxOptions(
 			},
 		)
 	}
-	if _, exists := mounts["/sandbox/.devenv"]; !exists {
-		mounts["/sandbox/.devenv"] = msb.Mount.NamedWith(
-			sandboxName+"-devenv-state",
+	if _, exists := mounts["/sandbox"]; !exists {
+		mounts["/sandbox"] = msb.Mount.NamedWith(
+			sandboxName+"-sandbox-state",
 			msb.MountOptions{},
 			msb.NamedVolumeOptions{Mode: "ensure-exists", Kind: "disk", SizeMiB: 20480},
 		)
 	}
-	if _, exists := mounts["/root/.cache/go-build"]; !exists {
-		mounts["/root/.cache/go-build"] = msb.Mount.NamedWith(
-			sandboxName+"-go-cache",
-			msb.MountOptions{},
-			msb.NamedVolumeOptions{Mode: "ensure-exists", Kind: "disk", SizeMiB: 20480},
-		)
-	}
-	if _, exists := mounts["/root/.cache/nix"]; !exists {
-		mounts["/root/.cache/nix"] = msb.Mount.NamedWith(
-			sandboxName+"-nix-cache",
+	if _, exists := mounts["/root"]; !exists {
+		mounts["/root"] = msb.Mount.NamedWith(
+			sandboxName+"-root-state",
 			msb.MountOptions{},
 			msb.NamedVolumeOptions{
 				Mode:    "ensure-exists",

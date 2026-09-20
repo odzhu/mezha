@@ -349,7 +349,8 @@ microsandbox:
   # Working directory for commands
   # workdir: "/workspace"
 
-  # Environment variables passed to all commands
+  # Environment variables passed to all commands. GOPATH defaults to
+  # /sandbox/go when it is not explicitly configured.
   env:
     MODE: "development"
 
@@ -367,21 +368,18 @@ microsandbox:
       kind: "disk"
       size_mib: 20480
 
-    # Reuse devenv evaluation state and Go build outputs across recreation.
-    - name: "devenv-state"
-      target: "/sandbox/.devenv"
-      mode: "ensure-exists"
-      kind: "disk"
-      size_mib: 20480
-    - name: "go-cache"
-      target: "/root/.cache/go-build"
+    # Preserve the workspace, repositories, devenv state, and GOPATH across
+    # sandbox recreation. The volume has an independent lifecycle.
+    - name: "sandbox-state"
+      target: "/sandbox"
       mode: "ensure-exists"
       kind: "disk"
       size_mib: 20480
 
-    # Preserve Nix download metadata and flake inputs across sandbox recreation.
-    - name: "nix-cache"
-      target: "/root/.cache/nix"
+    # Preserve root's caches, configuration, and other state across sandbox
+    # recreation with a lifecycle independent of the sandbox VM.
+    - name: "root-state"
+      target: "/root"
       mode: "ensure-exists"
       kind: "disk"
       size_mib: 20480
