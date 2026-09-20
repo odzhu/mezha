@@ -123,9 +123,9 @@ func (s MicrosandboxSpec) sandboxOptions(
 		)
 	}
 	for _, volume := range s.Volumes {
-		if image == defaultDevenvImage && filepath.Clean(volume.Target) == "/nix" {
-			// Backwards-compatible migration from the original /nix volume.
-			volume.Target = "/nix/store"
+		if persistentSymlinkTarget(volume.Target) {
+			// These paths are directories in the shared /nix volume.
+			continue
 		}
 		if volume.Name == "" || volume.Target == "" {
 			return nil, fmt.Errorf("sandbox.volumes require name and target")
@@ -149,22 +149,11 @@ func (s MicrosandboxSpec) sandboxOptions(
 			},
 		)
 	}
-	if _, exists := mounts["/sandbox"]; !exists {
-		mounts["/sandbox"] = msb.Mount.NamedWith(
-			sandboxName+"-sandbox-state",
+	if _, exists := mounts["/nix"]; !exists {
+		mounts["/nix"] = msb.Mount.NamedWith(
+			sandboxName+"-state",
 			msb.MountOptions{},
-			msb.NamedVolumeOptions{Mode: "ensure-exists", Kind: "disk", SizeMiB: 20480},
-		)
-	}
-	if _, exists := mounts["/root"]; !exists {
-		mounts["/root"] = msb.Mount.NamedWith(
-			sandboxName+"-root-state",
-			msb.MountOptions{},
-			msb.NamedVolumeOptions{
-				Mode:    "ensure-exists",
-				Kind:    "disk",
-				SizeMiB: 20480,
-			},
+			msb.NamedVolumeOptions{Mode: "ensure-exists", Kind: "disk", SizeMiB: 51200},
 		)
 	}
 	if len(mounts) != 0 {
@@ -245,6 +234,16 @@ func (s MicrosandboxSpec) networkConfig() (*msb.NetworkConfig, error) {
 		)
 	}
 	return n, nil
+}
+
+func persistentSymlinkTarget(target string) bool {
+	switch filepath.Clean(target) {
+	case "/nix/store", "/root", "/root/.cache/go-build", "/root/.cache/nix",
+		"/sandbox", "/sandbox/.devenv", "/var/lib/docker", "/var/lib/rancher/k3s":
+		return true
+	default:
+		return false
+	}
 }
 
 func microsandboxAction(value string) (msb.PolicyAction, error) {

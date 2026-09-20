@@ -46,7 +46,7 @@ func runMicrosandbox(
 		if err := ensureDevenvImage(ctx, rc.RepoRoot); err != nil {
 			return fmt.Errorf("import Microsandbox image: %w", err)
 		}
-		if err := ensureNixVolume(ctx, params.SandboxName, cfg.Microsandbox.Volumes); err != nil {
+		if err := ensureStateVolume(ctx, params.SandboxName, cfg.Microsandbox.Volumes); err != nil {
 			return err
 		}
 	}
@@ -60,6 +60,9 @@ func runMicrosandbox(
 	}
 	defer func() { _ = sandbox.Detach(context.Background()) }()
 
+	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
+		return err
+	}
 	if !sandboxExisted {
 		if err := applyCreateConfig(ctx, sandbox, cfg.Create); err != nil {
 			return err

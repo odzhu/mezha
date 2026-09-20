@@ -39,7 +39,7 @@ func openMicrosandbox(
 	if err := ensureDevenvImage(ctx, rc.RepoRoot); err != nil {
 		return nil, nil, nil, fmt.Errorf("import Microsandbox image: %w", err)
 	}
-	if err := ensureNixVolume(ctx, params.SandboxName, cfg.Microsandbox.Volumes); err != nil {
+	if err := ensureStateVolume(ctx, params.SandboxName, cfg.Microsandbox.Volumes); err != nil {
 		return nil, nil, nil, err
 	}
 	opts, err := cfg.Microsandbox.sandboxOptions(rc.RepoRoot, params.SandboxName)
@@ -50,80 +50,81 @@ func openMicrosandbox(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("start Microsandbox %q: %w", params.SandboxName, err)
 	}
+	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
+		_ = sandbox.Detach(context.Background())
+		return nil, nil, nil, err
+	}
 	return sandbox, cfg.Microsandbox, func() { _ = sandbox.Detach(context.Background()) }, nil
 }
 
-// ensureNixVolume seeds the persistent Nix store volume from the native image
-// before it is mounted at /nix/store in the primary sandbox.
-func ensureNixVolume(ctx context.Context, sandboxName string, volumes []MicrosandboxVolume) error {
-	for _, volume := range volumes {
-		target := filepath.Clean(volume.Target)
-		if target != "/nix" && target != "/nix/store" {
-			continue
+// ensureStateVolume seeds the shared persistent volume from the native image.
+func ensureStateVolume(
+	ctx context.Context,
+	sandboxName string,
+	volumes []MicrosandboxVolume,
+) error {
+	volume := MicrosandboxVolume{
+		Name: "state", Target: "/nix", Mode: "ensure-exists", Kind: "disk", SizeMiB: 51200,
+	}
+	for _, configured := range volumes {
+		if filepath.Clean(configured.Target) == "/nix" {
+			volume = configured
+			break
 		}
-		name := sandboxName + "-" + volume.Name
-		if ready, err := nixVolumeReady(ctx, name, ".mezha-nix-store-v3"); err != nil {
-			return err
-		} else if ready {
-			return nil
-		}
-
-		bootstrapName := sandboxName + "-nix-seed"
-		if sandbox, err := msb.GetSandbox(ctx, bootstrapName); err == nil {
-			if err := sandbox.Destroy(ctx, msb.WithDestroyForce()); err != nil {
-				return fmt.Errorf("remove Nix volume bootstrap sandbox: %w", err)
-			}
-		}
-		mount := msb.Mount.NamedWith(name, msb.MountOptions{}, msb.NamedVolumeOptions{
-			Mode:     volume.Mode,
-			Kind:     volume.Kind,
-			SizeMiB:  volume.SizeMiB,
-			QuotaMiB: volume.QuotaMiB,
-		})
-		bootstrap, err := msb.CreateSandbox(ctx, bootstrapName,
-			msb.WithImage(defaultDevenvImage),
-			msb.WithDetached(),
-			msb.WithUser("0"),
-			msb.WithMounts(map[string]msb.MountConfig{"/mnt/mezha-nix": mount}),
-		)
-		if err != nil {
-			return fmt.Errorf("create Nix volume bootstrap sandbox: %w", err)
-		}
-		output, err := bootstrap.Exec(
-			ctx,
-			"sh",
-			[]string{
-				"-c",
-				"set -eu; set -o pipefail; rm -rf /mnt/mezha-nix/* /mnt/mezha-nix/.[!.]* /mnt/mezha-nix/..?*; tar -C /nix/store -cf - . | tar -C /mnt/mezha-nix -xpf -; touch /mnt/mezha-nix/.mezha-nix-store-v3; sync",
-			},
-		)
-		if err != nil {
-			stopAndDestroySandbox(bootstrap)
-			return fmt.Errorf("seed Nix volume: %w", err)
-		}
-		if !output.Success() {
-			stopAndDestroySandbox(bootstrap)
-			return fmt.Errorf("seed Nix volume: %s", strings.TrimSpace(output.Stderr()))
-		}
-		// A disk-backed volume is not guaranteed to flush recent writes to its
-		// backing image if the sandbox is force-destroyed immediately; a
-		// graceful stop lets the guest unmount and sync first.
-		stopAndDestroySandbox(bootstrap)
+	}
+	name := sandboxName + "-" + volume.Name
+	if ready, err := stateVolumeReady(ctx, name, ".mezha-state-v2"); err != nil {
+		return err
+	} else if ready {
 		return nil
 	}
+
+	bootstrapName := sandboxName + "-state-seed"
+	if sandbox, err := msb.GetSandbox(ctx, bootstrapName); err == nil {
+		if err := sandbox.Destroy(ctx, msb.WithDestroyForce()); err != nil {
+			return fmt.Errorf("remove state volume bootstrap sandbox: %w", err)
+		}
+	}
+	mount := msb.Mount.NamedWith(name, msb.MountOptions{}, msb.NamedVolumeOptions{
+		Mode: volume.Mode, Kind: volume.Kind, SizeMiB: volume.SizeMiB, QuotaMiB: volume.QuotaMiB,
+	})
+	bootstrap, err := msb.CreateSandbox(ctx, bootstrapName,
+		msb.WithImage(defaultDevenvImage),
+		msb.WithDetached(),
+		msb.WithUser("0"),
+		msb.WithMounts(map[string]msb.MountConfig{"/mnt/mezha": mount}),
+	)
+	if err != nil {
+		return fmt.Errorf("create state volume bootstrap sandbox: %w", err)
+	}
+	output, err := bootstrap.Exec(ctx, "sh", []string{"-c", `set -eu
+set -o pipefail
+rm -rf /mnt/mezha/* /mnt/mezha/.[!.]* /mnt/mezha/..?*
+tar -C /nix -cf - . | tar -C /mnt/mezha -xpf -
+mkdir -p /mnt/mezha/mezha/root /mnt/mezha/mezha/sandbox /mnt/mezha/mezha/docker /mnt/mezha/mezha/k3s
+touch /mnt/mezha/.mezha-state-v2
+sync`})
+	if err != nil {
+		stopAndDestroySandbox(bootstrap)
+		return fmt.Errorf("seed state volume: %w", err)
+	}
+	if !output.Success() {
+		stopAndDestroySandbox(bootstrap)
+		return fmt.Errorf("seed state volume: %s", strings.TrimSpace(output.Stderr()))
+	}
+	stopAndDestroySandbox(bootstrap)
 	return nil
 }
 
-// nixVolumeReady checks a disk-backed volume from inside a sandbox. VolumeFs
-// addresses the host disk image on the local backend, not its mounted filesystem.
-func nixVolumeReady(ctx context.Context, name, marker string) (bool, error) {
+// stateVolumeReady checks a disk-backed volume from inside a sandbox.
+func stateVolumeReady(ctx context.Context, name, marker string) (bool, error) {
 	if _, err := msb.GetVolume(ctx, name); err != nil {
 		return false, nil
 	}
 	probeName := name + "-probe"
 	if probe, err := msb.GetSandbox(ctx, probeName); err == nil {
 		if err := probe.Destroy(ctx, msb.WithDestroyForce()); err != nil {
-			return false, fmt.Errorf("remove Nix volume probe: %w", err)
+			return false, fmt.Errorf("remove state volume probe: %w", err)
 		}
 	}
 	probe, err := msb.CreateSandbox(
@@ -133,11 +134,11 @@ func nixVolumeReady(ctx context.Context, name, marker string) (bool, error) {
 		msb.WithDetached(),
 		msb.WithUser("0"),
 		msb.WithMounts(map[string]msb.MountConfig{
-			"/mnt/mezha-nix": msb.Mount.Named(name, msb.MountOptions{}),
+			"/mnt/mezha": msb.Mount.Named(name, msb.MountOptions{}),
 		}),
 	)
 	if err != nil {
-		return false, fmt.Errorf("create Nix volume probe: %w", err)
+		return false, fmt.Errorf("create state volume probe: %w", err)
 	}
 	defer stopAndDestroySandbox(probe)
 	output, err := probe.Exec(
@@ -145,13 +146,46 @@ func nixVolumeReady(ctx context.Context, name, marker string) (bool, error) {
 		"sh",
 		[]string{
 			"-c",
-			"set -eu; target=$(readlink /home/devenv/.nix-profile/bin/devenv); test -x /mnt/mezha-nix/${target#/nix/store/}",
+			"set -eu; target=$(readlink /home/devenv/.nix-profile/bin/devenv); test -f /mnt/mezha/" + marker + " && test -x /mnt/mezha/store/${target#/nix/store/}",
 		},
 	)
 	if err != nil {
-		return false, fmt.Errorf("inspect Nix volume %q: %w", name, err)
+		return false, fmt.Errorf("inspect state volume %q: %w", name, err)
 	}
 	return output.Success(), nil
+}
+
+// ensurePersistentLinks runs before any devenv shell or initialization command.
+func ensurePersistentLinks(ctx context.Context, sandbox *msb.Sandbox) error {
+	output, err := sandbox.Exec(ctx, "sh", []string{"-c", `set -eu
+if [ ! -f /nix/.mezha-state-v2 ]; then
+  echo "shared persistent /nix volume is not mounted; recreate the sandbox" >&2
+  exit 1
+fi
+persist_link() {
+  target="$1"
+  source="$2"
+  mkdir -p "$source" "$(dirname "$target")"
+  if [ -L "$target" ] && [ "$(readlink "$target")" = "$source" ]; then
+    return
+  fi
+  rm -rf "$target"
+  ln -s "$source" "$target"
+}
+persist_link /sandbox /nix/mezha/sandbox
+persist_link /var/lib/docker /nix/mezha/docker
+persist_link /var/lib/rancher/k3s /nix/mezha/k3s
+persist_link /root /nix/mezha/root`}, msb.WithExecCwd("/"))
+	if err != nil {
+		return fmt.Errorf("create persistent state symlinks: %w", err)
+	}
+	if !output.Success() {
+		return fmt.Errorf(
+			"create persistent state symlinks: %s",
+			strings.TrimSpace(output.Stderr()),
+		)
+	}
+	return nil
 }
 
 // stopAndDestroySandbox gracefully stops a sandbox so the guest can unmount

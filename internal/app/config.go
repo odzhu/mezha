@@ -360,44 +360,13 @@ microsandbox:
   #     target: "/workspace"
 
   volumes:
-    # Persistent Nix package store. Mezha seeds it from the native image
-    # before mounting it at /nix/store.
-    - name: "nix-packages"
-      target: "/nix/store"
+    # All persistent state shares one volume. Mezha seeds the Nix store and
+    # creates the required symlinks before entering the devenv shell.
+    - name: "state"
+      target: "/nix"
       mode: "ensure-exists"
       kind: "disk"
-      size_mib: 20480
-
-    # Preserve the workspace, repositories, devenv state, and GOPATH across
-    # sandbox recreation. The volume has an independent lifecycle.
-    - name: "sandbox-state"
-      target: "/sandbox"
-      mode: "ensure-exists"
-      kind: "disk"
-      size_mib: 20480
-
-    # Preserve root's caches, configuration, and other state across sandbox
-    # recreation with a lifecycle independent of the sandbox VM.
-    - name: "root-state"
-      target: "/root"
-      mode: "ensure-exists"
-      kind: "disk"
-      size_mib: 20480
-
-    # Keep images, containers, and Docker volumes independent of the sandbox
-    # filesystem. This is used when docker.enabled is true.
-    - name: "docker-data"
-      target: "/var/lib/docker"
-      mode: "ensure-exists"
-      kind: "disk"
-      size_mib: 20480
-
-    # Keep k3s cluster data when Kubernetes is enabled; its images use Docker.
-    - name: "k3s-data"
-      target: "/var/lib/rancher/k3s"
-      mode: "ensure-exists"
-      kind: "disk"
-      size_mib: 20480
+      size_mib: 51200
 
   # Network configuration
   # network:
