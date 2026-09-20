@@ -107,10 +107,14 @@ microsandbox:
   #       direction: egress
   #       destination: public
 
-docker:
-  # Docker is supplied by the Mezha-managed devenv environment.
-  # Start dockerd when the sandbox is created or reused.
-  enabled: true
+services:
+  docker:
+    # Docker is supplied by the Mezha-managed devenv environment.
+    # Start dockerd when the sandbox is created or reused.
+    enabled: true
+  k3s:
+    # Run a k3s server alongside each Mezha session.
+    enabled: true
 
 sandbox:
   # Default sandbox selection; --sandbox overrides it.
@@ -119,8 +123,6 @@ sandbox:
   # policy_advisor: true
   # Register the sandbox with Herdr and synchronize local plugins.
   herdr: false
-  # Run a k3s server alongside each Mezha session.
-  kubernetes: true
 
 provision:
   # This devenv.nix declaratively provides Docker, k3s, and kubectl.
@@ -145,10 +147,10 @@ configure `kubectl`. Mezha enters that environment for every requested command
 or interactive session. Update that file and run `mezha run --recreate` to
 apply a changed managed environment.
 
-Set `docker.enabled: true` to start the Docker daemon before configured or
-requested commands. `sandbox.kubernetes` defaults to `true`, so Mezha runs k3s
-alongside each command or interactive session and configures `kubectl` to use
-the local cluster. Set it to `false` to disable k3s. Docker images, containers,
+Set `services.docker.enabled: true` to start the Docker daemon before configured
+or requested commands. Set `services.k3s.enabled: true` to run k3s alongside
+each command or interactive session and configure `kubectl` to use the local
+cluster. Set it to `false` to disable k3s. Docker images, containers,
 and volumes plus k3s cluster state are stored in the shared persistent volume.
 k3s uses Docker as its container runtime, so Docker-built images are immediately
 available to Kubernetes. Named volume names are automatically prefixed with the

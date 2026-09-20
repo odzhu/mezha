@@ -207,10 +207,7 @@ func newRunCommand() *cli.Command {
 			}
 			advisor := resolveAdvisorParam(cmd, cfg)
 
-			kubernetes := cfg.Sandbox.Kubernetes
-			if cfg.Kubernetes != nil {
-				kubernetes = *cfg.Kubernetes
-			}
+			kubernetes := cfg.Services.K3s.Enabled
 
 			params := RunParams{
 				SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
@@ -295,10 +292,7 @@ func newProvisionCommand() *cli.Command {
 			if volumesFlush && !recreate {
 				return errors.New("--volumes-flush requires --recreate")
 			}
-			kubernetes := cfg.Sandbox.Kubernetes
-			if cfg.Kubernetes != nil {
-				kubernetes = *cfg.Kubernetes
-			}
+			kubernetes := cfg.Services.K3s.Enabled
 			return Provision(ctx, rc, ProvisionParams{
 				SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
 				RemoteRepoDir: resolveParam(

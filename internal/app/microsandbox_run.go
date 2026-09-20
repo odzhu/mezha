@@ -86,7 +86,7 @@ func runMicrosandbox(
 			ctx,
 			sandbox,
 			workdir,
-			cfg.Docker.Enabled || params.Kubernetes,
+			cfg.Services.Docker.Enabled || params.Kubernetes,
 		); err != nil {
 			if !sandboxExisted {
 				_ = sandbox.Destroy(context.Background(), msb.WithDestroyForce())
@@ -135,7 +135,7 @@ func runMicrosandbox(
 
 	for i, directive := range cfg.Run {
 		var output *msb.ExecOutput
-		if cfg.Docker.Enabled || params.Kubernetes {
+		if cfg.Services.Docker.Enabled || params.Kubernetes {
 			if directive.Shell {
 				command, args := dockerCommand(
 					"sh",
@@ -172,7 +172,7 @@ func runMicrosandbox(
 	}
 	if len(params.RemoteCommand) != 0 {
 		command, args := remoteCommand(params.RemoteCommand, params.NoLoginShell)
-		if cfg.Docker.Enabled || params.Kubernetes {
+		if cfg.Services.Docker.Enabled || params.Kubernetes {
 			command, args = dockerCommand(command, args, params.Kubernetes)
 		}
 		if interactiveTTYEnabled(params.TTY) {
@@ -206,7 +206,7 @@ func runMicrosandbox(
 	}
 	if devenv != "" {
 		command, args := devenv, []string{"shell", "--no-reload"}
-		if cfg.Docker.Enabled || params.Kubernetes {
+		if cfg.Services.Docker.Enabled || params.Kubernetes {
 			// dockerCommand already starts the managed devenv shell. Wrapping a
 			// second `devenv shell` here runs its enterShell tasks twice.
 			command, args = dockerCommand("bash", nil, params.Kubernetes)
@@ -241,7 +241,7 @@ func runMicrosandbox(
 	if !params.NoLoginShell && filepath.Base(shell) == "bash" {
 		shellArgs = []string{"-lc", shellBootstrap + "; exec \"$0\" -l", shell}
 	}
-	if cfg.Docker.Enabled || params.Kubernetes {
+	if cfg.Services.Docker.Enabled || params.Kubernetes {
 		shell, shellArgs = dockerCommand(shell, shellArgs, params.Kubernetes)
 	}
 	code, err := sandbox.AttachWith(ctx, shell, shellArgs, msb.WithAttachCwd(workdir))

@@ -68,7 +68,7 @@ func provisionMicrosandbox(
 			return err
 		}
 	}
-	useDevenv := cfg.Docker.Enabled || params.Kubernetes
+	useDevenv := cfg.Services.Docker.Enabled || params.Kubernetes
 	if useDevenv {
 		command, args := dockerCommand("true", nil, params.Kubernetes)
 		output, err := sandbox.Exec(ctx, command, args, msb.WithExecCwd(managedDevenvPath))
