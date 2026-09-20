@@ -41,6 +41,7 @@ Examples:
   mezha init --home
   mezha run
   mezha run --recreate
+  mezha run --sandbox shared-dev
   mezha run --tty
   mezha run -- ls -la
   mezha run -- bash -lc 'git status && pwd'
@@ -126,7 +127,7 @@ func newRunCommand() *cli.Command {
 			Name:  "editor",
 			Usage: "Open a remote editor instead of an interactive shell",
 		},
-		&cli.StringFlag{Name: "name", Usage: "Override the generated sandbox name"},
+		sandboxFlag(),
 		&cli.StringFlag{Name: "remote-dir", Usage: "Destination directory in the sandbox"},
 		&cli.BoolFlag{
 			Name:  "replace-sandbox-remote",
@@ -166,9 +167,12 @@ func newRunCommand() *cli.Command {
 			}
 
 			remoteArgs := commandArgs(cmd)
-			herdr, err := strconv.ParseBool(cmd.String("herdr"))
-			if err != nil {
-				return fmt.Errorf("parse --herdr: %w", err)
+			herdr := cfg.Sandbox.Herdr
+			if cmd.IsSet("herdr") {
+				herdr, err = strconv.ParseBool(cmd.String("herdr"))
+				if err != nil {
+					return fmt.Errorf("parse --herdr: %w", err)
+				}
 			}
 			volumesFlush, err := strconv.ParseBool(cmd.String("volumes-flush"))
 			if err != nil {
@@ -198,13 +202,7 @@ func newRunCommand() *cli.Command {
 			}
 
 			params := RunParams{
-				SandboxName: resolveParam(
-					cmd,
-					"name",
-					os.Getenv("SANDBOX_NAME"),
-					cfg.Sandbox.Name,
-					rc.DefaultSandboxName,
-				),
+				SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
 				RemoteRepoDir: resolveParam(
 					cmd,
 					"remote-dir",
@@ -239,7 +237,7 @@ func newRunCommand() *cli.Command {
 
 func newDestroyCommand() *cli.Command {
 	flags := []cli.Flag{
-		&cli.StringFlag{Name: "name", Usage: "Override the generated sandbox name"},
+		sandboxFlag(),
 		&cli.BoolFlag{
 			Name:    "force",
 			Aliases: []string{"f"},
@@ -272,13 +270,7 @@ func newDestroyCommand() *cli.Command {
 				return fmt.Errorf("parse --volumes-flush: %w", err)
 			}
 			params := DestroyParams{
-				SandboxName: resolveParam(
-					cmd,
-					"name",
-					os.Getenv("SANDBOX_NAME"),
-					cfg.Sandbox.Name,
-					rc.DefaultSandboxName,
-				),
+				SandboxName:  resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
 				Force:        cmd.Bool("force"),
 				VolumesFlush: volumesFlush,
 			}
@@ -289,7 +281,7 @@ func newDestroyCommand() *cli.Command {
 
 func transferCommandFlags(includeRecreate bool) []cli.Flag {
 	flags := []cli.Flag{
-		&cli.StringFlag{Name: "name", Usage: "Override the generated sandbox name"},
+		sandboxFlag(),
 		&cli.StringFlag{Name: "remote-dir", Usage: "Sandbox repository directory"},
 	}
 	if includeRecreate {
@@ -313,13 +305,7 @@ func loadTransferParams(cmd *cli.Command, rc RepoContext) (TransferParams, error
 		cfg = &MezhaConfig{}
 	}
 	return TransferParams{
-		SandboxName: resolveParam(
-			cmd,
-			"name",
-			os.Getenv("SANDBOX_NAME"),
-			cfg.Sandbox.Name,
-			rc.DefaultSandboxName,
-		),
+		SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
 		RemoteRepoDir: resolveParam(
 			cmd,
 			"remote-dir",
@@ -395,7 +381,7 @@ func newDownloadCommand() *cli.Command {
 
 func gitCommandFlags() []cli.Flag {
 	return []cli.Flag{
-		&cli.StringFlag{Name: "name", Usage: "Override the generated sandbox name"},
+		sandboxFlag(),
 		&cli.StringFlag{Name: "remote-dir", Usage: "Sandbox repository directory"},
 	}
 }
@@ -409,13 +395,7 @@ func loadGitParams(cmd *cli.Command, rc RepoContext) (GitParams, error) {
 		cfg = &MezhaConfig{}
 	}
 	return GitParams{
-		SandboxName: resolveParam(
-			cmd,
-			"name",
-			os.Getenv("SANDBOX_NAME"),
-			cfg.Sandbox.Name,
-			rc.DefaultSandboxName,
-		),
+		SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
 		RemoteRepoDir: resolveParam(
 			cmd,
 			"remote-dir",
@@ -534,7 +514,7 @@ func newRemoteCommand() *cli.Command {
 
 func newLogsCommand() *cli.Command {
 	flags := []cli.Flag{
-		&cli.StringFlag{Name: "name", Usage: "Override the generated sandbox name"},
+		sandboxFlag(),
 		&cli.UintFlag{Name: "tail", Usage: "Maximum number of log lines to return", Value: 100},
 		&cli.BoolFlag{
 			Name:    "follow",
@@ -565,18 +545,12 @@ func newLogsCommand() *cli.Command {
 				cfg = &MezhaConfig{}
 			}
 			return Logs(ctx, rc, LogsParams{
-				SandboxName: resolveParam(
-					cmd,
-					"name",
-					os.Getenv("SANDBOX_NAME"),
-					cfg.Sandbox.Name,
-					rc.DefaultSandboxName,
-				),
-				Tail:     cmd.Uint("tail"),
-				Follow:   cmd.Bool("follow"),
-				Since:    cmd.Duration("since"),
-				Sources:  cmd.StringSlice("source"),
-				MinLevel: cmd.String("level"),
+				SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
+				Tail:        cmd.Uint("tail"),
+				Follow:      cmd.Bool("follow"),
+				Since:       cmd.Duration("since"),
+				Sources:     cmd.StringSlice("source"),
+				MinLevel:    cmd.String("level"),
 			})
 		},
 	}
@@ -599,6 +573,18 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func sandboxFlag() cli.Flag {
+	return &cli.StringFlag{
+		Name:    "sandbox",
+		Aliases: []string{"name"},
+		Usage:   "Select a sandbox instead of the generated project sandbox",
+	}
+}
+
+func resolveSandboxParam(cmd *cli.Command, cfgVal, defaultVal string) string {
+	return slugify(resolveParam(cmd, "sandbox", os.Getenv("SANDBOX_NAME"), cfgVal, defaultVal))
+}
+
 func resolveParam(
 	cmd *cli.Command,
 	flagName string,
@@ -618,12 +604,6 @@ func resolveParam(
 		value = defaultVal
 	}
 
-	// Every current --name option identifies an Microsandbox sandbox. Normalize
-	// overrides too, rather than only generated names, because Microsandbox limits
-	// sandbox names to 19 characters.
-	if flagName == "name" {
-		return slugify(value)
-	}
 	return value
 }
 
