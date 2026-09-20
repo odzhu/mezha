@@ -48,6 +48,8 @@ mezha init
 mezha run
 mezha run -- git status
 mezha run --herdr true -- git status
+# Reuse one sandbox for this and other projects.
+mezha run --sandbox shared-dev -- git status
 mezha upload
 mezha download reports/result.json ./result.json
 mezha pull
@@ -60,7 +62,15 @@ mezha destroy --volumes-flush
 ## Configuration
 
 Run `mezha init` in a repository to create `mezha.yaml` and
-`.mezha/devenv.nix`. Run `mezha init --home` to create a default configuration
+`.mezha/devenv.nix`. By default, Mezha generates a sandbox name for the current
+repository and Git ref. Use `--sandbox <name>` on `run`, synchronization,
+transfer, logs, and destroy commands to select a reusable sandbox instead.
+Each project is kept in its own `/sandbox/<project>` directory. A Git remote
+named after the selected sandbox is added to the host repository, so the same
+repository can synchronize with multiple sandboxes. The legacy `--name` option
+remains an alias for `--sandbox`.
+
+Run `mezha init --home` to create a default configuration
 at `~/.mezha/mezha.yaml`. Mezha always uses
 `ghcr.io/cachix/devenv/devenv:latest` and runs it as UID 0: Docker and k3s
 require it, and Microsandbox cannot resolve the native image's `1000:100` user
@@ -94,9 +104,12 @@ docker:
   enabled: true
 
 sandbox:
+  # Default sandbox selection; --sandbox overrides it.
   # name: development
   # remote_dir: /sandbox/my-project
   # policy_advisor: true
+  # Register the sandbox with Herdr and synchronize local plugins.
+  herdr: false
   # Run a k3s server alongside each Mezha session.
   kubernetes: true
 
@@ -147,6 +160,17 @@ Herdr SSH machine with:
 ```bash
 mezha run --herdr true
 ```
+
+To enable this by default for the project, set it in `mezha.yaml` (Mezha does
+not currently use a `mezha.nix` configuration file):
+
+```yaml
+sandbox:
+  herdr: true
+```
+
+The default is `false`; an explicit `--herdr true` or `--herdr false` overrides
+the configured value for that invocation.
 
 The registration is idempotent and uses Mezha's sandbox SSH proxy. Mezha
 installs the matching Linux Herdr release in the sandbox before registration,

@@ -124,6 +124,13 @@ func runMicrosandbox(
 		); err != nil {
 			return err
 		}
+	} else if err := repairMicrosandboxGitRemote(
+		ctx,
+		rc,
+		GitParams{SandboxName: params.SandboxName, RemoteRepoDir: repoDir},
+		params.ReplaceSandboxRemote,
+	); err != nil {
+		return err
 	}
 
 	for i, directive := range cfg.Run {
@@ -337,9 +344,14 @@ func microsandboxBranchExists(
 ) (bool, error) {
 	output, err := sandbox.Exec(
 		ctx,
-		"git",
-		[]string{"rev-parse", "--verify", "--quiet", "refs/heads/" + branch},
-		msb.WithExecCwd(repoDir),
+		"sh",
+		[]string{
+			"-c",
+			`test -d "$1/.git" && git -C "$1" rev-parse --verify --quiet "$2"`,
+			"mezha-check-repo",
+			repoDir,
+			"refs/heads/" + branch,
+		},
 	)
 	if err != nil {
 		return false, fmt.Errorf("check Microsandbox repository branch: %w", err)

@@ -64,24 +64,34 @@ func syncHerdrPlugin(ctx context.Context, sandbox *msb.Sandbox, plugin herdrPlug
 		source += "/" + plugin.Source.Subdir
 	}
 
-	// A previous Mezha version linked a copied plugin. Unlink it before native install.
-	_ = runSandboxHerdr(ctx, sandbox, "plugin", "unlink", plugin.ID)
-	args := []string{"plugin", "install", source, "--yes"}
-	if plugin.Source.ResolvedCommit != "" {
-		args = append(args, "--ref", plugin.Source.ResolvedCommit)
+	current, err := sandboxHerdrPluginCurrent(ctx, sandbox, plugin)
+	if err != nil {
+		return err
 	}
-	fmt.Printf("Installing Herdr plugin %q through devenv...\n", plugin.ID)
-	if err := runSandboxHerdrInDevenv(ctx, sandbox, args...); err != nil {
-		return fmt.Errorf(
-			"install Herdr plugin %q in sandbox; add required build tools to .mezha/devenv.nix: %w",
-			plugin.ID,
-			err,
-		)
-	}
-	if !plugin.Enabled {
-		if err := runSandboxHerdr(ctx, sandbox, "plugin", "disable", plugin.ID); err != nil {
-			return fmt.Errorf("disable Herdr plugin %q in sandbox: %w", plugin.ID, err)
+	if current {
+		fmt.Printf("Herdr plugin %q is already installed at the requested commit.\n", plugin.ID)
+	} else {
+		// A previous Mezha version linked a copied plugin. Unlink it before native install.
+		_ = runSandboxHerdr(ctx, sandbox, "plugin", "unlink", plugin.ID)
+		args := []string{"plugin", "install", source, "--yes"}
+		if plugin.Source.ResolvedCommit != "" {
+			args = append(args, "--ref", plugin.Source.ResolvedCommit)
 		}
+		fmt.Printf("Installing Herdr plugin %q through devenv...\n", plugin.ID)
+		if err := runSandboxHerdrInDevenv(ctx, sandbox, args...); err != nil {
+			return fmt.Errorf(
+				"install Herdr plugin %q in sandbox; add required build tools to .mezha/devenv.nix: %w",
+				plugin.ID,
+				err,
+			)
+		}
+	}
+	enabledCommand := "enable"
+	if !plugin.Enabled {
+		enabledCommand = "disable"
+	}
+	if err := runSandboxHerdr(ctx, sandbox, "plugin", enabledCommand, plugin.ID); err != nil {
+		return fmt.Errorf("%s Herdr plugin %q in sandbox: %w", enabledCommand, plugin.ID, err)
 	}
 
 	localConfig, err := execx.Output(ctx, "herdr", "plugin", "config-dir", plugin.ID)
@@ -118,14 +128,69 @@ func syncHerdrPlugin(ctx context.Context, sandbox *msb.Sandbox, plugin herdrPlug
 	return nil
 }
 
+func sandboxHerdrPluginCurrent(
+	ctx context.Context,
+	sandbox *msb.Sandbox,
+	local herdrPlugin,
+) (bool, error) {
+	output, err := runSandboxHerdrOutput(
+		ctx,
+		sandbox,
+		"/root/.local/bin/herdr",
+		[]string{"plugin", "list", "--json"},
+	)
+	if err != nil {
+		return false, fmt.Errorf("list sandbox Herdr plugins: %w", err)
+	}
+	var list herdrPluginList
+	if err := json.Unmarshal([]byte(output.Stdout()), &list); err != nil {
+		return false, fmt.Errorf("parse sandbox Herdr plugins: %w", err)
+	}
+	for _, remote := range list.Result.Plugins {
+		if remote.ID != local.ID {
+			continue
+		}
+		return remote.Source.Kind == local.Source.Kind &&
+			remote.Source.Owner == local.Source.Owner &&
+			remote.Source.Repo == local.Source.Repo &&
+			remote.Source.Subdir == local.Source.Subdir &&
+			remote.Source.ResolvedCommit == local.Source.ResolvedCommit, nil
+	}
+	return false, nil
+}
+
 func runSandboxHerdr(ctx context.Context, sandbox *msb.Sandbox, args ...string) error {
 	_, err := runSandboxHerdrOutput(ctx, sandbox, "/root/.local/bin/herdr", args)
 	return err
 }
 
 func runSandboxHerdrInDevenv(ctx context.Context, sandbox *msb.Sandbox, args ...string) error {
+	const pluginDevenvPath = "/root/.mezha/herdr-plugin-devenv"
+	setup, err := sandbox.Exec(ctx, "sh", []string{"-c", `set -eu
+mkdir -p "$1"
+cat >"$1/devenv.nix" <<'EOF'
+{ pkgs, ... }:
+{
+  imports = [ /sandbox/devenv.nix ];
+  packages = [ pkgs.go ];
+  scripts.mezha-herdr.exec = ''
+    export PATH=${pkgs.go}/bin:$PATH
+    exec /root/.local/bin/herdr "$@"
+  '';
+}
+EOF
+`, "mezha-herdr-plugin-env", pluginDevenvPath})
+	if err != nil {
+		return fmt.Errorf("prepare Herdr plugin environment: %w", err)
+	}
+	if !setup.Success() {
+		return fmt.Errorf(
+			"prepare Herdr plugin environment: %s",
+			strings.TrimSpace(setup.Stderr()),
+		)
+	}
 	command := append(
-		[]string{"shell", "--from", "path:" + managedDevenvPath, "--", "/root/.local/bin/herdr"},
+		[]string{"shell", "--from", "path:" + pluginDevenvPath, "--", "mezha-herdr"},
 		args...,
 	)
 	code, err := sandbox.AttachWith(ctx, nativeDevenvPath, command)

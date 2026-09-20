@@ -139,6 +139,8 @@ type SandboxConfig struct {
 	Recreate  bool   `yaml:"recreate,omitempty"`
 	// Kubernetes runs k3s alongside each requested command in this sandbox.
 	Kubernetes bool `yaml:"kubernetes,omitempty"`
+	// Herdr registers the sandbox and synchronizes local Herdr plugins.
+	Herdr bool `yaml:"herdr,omitempty"`
 	// Upload and Download are retained only for backwards-compatible parsing.
 	// Repository content is now synchronized exclusively through Git.
 	Upload        *bool  `yaml:"upload,omitempty"`
@@ -389,8 +391,12 @@ docker:
   enabled: true
 
 # Run a k3s server alongside each Mezha session. kubectl and Docker commands
-# share the primary sandbox's Docker daemon.
+# share the primary sandbox's Docker daemon. Set name to reuse one sandbox by
+# default, or select one per command with --sandbox.
 sandbox:
+  # name: shared-dev
+  # Register the sandbox with Herdr and synchronize local plugins.
+  herdr: false
   kubernetes: true
 
 # Initialization applied only when a new sandbox is created.
