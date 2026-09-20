@@ -47,11 +47,14 @@ Examples:
 mezha init
 mezha run
 mezha run -- git status
+mezha run --herdr true -- git status
 mezha upload
 mezha download reports/result.json ./result.json
 mezha pull
 mezha push
 mezha destroy
+# Remove the sandbox and its retained named volumes.
+mezha destroy --volumes-flush
 ```
 
 ## Configuration
@@ -72,22 +75,12 @@ microsandbox:
   # Mezha always uses ghcr.io/cachix/devenv/devenv:latest as UID 0.
   memory_mib: 4096
   volumes:
-    # Mezha seeds this from the native image before mounting it at /nix/store.
-    - name: nix-packages
-      target: /nix/store
+    # All persistent state shares this volume.
+    - name: state
+      target: /nix
       mode: ensure-exists
       kind: disk
-      size_mib: 20480
-    - name: docker-data
-      target: /var/lib/docker
-      mode: ensure-exists
-      kind: disk
-      size_mib: 20480
-    - name: k3s-data
-      target: /var/lib/rancher/k3s
-      mode: ensure-exists
-      kind: disk
-      size_mib: 20480
+      size_mib: 51200
   # network:
   #   default_egress: deny
   #   rules:
@@ -116,9 +109,11 @@ run: []
 ```
 
 `create.add` and `create.run` are applied only when a sandbox is first created.
-Mezha seeds the default 20 GiB `nix-packages` volume from the native image
-before mounting it at `/nix/store`, preserving the image runtime and profiles
-while keeping Nix packages and devenv downloads persistent. The default `create.add` installs
+Mezha seeds the complete `/nix` directory into the shared `state` volume, which
+is mounted at `/nix`. It then symlinks `/root`, `/sandbox`,
+`/var/lib/docker`, and `/var/lib/rancher/k3s` into that volume before any
+initialization command or devenv shell runs. Mezha defaults `GOPATH` to `/sandbox/go` unless it is
+explicitly configured in `microsandbox.env`. The default `create.add` installs
 Mezha's `.mezha/devenv.nix` at
 `/sandbox/devenv.nix`. It uses devenv `packages` for Docker, k3s, and kubectl
 and `devenv:enterShell` tasks to start Docker and k3s, wait for readiness, and
@@ -129,14 +124,41 @@ apply a changed managed environment.
 Set `docker.enabled: true` to start the Docker daemon before configured or
 requested commands. `sandbox.kubernetes` defaults to `true`, so Mezha runs k3s
 alongside each command or interactive session and configures `kubectl` to use
-the local cluster. Set it to `false` to disable k3s. The default configuration mounts dedicated `docker-data` and
-`k3s-data` volumes at `/var/lib/docker` and `/var/lib/rancher/k3s` to preserve
-Docker images, containers, and volumes plus k3s cluster state independently of
-the sandbox filesystem. k3s uses Docker as its container runtime, so
-Docker-built images are immediately available to Kubernetes. Named volume names
-are automatically prefixed with the sandbox name, so each sandbox receives its
-own volume. Entries in `run` execute before the requested command. Strings use
+the local cluster. Set it to `false` to disable k3s. Docker images, containers,
+and volumes plus k3s cluster state are stored in the shared persistent volume.
+k3s uses Docker as its container runtime, so Docker-built images are immediately
+available to Kubernetes. Named volume names are automatically prefixed with the
+sandbox name, so each sandbox receives its own volume. Volumes are retained when
+the sandbox is recreated or destroyed; this includes the Nix store, the complete
+`/sandbox` workspace, and `/root` with its caches and configuration, avoiding
+repeated downloads and evaluation after
+`mezha
+run --recreate`. Use `--volumes-flush` with
+`mezha destroy`, or with `mezha run --recreate`, only when a clean set of
+persistent volumes is required. Entries in `run` execute before the requested
+command. Strings use
 shell form; YAML sequences use exec form.
+
+## Herdr integration
+
+When the local `herdr` command is installed, register the sandbox as a saved
+Herdr SSH machine with:
+
+```bash
+mezha run --herdr true
+```
+
+The registration is idempotent and uses Mezha's sandbox SSH proxy. Mezha
+installs the matching Linux Herdr release in the sandbox before registration,
+then records its SSH host key for Herdr's strict saved-machine connection.
+New Herdr panes use Mezha's configured working directory and shell environment.
+Mezha also natively installs GitHub-managed local Herdr plugins in the sandbox,
+preserves their enabled state, and copies each plugin's local configuration
+directory. Plugin installation and build commands run through Mezha's managed
+`devenv` environment. The generated `.mezha/devenv.nix` includes Go for native
+plugin builds; add other plugin-specific build tools there. `mezha destroy`
+removes the corresponding saved Herdr machine profile. Herdr
+is optional: if its command is not on `PATH`, Mezha skips both operations.
 
 ## Environment variables
 

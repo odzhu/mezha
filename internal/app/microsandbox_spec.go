@@ -92,9 +92,14 @@ func (s MicrosandboxSpec) sandboxOptions(
 	// Microsandbox guest-user resolver cannot resolve. Docker and k3s also
 	// require root privileges, so always use root's numeric UID.
 	opts = append(opts, msb.WithUser("0"))
-	if len(s.Environment) != 0 {
-		opts = append(opts, msb.WithEnv(s.Environment))
+	environment := make(map[string]string, len(s.Environment)+1)
+	for name, value := range s.Environment {
+		environment[name] = value
 	}
+	if _, exists := environment["GOPATH"]; !exists {
+		environment["GOPATH"] = "/sandbox/go"
+	}
+	opts = append(opts, msb.WithEnv(environment))
 	if len(s.Scripts) != 0 {
 		opts = append(opts, msb.WithScripts(s.Scripts))
 	}
@@ -118,9 +123,9 @@ func (s MicrosandboxSpec) sandboxOptions(
 		)
 	}
 	for _, volume := range s.Volumes {
-		if image == defaultDevenvImage && filepath.Clean(volume.Target) == "/nix" {
-			// Backwards-compatible migration from the original /nix volume.
-			volume.Target = "/nix/store"
+		if persistentSymlinkTarget(volume.Target) {
+			// These paths are directories in the shared /nix volume.
+			continue
 		}
 		if volume.Name == "" || volume.Target == "" {
 			return nil, fmt.Errorf("sandbox.volumes require name and target")
@@ -142,6 +147,13 @@ func (s MicrosandboxSpec) sandboxOptions(
 				SizeMiB:  volume.SizeMiB,
 				QuotaMiB: volume.QuotaMiB,
 			},
+		)
+	}
+	if _, exists := mounts["/nix"]; !exists {
+		mounts["/nix"] = msb.Mount.NamedWith(
+			sandboxName+"-state",
+			msb.MountOptions{},
+			msb.NamedVolumeOptions{Mode: "ensure-exists", Kind: "disk", SizeMiB: 51200},
 		)
 	}
 	if len(mounts) != 0 {
@@ -222,6 +234,16 @@ func (s MicrosandboxSpec) networkConfig() (*msb.NetworkConfig, error) {
 		)
 	}
 	return n, nil
+}
+
+func persistentSymlinkTarget(target string) bool {
+	switch filepath.Clean(target) {
+	case "/nix/store", "/root", "/root/.cache/go-build", "/root/.cache/nix",
+		"/sandbox", "/sandbox/.devenv", "/var/lib/docker", "/var/lib/rancher/k3s":
+		return true
+	default:
+		return false
+	}
 }
 
 func microsandboxAction(value string) (msb.PolicyAction, error) {

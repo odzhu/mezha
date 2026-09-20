@@ -12,8 +12,20 @@ import (
 
 // Destroy removes the project's Microsandbox and its Git remote.
 func Destroy(ctx context.Context, rc RepoContext, params DestroyParams) error {
-	if err := destroyMicrosandbox(ctx, params); err != nil {
+	proceed, err := destroyMicrosandbox(ctx, params)
+	if err != nil {
 		return err
+	}
+	if !proceed {
+		return nil
+	}
+	if _, err := unregisterHerdrMachine(ctx, params.SandboxName); err != nil {
+		return err
+	}
+	if params.VolumesFlush {
+		if err := flushMicrosandboxVolumes(ctx, params.SandboxName); err != nil {
+			return err
+		}
 	}
 	if err := unregisterSandboxGitRemote(ctx, rc.RepoRoot, params.SandboxName); err != nil {
 		return err

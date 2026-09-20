@@ -7,6 +7,6 @@ import (
 	"fmt"
 )
 
-func destroyMicrosandbox(context.Context, DestroyParams) error {
-	return fmt.Errorf("local Microsandbox support requires a CGO-enabled Mezha build")
+func destroyMicrosandbox(context.Context, DestroyParams) (bool, error) {
+	return false, fmt.Errorf("local Microsandbox support requires a CGO-enabled Mezha build")
 }

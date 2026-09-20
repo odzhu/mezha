@@ -23,10 +23,21 @@ func runMicrosandbox(
 	}
 	_, lookupErr := msb.GetSandbox(ctx, params.SandboxName)
 	sandboxExisted := lookupErr == nil
+	reregisterHerdr := params.Herdr
 	if params.Recreate {
 		if handle, err := msb.GetSandbox(ctx, params.SandboxName); err == nil {
+			registered, err := unregisterHerdrMachine(ctx, params.SandboxName)
+			if err != nil {
+				return err
+			}
+			reregisterHerdr = reregisterHerdr || registered
 			if err := handle.Destroy(ctx, msb.WithDestroyForce()); err != nil {
 				return fmt.Errorf("recreate sandbox %q: %w", params.SandboxName, err)
+			}
+		}
+		if params.VolumesFlush {
+			if err := flushMicrosandboxVolumes(ctx, params.SandboxName); err != nil {
+				return err
 			}
 		}
 		sandboxExisted = false
@@ -35,7 +46,7 @@ func runMicrosandbox(
 		if err := ensureDevenvImage(ctx, rc.RepoRoot); err != nil {
 			return fmt.Errorf("import Microsandbox image: %w", err)
 		}
-		if err := ensureNixVolume(ctx, params.SandboxName, cfg.Microsandbox.Volumes); err != nil {
+		if err := ensureStateVolume(ctx, params.SandboxName, cfg.Microsandbox.Volumes); err != nil {
 			return err
 		}
 	}
@@ -49,6 +60,9 @@ func runMicrosandbox(
 	}
 	defer func() { _ = sandbox.Detach(context.Background()) }()
 
+	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
+		return err
+	}
 	if !sandboxExisted {
 		if err := applyCreateConfig(ctx, sandbox, cfg.Create); err != nil {
 			return err
@@ -66,6 +80,25 @@ func runMicrosandbox(
 	workdir := cfg.Microsandbox.Workdir
 	if workdir == "" {
 		workdir = repoDir
+	}
+	if reregisterHerdr && herdrCommandAvailable() {
+		if err := ensureSandboxHerdr(
+			ctx,
+			sandbox,
+			workdir,
+			cfg.Docker.Enabled || params.Kubernetes,
+		); err != nil {
+			if !sandboxExisted {
+				_ = sandbox.Destroy(context.Background(), msb.WithDestroyForce())
+			}
+			return err
+		}
+		if err := registerHerdrMachine(ctx, params.SandboxName, !sandboxExisted); err != nil {
+			return err
+		}
+		if err := syncHerdrPlugins(ctx, sandbox); err != nil {
+			return err
+		}
 	}
 
 	needsPublish := !sandboxExisted
