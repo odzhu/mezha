@@ -13,7 +13,10 @@ import (
 	cli "github.com/urfave/cli/v3"
 )
 
-const herdrPluginID = "dev.mezha"
+const (
+	herdrPluginID      = "dev.mezha"
+	herdrProjectDirEnv = "MEZHA_HERDR_PROJECT_DIR"
+)
 
 type herdrInvocationContext struct {
 	WorkspaceCWD   string `json:"workspace_cwd"`
@@ -30,6 +33,11 @@ func newHerdrPluginCommand() *cli.Command {
 		Hidden: true,
 		Commands: []*cli.Command{
 			{
+				Name:   "ui",
+				Usage:  "Show the Mezha dashboard for the active Herdr workspace",
+				Action: runHerdrDashboard,
+			},
+			{
 				Name:      "execute",
 				Usage:     "Execute a Mezha operation for the active Herdr workspace",
 				ArgsUsage: "<operation>",
@@ -41,7 +49,7 @@ func newHerdrPluginCommand() *cli.Command {
 			{
 				Name:      "dispatch",
 				Usage:     "Open a Herdr pane for an interactive Mezha operation",
-				ArgsUsage: "<run|status|destroy>",
+				ArgsUsage: "<dashboard|run|status|destroy>",
 				Action:    dispatchHerdrOperation,
 			},
 		},
@@ -71,13 +79,14 @@ func executeHerdrOperation(ctx context.Context, cmd *cli.Command) error {
 	child.Stdin = os.Stdin
 	child.Stdout = os.Stdout
 	child.Stderr = os.Stderr
-	if err := child.Run(); err != nil {
-		notifyHerdr(operation+" failed", err.Error(), "request")
-		return fmt.Errorf("run Mezha %s: %w", operation, err)
-	}
+	runErr := child.Run()
 	if cmd.Bool("wait") && terminalIsTerminal(int(os.Stdin.Fd())) {
 		fmt.Print("\nPress Enter to close...")
 		_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
+	}
+	if runErr != nil {
+		notifyHerdr(operation+" failed", runErr.Error(), "request")
+		return fmt.Errorf("run Mezha %s: %w", operation, runErr)
 	}
 	if os.Getenv("HERDR_PLUGIN_ACTION_ID") != "" {
 		notifyHerdr("Mezha", operation+" completed", "done")
@@ -103,18 +112,25 @@ func dispatchHerdrOperation(ctx context.Context, cmd *cli.Command) error {
 		return errors.New("dispatch requires exactly one operation")
 	}
 	operation := cmd.Args().First()
-	if operation != "run" && operation != "status" && operation != "destroy" {
+	if operation != "dashboard" && operation != "run" && operation != "status" &&
+		operation != "destroy" {
 		return fmt.Errorf("operation %q has no Herdr pane", operation)
 	}
 	herdr := os.Getenv("HERDR_BIN_PATH")
 	if herdr == "" {
 		herdr = "herdr"
 	}
-	args := []string{"plugin", "pane", "open", "--plugin", herdrPluginID, "--entrypoint", operation}
-	if workspaceID := os.Getenv("HERDR_WORKSPACE_ID"); workspaceID != "" {
-		args = append(args, "--workspace", workspaceID)
+	projectDir, err := herdrProjectDir()
+	if err != nil {
+		return err
 	}
-	if operation == "run" {
+	args := []string{
+		"plugin", "pane", "open",
+		"--plugin", herdrPluginID,
+		"--entrypoint", operation,
+		"--env", herdrProjectDirEnv + "=" + projectDir,
+	}
+	if operation == "run" || operation == "dashboard" {
 		args = append(args, "--focus")
 	}
 	child := exec.CommandContext(ctx, herdr, args...)
@@ -127,6 +143,9 @@ func dispatchHerdrOperation(ctx context.Context, cmd *cli.Command) error {
 }
 
 func herdrProjectDir() (string, error) {
+	if projectDir := strings.TrimSpace(os.Getenv(herdrProjectDirEnv)); projectDir != "" {
+		return projectDir, nil
+	}
 	raw := strings.TrimSpace(os.Getenv("HERDR_PLUGIN_CONTEXT_JSON"))
 	if raw == "" {
 		return "", errors.New("HERDR_PLUGIN_CONTEXT_JSON is not set")

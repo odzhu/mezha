@@ -1,7 +1,8 @@
 # Mezha Herdr plugin
 
-Manage the current Herdr workspace's Mezha sandbox through manifest actions.
-The plugin requires `mezha` on the environment inherited by Herdr.
+Manage the current Herdr workspace's Mezha sandbox through an interactive
+terminal dashboard. The plugin requires `mezha` on the environment inherited by
+Herdr.
 
 ## Development
 
@@ -19,24 +20,24 @@ Install the published plugin with:
 herdr plugin install odzhu/mezha/herdr
 ```
 
-## Actions
+## Dashboard
 
-- `dev.mezha.run` opens an interactive sandbox shell in a new tab.
-- `dev.mezha.provision` provisions and registers the sandbox with Herdr.
-- `dev.mezha.start` starts the sandbox.
-- `dev.mezha.stop` stops the sandbox.
-- `dev.mezha.status` displays synchronization status in a popup.
-- `dev.mezha.upload` uploads dirty working-tree changes.
-- `dev.mezha.download` downloads dirty working-tree changes.
-- `dev.mezha.pull` pulls committed changes from the sandbox.
-- `dev.mezha.push` pushes committed changes to the sandbox.
-- `dev.mezha.destroy` opens a confirmation popup before destroying the sandbox.
+The `dev.mezha.dashboard` action opens a Herdr-managed overlay pane. Like
+herdr-plus, the action is only a launcher; the interactive Bubble Tea interface
+runs in the plugin pane declared by the manifest.
 
-Each action can be assigned to a user-selected key with Herdr's
-`plugin_action` keybinding type. The plugin does not install default keybindings.
+The dashboard provides:
 
-Background actions report completion or failure with Herdr notifications. Full
-output is available through the plugin command log:
+- an interactive sandbox shell in a new tab
+- provision, start, and stop operations
+- repository synchronization status in a popup
+- upload, download, pull, and push operations
+- sandbox destruction with confirmation
+
+The plugin does not install default keybindings. Invoke the action through Herdr
+or bind `dev.mezha.dashboard` with the `plugin_action` keybinding type.
+
+Operation output is available through the plugin command log:
 
 ```sh
 herdr plugin log list --plugin dev.mezha

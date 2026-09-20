@@ -30,6 +30,19 @@ func TestHerdrOperationArgs(t *testing.T) {
 	}
 }
 
+func TestHerdrProjectDirUsesOverride(t *testing.T) {
+	t.Setenv(herdrProjectDirEnv, "/override")
+	t.Setenv("HERDR_PLUGIN_CONTEXT_JSON", `{"workspace_cwd":"/workspace"}`)
+
+	got, err := herdrProjectDir()
+	if err != nil {
+		t.Fatalf("herdrProjectDir() error = %v", err)
+	}
+	if got != "/override" {
+		t.Fatalf("herdrProjectDir() = %q, want %q", got, "/override")
+	}
+}
+
 func TestHerdrProjectDirPrefersWorktree(t *testing.T) {
 	t.Setenv("HERDR_PLUGIN_CONTEXT_JSON", `{
 		"workspace_cwd":"/workspace",

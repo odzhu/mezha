@@ -201,10 +201,10 @@ is optional: if its command is not on `PATH`, Mezha skips both operations.
 
 ### Herdr plugin
 
-The plugin in `herdr` exposes `run`, `provision`, `start`, `stop`,
-`status`, `upload`, `download`, `pull`, `push`, and `destroy` as Herdr actions.
-It does not install keybindings; bind the qualified `dev.mezha.<action>` names
-in your Herdr configuration as desired.
+The plugin in `herdr` exposes a `dev.mezha.dashboard` action that opens an
+interactive terminal interface in a Herdr-managed overlay pane. The dashboard
+provides `run`, `provision`, `start`, `stop`, `status`, `upload`, `download`,
+`pull`, `push`, and `destroy`. It does not install keybindings.
 
 Install it from GitHub:
 
@@ -213,10 +213,9 @@ herdr plugin install odzhu/mezha/herdr
 ```
 
 The `mezha` executable must be available on the environment inherited by Herdr.
-The run action opens the interactive sandbox shell in a new tab, while status
-and destroy use popups. Other operations run in the background and report their
-result through a Herdr notification. See `herdr/README.md` for local
-development instructions and the complete action list.
+The dashboard follows the herdr-plus launcher-and-pane architecture. Run opens
+the interactive sandbox shell in a new tab, while status and destroy use
+popups. See `herdr/README.md` for local development instructions.
 
 ## Environment variables
 
