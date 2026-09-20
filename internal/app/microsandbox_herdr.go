@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/odzhu/mezha/internal/execx"
 	msb "github.com/superradcompany/microsandbox/sdk/go"
@@ -83,7 +84,18 @@ EOF
 `, version, shell, strconv.Quote("/root/.mezha/herdr-shell"), strconv.Quote(workdir))
 	fmt.Println("Provisioning Herdr through devenv...")
 	args := []string{"shell", "--from", "path:" + managedDevenvPath, "--", "sh", "-c", script}
-	code, err := sandbox.AttachWith(ctx, nativeDevenvPath, args)
+	var code int
+	for attempt := 0; attempt < 20; attempt++ {
+		code, err = sandbox.AttachWith(ctx, nativeDevenvPath, args)
+		if err == nil || !strings.Contains(err.Error(), "No such file or directory") {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("install Herdr in sandbox: %w", err)
 	}

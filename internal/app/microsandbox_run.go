@@ -85,6 +85,9 @@ func runMicrosandbox(
 			workdir,
 			cfg.Docker.Enabled || params.Kubernetes,
 		); err != nil {
+			if !sandboxExisted {
+				_ = sandbox.Destroy(context.Background(), msb.WithDestroyForce())
+			}
 			return err
 		}
 		if err := registerHerdrMachine(ctx, params.SandboxName, !sandboxExisted); err != nil {

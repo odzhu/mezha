@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	msb "github.com/superradcompany/microsandbox/sdk/go"
 )
@@ -61,14 +62,10 @@ func ensureNixVolume(ctx context.Context, sandboxName string, volumes []Microsan
 			continue
 		}
 		name := sandboxName + "-" + volume.Name
-		if existing, err := msb.GetVolume(ctx, name); err == nil {
-			ready, err := existing.FS().Exists(ctx, ".mezha-nix-store-v3")
-			if err != nil {
-				return fmt.Errorf("inspect Nix volume %q: %w", name, err)
-			}
-			if ready {
-				return nil
-			}
+		if ready, err := nixVolumeReady(ctx, name, ".mezha-nix-store-v3"); err != nil {
+			return err
+		} else if ready {
+			return nil
 		}
 
 		bootstrapName := sandboxName + "-nix-seed"
@@ -92,25 +89,79 @@ func ensureNixVolume(ctx context.Context, sandboxName string, volumes []Microsan
 		if err != nil {
 			return fmt.Errorf("create Nix volume bootstrap sandbox: %w", err)
 		}
-		defer func() { _ = bootstrap.Destroy(context.Background(), msb.WithDestroyForce()) }()
-		defer func() { _ = bootstrap.Detach(context.Background()) }()
 		output, err := bootstrap.Exec(
 			ctx,
 			"sh",
 			[]string{
 				"-c",
-				"set -eu; set -o pipefail; rm -rf /mnt/mezha-nix/* /mnt/mezha-nix/.[!.]* /mnt/mezha-nix/..?*; tar -C /nix/store -cf - . | tar -C /mnt/mezha-nix -xpf -; sync; touch /mnt/mezha-nix/.mezha-nix-store-v3",
+				"set -eu; set -o pipefail; rm -rf /mnt/mezha-nix/* /mnt/mezha-nix/.[!.]* /mnt/mezha-nix/..?*; tar -C /nix/store -cf - . | tar -C /mnt/mezha-nix -xpf -; touch /mnt/mezha-nix/.mezha-nix-store-v3; sync",
 			},
 		)
 		if err != nil {
+			stopAndDestroySandbox(bootstrap)
 			return fmt.Errorf("seed Nix volume: %w", err)
 		}
 		if !output.Success() {
+			stopAndDestroySandbox(bootstrap)
 			return fmt.Errorf("seed Nix volume: %s", strings.TrimSpace(output.Stderr()))
 		}
+		// A disk-backed volume is not guaranteed to flush recent writes to its
+		// backing image if the sandbox is force-destroyed immediately; a
+		// graceful stop lets the guest unmount and sync first.
+		stopAndDestroySandbox(bootstrap)
 		return nil
 	}
 	return nil
+}
+
+// nixVolumeReady checks a disk-backed volume from inside a sandbox. VolumeFs
+// addresses the host disk image on the local backend, not its mounted filesystem.
+func nixVolumeReady(ctx context.Context, name, marker string) (bool, error) {
+	if _, err := msb.GetVolume(ctx, name); err != nil {
+		return false, nil
+	}
+	probeName := name + "-probe"
+	if probe, err := msb.GetSandbox(ctx, probeName); err == nil {
+		if err := probe.Destroy(ctx, msb.WithDestroyForce()); err != nil {
+			return false, fmt.Errorf("remove Nix volume probe: %w", err)
+		}
+	}
+	probe, err := msb.CreateSandbox(
+		ctx,
+		probeName,
+		msb.WithImage(defaultDevenvImage),
+		msb.WithDetached(),
+		msb.WithUser("0"),
+		msb.WithMounts(map[string]msb.MountConfig{
+			"/mnt/mezha-nix": msb.Mount.Named(name, msb.MountOptions{}),
+		}),
+	)
+	if err != nil {
+		return false, fmt.Errorf("create Nix volume probe: %w", err)
+	}
+	defer stopAndDestroySandbox(probe)
+	output, err := probe.Exec(
+		ctx,
+		"sh",
+		[]string{
+			"-c",
+			"set -eu; target=$(readlink /home/devenv/.nix-profile/bin/devenv); test -x /mnt/mezha-nix/${target#/nix/store/}",
+		},
+	)
+	if err != nil {
+		return false, fmt.Errorf("inspect Nix volume %q: %w", name, err)
+	}
+	return output.Success(), nil
+}
+
+// stopAndDestroySandbox gracefully stops a sandbox so the guest can unmount
+// and flush disk-backed volumes before the sandbox is force-destroyed as a
+// fallback. Force-destroying immediately after a write can drop recent
+// writes on disk-backed volumes.
+func stopAndDestroySandbox(sandbox *msb.Sandbox) {
+	_ = sandbox.Stop(context.Background())
+	time.Sleep(500 * time.Millisecond)
+	_ = sandbox.Destroy(context.Background(), msb.WithDestroyForce())
 }
 
 func nativeUpload(ctx context.Context, sandbox *msb.Sandbox, local, remote string) error {
