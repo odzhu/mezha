@@ -1,6 +1,6 @@
 id = "dev.mezha"
 name = "Mezha"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.9.1"
 description = "Manage Mezha sandboxes from Herdr."
 platforms = ["linux", "macos"]
@@ -21,7 +21,7 @@ command = ["mezha", "herdr", "ui"]
 id = "run"
 title = "Mezha sandbox"
 placement = "tab"
-command = ["mezha", "herdr", "execute", "run"]
+command = ["mezha", "herdr", "execute", "run", "--herdr", "true"]
 
 [[panes]]
 id = "status"

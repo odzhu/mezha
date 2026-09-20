@@ -203,8 +203,9 @@ is optional: if its command is not on `PATH`, Mezha skips both operations.
 
 The plugin in `herdr` exposes a `dev.mezha.dashboard` action that opens an
 interactive terminal interface in a Herdr-managed overlay pane. The dashboard
-provides `run`, `provision`, `start`, `stop`, `status`, `upload`, `download`,
-`pull`, `push`, and `destroy`. It does not install keybindings.
+provides shortcuts for `run`, `provision`, `start`, `stop`, `status`, `upload`,
+`download`, `pull`, `push`, and `destroy`, plus a command entry that accepts any
+Mezha CLI command and arguments. It does not install keybindings.
 
 Install it from GitHub:
 

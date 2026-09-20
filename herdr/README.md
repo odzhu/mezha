@@ -33,6 +33,11 @@ The dashboard provides:
 - repository synchronization status in a popup
 - upload, download, pull, and push operations
 - sandbox destruction with confirmation
+- a command entry for every Mezha CLI command and argument
+
+Select **Command…** to enter the arguments that follow `mezha`, for example
+`run --sandbox shared-dev -- git status` or `logs --tail 200 --source sandbox`.
+Quoted arguments and escaped spaces are supported.
 
 The plugin does not install default keybindings. Invoke the action through Herdr
 or bind `dev.mezha.dashboard` with the `plugin_action` keybinding type.

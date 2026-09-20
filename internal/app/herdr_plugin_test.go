@@ -5,26 +5,33 @@ import (
 	"testing"
 )
 
-func TestHerdrOperationArgs(t *testing.T) {
+func TestParseCommandLine(t *testing.T) {
 	tests := []struct {
-		operation string
-		want      []string
-		ok        bool
+		line string
+		want []string
 	}{
-		{operation: "run", want: []string{"run", "--herdr", "true"}, ok: true},
-		{operation: "provision", want: []string{"provision", "--herdr", "true"}, ok: true},
-		{operation: "status", want: []string{"status"}, ok: true},
-		{operation: "unknown", ok: false},
+		{
+			line: "run --sandbox dev -- git status",
+			want: []string{"run", "--sandbox", "dev", "--", "git", "status"},
+		},
+		{
+			line: `upload "local path" 'remote path'`,
+			want: []string{"upload", "local path", "remote path"},
+		},
+		{
+			line: `run -- bash -lc "git status && pwd"`,
+			want: []string{"run", "--", "bash", "-lc", "git status && pwd"},
+		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.operation, func(t *testing.T) {
-			got, ok := herdrOperationArgs(tt.operation)
-			if ok != tt.ok {
-				t.Fatalf("herdrOperationArgs() ok = %v, want %v", ok, tt.ok)
+		t.Run(tt.line, func(t *testing.T) {
+			got, err := parseCommandLine(tt.line)
+			if err != nil {
+				t.Fatalf("parseCommandLine() error = %v", err)
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("herdrOperationArgs() = %v, want %v", got, tt.want)
+				t.Fatalf("parseCommandLine() = %v, want %v", got, tt.want)
 			}
 		})
 	}

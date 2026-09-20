@@ -38,13 +38,11 @@ func newHerdrPluginCommand() *cli.Command {
 				Action: runHerdrDashboard,
 			},
 			{
-				Name:      "execute",
-				Usage:     "Execute a Mezha operation for the active Herdr workspace",
-				ArgsUsage: "<operation>",
-				Flags: []cli.Flag{
-					&cli.BoolFlag{Name: "wait", Usage: "Wait for input before closing the pane"},
-				},
-				Action: executeHerdrOperation,
+				Name:            "execute",
+				Usage:           "Execute a Mezha command for the active Herdr workspace",
+				ArgsUsage:       "[--wait] [--] <command> [arguments...]",
+				SkipFlagParsing: true,
+				Action:          executeHerdrOperation,
 			},
 			{
 				Name:      "dispatch",
@@ -57,17 +55,22 @@ func newHerdrPluginCommand() *cli.Command {
 }
 
 func executeHerdrOperation(ctx context.Context, cmd *cli.Command) error {
-	if cmd.NArg() != 1 {
-		return errors.New("execute requires exactly one operation")
+	args := cmd.Args().Slice()
+	wait := false
+	if len(args) > 0 && args[0] == "--wait" {
+		wait = true
+		args = args[1:]
 	}
-	operation := cmd.Args().First()
-	args, ok := herdrOperationArgs(operation)
-	if !ok {
-		return fmt.Errorf("unsupported Herdr operation %q", operation)
+	if len(args) > 0 && args[0] == "--" {
+		args = args[1:]
 	}
+	if len(args) == 0 {
+		return errors.New("execute requires a Mezha command")
+	}
+	command := strings.Join(args, " ")
 	projectDir, err := herdrProjectDir()
 	if err != nil {
-		notifyHerdr(operation+" failed", err.Error(), "request")
+		notifyHerdr(command+" failed", err.Error(), "request")
 		return err
 	}
 	binary, err := os.Executable()
@@ -80,31 +83,18 @@ func executeHerdrOperation(ctx context.Context, cmd *cli.Command) error {
 	child.Stdout = os.Stdout
 	child.Stderr = os.Stderr
 	runErr := child.Run()
-	if cmd.Bool("wait") && terminalIsTerminal(int(os.Stdin.Fd())) {
+	if wait && terminalIsTerminal(int(os.Stdin.Fd())) {
 		fmt.Print("\nPress Enter to close...")
 		_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
 	}
 	if runErr != nil {
-		notifyHerdr(operation+" failed", runErr.Error(), "request")
-		return fmt.Errorf("run Mezha %s: %w", operation, runErr)
+		notifyHerdr(command+" failed", runErr.Error(), "request")
+		return fmt.Errorf("run Mezha %s: %w", command, runErr)
 	}
 	if os.Getenv("HERDR_PLUGIN_ACTION_ID") != "" {
-		notifyHerdr("Mezha", operation+" completed", "done")
+		notifyHerdr("Mezha", command+" completed", "done")
 	}
 	return nil
-}
-
-func herdrOperationArgs(operation string) ([]string, bool) {
-	switch operation {
-	case "run":
-		return []string{"run", "--herdr", "true"}, true
-	case "provision":
-		return []string{"provision", "--herdr", "true"}, true
-	case "start", "stop", "status", "upload", "download", "pull", "push", "destroy":
-		return []string{operation}, true
-	default:
-		return nil, false
-	}
 }
 
 func dispatchHerdrOperation(ctx context.Context, cmd *cli.Command) error {
