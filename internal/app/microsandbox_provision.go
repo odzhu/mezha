@@ -78,7 +78,10 @@ func provisionMicrosandbox(
 		fmt.Print(output.Stdout())
 		fmt.Fprint(os.Stderr, output.Stderr())
 		if !output.Success() {
-			return fmt.Errorf("provision core devenv services exited with code %d", output.ExitCode())
+			return fmt.Errorf(
+				"provision core devenv services exited with code %d",
+				output.ExitCode(),
+			)
 		}
 	}
 	if params.Herdr && herdrCommandAvailable() {

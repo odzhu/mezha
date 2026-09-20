@@ -296,7 +296,11 @@ func remoteCommand(command []string, noLoginShell bool) (string, []string) {
 
 // applyProvisionConfig applies declarative initialization only after a sandbox
 // has been created. It is deliberately not repeated for existing sandboxes.
-func applyProvisionConfig(ctx context.Context, sandbox *msb.Sandbox, provision ProvisionConfig) error {
+func applyProvisionConfig(
+	ctx context.Context,
+	sandbox *msb.Sandbox,
+	provision ProvisionConfig,
+) error {
 	for i, add := range provision.Add {
 		if add.Source == "" || add.Target == "" {
 			return fmt.Errorf("provision.add entry %d requires source and target", i)
@@ -329,7 +333,11 @@ func applyProvisionConfig(ctx context.Context, sandbox *msb.Sandbox, provision P
 		fmt.Print(output.Stdout())
 		fmt.Fprint(os.Stderr, output.Stderr())
 		if !output.Success() {
-			return fmt.Errorf("provision.run directive %d exited with code %d", i, output.ExitCode())
+			return fmt.Errorf(
+				"provision.run directive %d exited with code %d",
+				i,
+				output.ExitCode(),
+			)
 		}
 	}
 	return nil
