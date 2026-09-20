@@ -19,7 +19,7 @@ func microsandboxSSHProxy(ctx context.Context, name string) error {
 	if err != nil {
 		return fmt.Errorf("find Microsandbox %q: %w", name, err)
 	}
-	sandbox, err := handle.ConnectOrStart(ctx)
+	sandbox, err := handle.Connect(ctx)
 	if err != nil {
 		return fmt.Errorf("connect to Microsandbox %q: %w", name, err)
 	}
