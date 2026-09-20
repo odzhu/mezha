@@ -9,28 +9,28 @@ import (
 	msb "github.com/superradcompany/microsandbox/sdk/go"
 )
 
-func destroyMicrosandbox(ctx context.Context, params DestroyParams) error {
+func destroyMicrosandbox(ctx context.Context, params DestroyParams) (bool, error) {
 	handle, err := msb.GetSandbox(ctx, params.SandboxName)
 	if msb.IsKind(err, msb.ErrSandboxNotFound) {
 		fmt.Printf("Nothing to destroy: sandbox %q does not exist.\n", params.SandboxName)
-		return nil
+		return true, nil
 	}
 	if err != nil {
-		return fmt.Errorf("find Microsandbox %q: %w", params.SandboxName, err)
+		return false, fmt.Errorf("find Microsandbox %q: %w", params.SandboxName, err)
 	}
 	if !params.Force {
 		confirmed, err := confirmDestroy(params.SandboxName)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if !confirmed {
 			fmt.Println("Aborted; nothing was deleted.")
-			return nil
+			return false, nil
 		}
 	}
 	if err := handle.Destroy(ctx, msb.WithDestroyForce()); err != nil {
-		return fmt.Errorf("destroy Microsandbox %q: %w", params.SandboxName, err)
+		return false, fmt.Errorf("destroy Microsandbox %q: %w", params.SandboxName, err)
 	}
 	fmt.Printf("Destroyed Microsandbox: %s\n", params.SandboxName)
-	return nil
+	return true, nil
 }

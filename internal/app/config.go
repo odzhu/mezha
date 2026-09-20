@@ -367,6 +367,25 @@ microsandbox:
       kind: "disk"
       size_mib: 20480
 
+    # Reuse devenv evaluation state and Go build outputs across recreation.
+    - name: "devenv-state"
+      target: "/sandbox/.devenv"
+      mode: "ensure-exists"
+      kind: "disk"
+      size_mib: 20480
+    - name: "go-cache"
+      target: "/root/.cache/go-build"
+      mode: "ensure-exists"
+      kind: "disk"
+      size_mib: 20480
+
+    # Preserve Nix download metadata and flake inputs across sandbox recreation.
+    - name: "nix-cache"
+      target: "/root/.cache/nix"
+      mode: "ensure-exists"
+      kind: "disk"
+      size_mib: 20480
+
     # Keep images, containers, and Docker volumes independent of the sandbox
     # filesystem. This is used when docker.enabled is true.
     - name: "docker-data"

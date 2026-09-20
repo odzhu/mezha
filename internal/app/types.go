@@ -21,6 +21,8 @@ type RunParams struct {
 	TTY                  *bool
 	PolicyAdvisor        *bool
 	NoLoginShell         bool
+	Herdr                bool
+	VolumesFlush         bool
 }
 
 type GitParams struct {
@@ -57,6 +59,7 @@ type LogsParams struct {
 }
 
 type DestroyParams struct {
-	SandboxName string
-	Force       bool
+	SandboxName  string
+	Force        bool
+	VolumesFlush bool
 }

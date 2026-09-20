@@ -80,6 +80,7 @@ const defaultManagedDevenv = `{ pkgs, ... }:
     pkgs.k3s
     pkgs.kubectl
     pkgs.git
+    pkgs.go
     pkgs.procps
   ];
 

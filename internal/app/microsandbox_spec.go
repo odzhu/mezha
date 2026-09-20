@@ -144,6 +144,31 @@ func (s MicrosandboxSpec) sandboxOptions(
 			},
 		)
 	}
+	if _, exists := mounts["/sandbox/.devenv"]; !exists {
+		mounts["/sandbox/.devenv"] = msb.Mount.NamedWith(
+			sandboxName+"-devenv-state",
+			msb.MountOptions{},
+			msb.NamedVolumeOptions{Mode: "ensure-exists", Kind: "disk", SizeMiB: 20480},
+		)
+	}
+	if _, exists := mounts["/root/.cache/go-build"]; !exists {
+		mounts["/root/.cache/go-build"] = msb.Mount.NamedWith(
+			sandboxName+"-go-cache",
+			msb.MountOptions{},
+			msb.NamedVolumeOptions{Mode: "ensure-exists", Kind: "disk", SizeMiB: 20480},
+		)
+	}
+	if _, exists := mounts["/root/.cache/nix"]; !exists {
+		mounts["/root/.cache/nix"] = msb.Mount.NamedWith(
+			sandboxName+"-nix-cache",
+			msb.MountOptions{},
+			msb.NamedVolumeOptions{
+				Mode:    "ensure-exists",
+				Kind:    "disk",
+				SizeMiB: 20480,
+			},
+		)
+	}
 	if len(mounts) != 0 {
 		opts = append(opts, msb.WithMounts(mounts))
 	}

@@ -216,8 +216,7 @@ func validateSandboxGitRemoteName(remoteName string) error {
 }
 
 func ensureSandboxSSHConfig(_, _, sandboxName string) (string, error) {
-	digest := sha256.Sum256([]byte(sandboxName))
-	hostAlias := fmt.Sprintf("mezha-sandbox-%x", digest[:6])
+	hostAlias := sandboxSSHHostAlias(sandboxName)
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -240,7 +239,7 @@ func ensureSandboxSSHConfig(_, _, sandboxName string) (string, error) {
 		"Host " + hostAlias,
 		"    User root",
 		"    StrictHostKeyChecking no",
-		"    UserKnownHostsFile /dev/null",
+		"    UserKnownHostsFile ~/.ssh/known_hosts",
 		"    GlobalKnownHostsFile /dev/null",
 		"    LogLevel ERROR",
 		"    ServerAliveInterval 15",
@@ -275,6 +274,11 @@ func ensureSandboxSSHConfig(_, _, sandboxName string) (string, error) {
 		return "", fmt.Errorf("write SSH config: %w", err)
 	}
 	return hostAlias, nil
+}
+
+func sandboxSSHHostAlias(sandboxName string) string {
+	digest := sha256.Sum256([]byte(sandboxName))
+	return fmt.Sprintf("mezha-sandbox-%x", digest[:6])
 }
 
 func shellQuote(value string) string {

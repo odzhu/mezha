@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	cli "github.com/urfave/cli/v3"
@@ -135,6 +136,16 @@ func newRunCommand() *cli.Command {
 			Name:  "no-login-shell",
 			Usage: "Skip shell login/profile startup files when running the command or session",
 		},
+		&cli.StringFlag{
+			Name:  "herdr",
+			Value: "false",
+			Usage: "Register the sandbox as a Herdr machine when Herdr is installed (true or false)",
+		},
+		&cli.StringFlag{
+			Name:  "volumes-flush",
+			Value: "false",
+			Usage: "Delete persistent sandbox volumes when recreating (true or false)",
+		},
 	}
 	return &cli.Command{
 		Name:      "run",
@@ -155,6 +166,14 @@ func newRunCommand() *cli.Command {
 			}
 
 			remoteArgs := commandArgs(cmd)
+			herdr, err := strconv.ParseBool(cmd.String("herdr"))
+			if err != nil {
+				return fmt.Errorf("parse --herdr: %w", err)
+			}
+			volumesFlush, err := strconv.ParseBool(cmd.String("volumes-flush"))
+			if err != nil {
+				return fmt.Errorf("parse --volumes-flush: %w", err)
+			}
 			if cmd.Bool("tty") && cmd.Bool("no-tty") {
 				return errors.New("--tty cannot be used together with --no-tty")
 			}
@@ -168,6 +187,9 @@ func newRunCommand() *cli.Command {
 			}
 
 			recreate := resolveBoolParam(cmd, "recreate", cfg.Sandbox.Recreate)
+			if volumesFlush && !recreate {
+				return errors.New("--volumes-flush requires --recreate")
+			}
 			advisor := resolveAdvisorParam(cmd, cfg)
 
 			kubernetes := cfg.Sandbox.Kubernetes
@@ -202,6 +224,8 @@ func newRunCommand() *cli.Command {
 					"no-login-shell",
 					cfg.Sandbox.NoLoginShell,
 				),
+				Herdr:        herdr,
+				VolumesFlush: volumesFlush,
 			}
 
 			if params.Editor != "" && len(params.RemoteCommand) > 0 {
@@ -221,6 +245,11 @@ func newDestroyCommand() *cli.Command {
 			Aliases: []string{"f"},
 			Usage:   "Delete without prompting for confirmation",
 		},
+		&cli.StringFlag{
+			Name:  "volumes-flush",
+			Value: "false",
+			Usage: "Delete persistent sandbox volumes (true or false)",
+		},
 	}
 	return &cli.Command{
 		Name:  "destroy",
@@ -238,6 +267,10 @@ func newDestroyCommand() *cli.Command {
 			if cfg == nil {
 				cfg = &MezhaConfig{}
 			}
+			volumesFlush, err := strconv.ParseBool(cmd.String("volumes-flush"))
+			if err != nil {
+				return fmt.Errorf("parse --volumes-flush: %w", err)
+			}
 			params := DestroyParams{
 				SandboxName: resolveParam(
 					cmd,
@@ -246,7 +279,8 @@ func newDestroyCommand() *cli.Command {
 					cfg.Sandbox.Name,
 					rc.DefaultSandboxName,
 				),
-				Force: cmd.Bool("force"),
+				Force:        cmd.Bool("force"),
+				VolumesFlush: volumesFlush,
 			}
 			return Destroy(ctx, rc, params)
 		},
