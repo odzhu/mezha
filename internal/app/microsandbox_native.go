@@ -105,6 +105,7 @@ func ensureStateVolume(
 	if err != nil {
 		return fmt.Errorf("create state volume bootstrap sandbox: %w", err)
 	}
+	pulse := progressPulse("Seeding persistent Nix state volume is still running")
 	output, err := bootstrap.Exec(ctx, "sh", []string{"-c", `set -eu
 set -o pipefail
 rm -rf /mnt/mezha/* /mnt/mezha/.[!.]* /mnt/mezha/..?*
@@ -113,6 +114,7 @@ mkdir -p /mnt/mezha/mezha/root /mnt/mezha/mezha/home /mnt/mezha/mezha/sandbox /m
 cp -a /home/. /mnt/mezha/mezha/home/
 touch /mnt/mezha/.mezha-state-v2
 sync`})
+	pulse()
 	if err != nil {
 		stopAndDestroySandbox(bootstrap)
 		return fmt.Errorf("seed state volume: %w", err)

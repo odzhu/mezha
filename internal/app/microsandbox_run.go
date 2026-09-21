@@ -86,8 +86,14 @@ func runMicrosandbox(
 		herdrWorkdir = "/sandbox"
 	}
 	herdrEnabled := reregisterHerdr && herdrCommandAvailable()
-	if cfg.Services.Docker.Enabled || params.Kubernetes || herdrEnabled {
+	useDevenv := cfg.Services.Docker.Enabled || params.Kubernetes
+	if useDevenv || herdrEnabled {
 		if err := ensureManagedDevenvConfig(ctx, sandbox, cfg.Provision); err != nil {
+			return err
+		}
+	}
+	if useDevenv {
+		if err := ensureDevenvServices(ctx, sandbox, params.Kubernetes); err != nil {
 			return err
 		}
 	}
@@ -96,7 +102,7 @@ func runMicrosandbox(
 			ctx,
 			sandbox,
 			herdrWorkdir,
-			cfg.Services.Docker.Enabled || params.Kubernetes,
+			useDevenv,
 		); err != nil {
 			if !sandboxExisted {
 				stopAndDestroySandbox(sandbox)
@@ -342,20 +348,31 @@ func applyProvisionConfig(
 		if !info.IsDir() && strings.HasSuffix(target, "/") {
 			target = filepath.ToSlash(filepath.Join(target, filepath.Base(add.Source)))
 		}
-		if err := nativeUpload(ctx, sandbox, add.Source, target); err != nil {
+		fmt.Printf("Provisioning file %d/%d: %s...\n", i+1, len(provision.Add), add.Source)
+		pulse := progressPulse(
+			fmt.Sprintf("Provisioning file %d/%d is still running", i+1, len(provision.Add)),
+		)
+		err = nativeUpload(ctx, sandbox, add.Source, target)
+		pulse()
+		if err != nil {
 			return fmt.Errorf("provision.add entry %d: %w", i, err)
 		}
 	}
 	for i, directive := range provision.Run {
+		fmt.Printf("Running provision command %d/%d...\n", i+1, len(provision.Run))
 		var (
 			output *msb.ExecOutput
 			err    error
+		)
+		pulse := progressPulse(
+			fmt.Sprintf("Provision command %d/%d is still running", i+1, len(provision.Run)),
 		)
 		if directive.Shell {
 			output, err = sandbox.Shell(ctx, directive.Command[0])
 		} else {
 			output, err = sandbox.Exec(ctx, directive.Command[0], directive.Command[1:])
 		}
+		pulse()
 		if err != nil {
 			return fmt.Errorf("provision.run directive %d: %w", i, err)
 		}

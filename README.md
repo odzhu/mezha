@@ -180,17 +180,18 @@ Mezha's `.mezha/devenv.nix` at
 `/sandbox/devenv.nix`. It uses devenv `packages` for Docker, k3s, kubectl, Git,
 Lazygit, GitHub CLI, Go, Groff, Less, and `col`. It configures Groff and the
 manpage pager so captured help output is plain text rather than raw formatting
-control sequences. Mezha starts Docker and k3s in the same Microsandbox exec
-job as each requested command or interactive session, waits for readiness, and
-configures `kubectl`. This is required because separate Microsandbox exec
-jobs have isolated runtime namespaces. Update that file and run `mezha run --recreate` to
-apply a changed managed environment.
+control sequences. Mezha declares Docker and k3s as supervised `processes` in its managed devenv
+configuration. It starts the requested processes once with `devenv up -d` and
+waits for their readiness probes before opening commands or interactive
+sessions. Subsequent sessions attach to the same process manager, so concurrent
+sessions share one Docker daemon and one k3s cluster. Update that file and run
+`mezha run --recreate` to apply a changed managed environment.
 
-Set `services.docker.enabled: true` to start the Docker daemon before configured
-or requested commands. Set `services.k3s.enabled: true` to run k3s alongside
-each command or interactive session and configure `kubectl` to use the local
-cluster. Set it to `false` to disable k3s. Docker images, containers,
-and volumes plus k3s cluster state are stored in the shared persistent volume.
+Set `services.docker.enabled: true` to start the shared Docker process before
+configured or requested commands. Set `services.k3s.enabled: true` to start the
+shared k3s process and configure `kubectl` to use the local cluster. Set it to
+`false` to disable k3s. Docker images, containers, and volumes plus k3s cluster
+state are stored in the shared persistent volume.
 k3s uses Docker as its container runtime, so Docker-built images are immediately
 available to Kubernetes. Named volume names are automatically prefixed with the
 sandbox name, so each sandbox receives its own volume. Volumes are retained when

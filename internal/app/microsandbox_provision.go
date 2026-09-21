@@ -77,19 +77,9 @@ func provisionMicrosandbox(
 		}
 	}
 	if useDevenv {
-		fmt.Println("Provisioning core devenv services...")
-		command, args := dockerCommand("true", nil, params.Kubernetes)
-		code, err := sandbox.AttachWith(
-			ctx,
-			command,
-			args,
-			msb.WithAttachCwd(managedDevenvPath),
-		)
-		if err != nil {
-			return fmt.Errorf("provision core devenv services: %w", err)
-		}
-		if code != 0 {
-			return fmt.Errorf("provision core devenv services exited with code %d", code)
+		fmt.Println("Starting core devenv services...")
+		if err := ensureDevenvServices(ctx, sandbox, params.Kubernetes); err != nil {
+			return err
 		}
 	}
 	if herdrEnabled {
