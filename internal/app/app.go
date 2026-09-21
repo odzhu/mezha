@@ -16,6 +16,7 @@ const rootUsageText = `Usage:
   mezha init [options]
   mezha run [options] [-- command...]
   mezha provision [options]
+  mezha recreate [options]
   mezha start [options]
   mezha stop [options]
   mezha destroy [options]
@@ -47,6 +48,7 @@ Examples:
   mezha provision
   mezha provision --herdr true
   mezha provision --sandbox shared-dev
+  mezha recreate --herdr true
   mezha run --sandbox shared-dev
   mezha run --tty
   mezha run -- ls -la
@@ -84,6 +86,7 @@ func New() *cli.Command {
 			newInitCommand(),
 			newRunCommand(),
 			newProvisionCommand(),
+			newRecreateCommand(),
 			newStartCommand(),
 			newStopCommand(),
 			newDestroyCommand(),
@@ -307,6 +310,56 @@ func newProvisionCommand() *cli.Command {
 				Kubernetes:   kubernetes,
 				Herdr:        herdr,
 				VolumesFlush: volumesFlush,
+			})
+		},
+	}
+}
+
+func newRecreateCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "recreate",
+		Usage: "Recreate and provision a sandbox with clean persistent state",
+		Flags: []cli.Flag{
+			sandboxFlag(),
+			&cli.StringFlag{Name: "remote-dir", Usage: "Destination directory in the sandbox"},
+			&cli.StringFlag{
+				Name:  "herdr",
+				Value: "false",
+				Usage: "Register the sandbox as a Herdr machine when Herdr is installed (true or false)",
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			rc, err := ResolveRepoContext(ctx)
+			if err != nil {
+				return err
+			}
+			cfg, _, err := LoadConfig(rc.RepoRoot)
+			if err != nil {
+				return fmt.Errorf("load mezha configuration: %w", err)
+			}
+			if cfg == nil {
+				cfg = &MezhaConfig{}
+			}
+			herdr := cfg.Sandbox.Herdr
+			if cmd.IsSet("herdr") {
+				herdr, err = strconv.ParseBool(cmd.String("herdr"))
+				if err != nil {
+					return fmt.Errorf("parse --herdr: %w", err)
+				}
+			}
+			return Provision(ctx, rc, ProvisionParams{
+				SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
+				RemoteRepoDir: resolveParam(
+					cmd,
+					"remote-dir",
+					os.Getenv("MICROSANDBOX_REMOTE_REPO_DIR"),
+					cfg.Sandbox.RemoteDir,
+					filepath.ToSlash(filepath.Join("/sandbox", rc.RepoName)),
+				),
+				Recreate:     true,
+				Kubernetes:   cfg.Services.K3s.Enabled,
+				Herdr:        herdr,
+				VolumesFlush: true,
 			})
 		},
 	}

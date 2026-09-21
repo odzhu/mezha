@@ -36,6 +36,11 @@ var herdrDashboardItems = []herdrDashboardItem{
 		title:       "Provision",
 		description: "Create and initialize the configured sandbox",
 	},
+	{
+		args:        []string{"recreate", "--herdr", "true"},
+		title:       "Recreate",
+		description: "Recreate the sandbox with clean persistent state",
+	},
 	{args: []string{"start"}, title: "Start", description: "Start the sandbox"},
 	{args: []string{"stop"}, title: "Stop", description: "Stop the sandbox"},
 	{

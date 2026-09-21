@@ -79,6 +79,7 @@ func ensureStateVolume(
 		return nil
 	}
 
+	fmt.Printf("Seeding persistent Nix state volume: %s (this may take several minutes)...\n", name)
 	bootstrapName := sandboxName + "-state-seed"
 	if sandbox, err := msb.GetSandbox(ctx, bootstrapName); err == nil {
 		if err := sandbox.Destroy(ctx, msb.WithDestroyForce()); err != nil {
@@ -114,6 +115,7 @@ sync`})
 		return fmt.Errorf("seed state volume: %s", strings.TrimSpace(output.Stderr()))
 	}
 	stopAndDestroySandbox(bootstrap)
+	fmt.Printf("Seeded persistent Nix state volume: %s\n", name)
 	return nil
 }
 

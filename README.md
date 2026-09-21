@@ -32,6 +32,7 @@ make build
 mezha init [options]
 mezha run [options] [-- command...]
 mezha provision [options]
+mezha recreate [options]
 mezha start [options]
 mezha stop [options]
 mezha destroy [options]
@@ -54,6 +55,8 @@ mezha run --herdr true -- git status
 # Create the sandbox and start its core services without synchronizing the repository.
 mezha provision
 mezha provision --herdr true
+# Recreate the sandbox and its persistent state, then provision it.
+mezha recreate --herdr true
 # Reuse one sandbox for this and other projects.
 mezha run --sandbox shared-dev -- git status
 mezha upload
@@ -65,7 +68,7 @@ mezha stop
 mezha start
 mezha destroy
 # Remove the sandbox and its retained named volumes.
-mezha destroy --volumes-flush
+mezha destroy --volumes-flush true
 ```
 
 ## Configuration
@@ -203,8 +206,8 @@ is optional: if its command is not on `PATH`, Mezha skips both operations.
 
 The plugin in `herdr` exposes a `dev.mezha.dashboard` action that opens an
 interactive terminal interface in a Herdr-managed overlay pane. The dashboard
-provides shortcuts for `run`, `provision`, `start`, `stop`, `status`, `upload`,
-`download`, `pull`, `push`, and `destroy`, plus a command entry that accepts any
+provides shortcuts for `run`, `provision`, `recreate`, `start`, `stop`, `status`,
+`upload`, `download`, `pull`, `push`, and `destroy`, plus a command entry that accepts any
 Mezha CLI command and arguments. It does not install keybindings.
 
 Install it from GitHub:
