@@ -30,6 +30,7 @@ make build
 
 ```bash
 mezha [run-options] [-- command...]
+mezha run [run-options] [-- command...]
 mezha init [options]
 mezha sandbox list
 mezha sandbox create [options]
@@ -57,6 +58,8 @@ mezha sandbox list
 mezha volume list
 mezha
 mezha -- git status
+# `mezha run` is an explicit alias for the default session command.
+mezha run --recreate --volumes-flush
 mezha --herdr -- git status
 # Create the sandbox and start its core services without synchronizing the repository.
 mezha sandbox create

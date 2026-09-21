@@ -13,6 +13,7 @@ import (
 
 const rootUsageText = `Usage:
   mezha [run-options] [-- command...]
+  mezha run [run-options] [-- command...]
   mezha init [options]
   mezha sandbox <list|create|recreate|start|stop|destroy|status|logs> [options]
   mezha sync <status|push|pull|upload|download|remote> [options]
@@ -41,6 +42,7 @@ func New() *cli.Command {
 		UsageText: rootUsageText,
 		Flags:     run.Flags,
 		Commands: []*cli.Command{
+			newRunCommand(),
 			newInitCommand(),
 			newSandboxCommand(),
 			newSyncCommand(),
@@ -139,6 +141,7 @@ func newRunCommand() *cli.Command {
 		},
 	}
 	return &cli.Command{
+		Name:      "run",
 		Usage:     "Create or reuse a sandbox and open a session",
 		UsageText: rootUsageText,
 		Flags:     flags,
