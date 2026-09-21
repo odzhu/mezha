@@ -22,11 +22,50 @@ type herdrDashboardItem struct {
 	description string
 	custom      bool
 	settings    bool
+	children    []herdrDashboardItem
 }
 
 type herdrDashboardSetting struct {
 	label string
 	path  string
+}
+
+var herdrLifecycleItems = []herdrDashboardItem{
+	{
+		args:        []string{"recreate", "--herdr", "true"},
+		title:       "Recreate",
+		description: "Recreate the sandbox with clean persistent state",
+	},
+	{args: []string{"start"}, title: "Start", description: "Start the sandbox"},
+	{args: []string{"stop"}, title: "Stop", description: "Stop the sandbox"},
+	{
+		args:        []string{"destroy"},
+		title:       "Destroy",
+		description: "Confirm and permanently remove the sandbox",
+	},
+}
+
+var herdrSyncItems = []herdrDashboardItem{
+	{
+		args:        []string{"upload"},
+		title:       "Upload changes",
+		description: "Send local dirty changes to the sandbox",
+	},
+	{
+		args:        []string{"download"},
+		title:       "Download changes",
+		description: "Bring sandbox dirty changes into the workspace",
+	},
+	{
+		args:        []string{"pull"},
+		title:       "Pull commits",
+		description: "Pull committed changes from the sandbox",
+	},
+	{
+		args:        []string{"push"},
+		title:       "Push commits",
+		description: "Push committed changes to the sandbox",
+	},
 }
 
 var herdrDashboardItems = []herdrDashboardItem{
@@ -51,36 +90,14 @@ var herdrDashboardItems = []herdrDashboardItem{
 		description: "Create and initialize the configured sandbox",
 	},
 	{
-		args:        []string{"recreate", "--herdr", "true"},
-		title:       "Recreate",
-		description: "Recreate the sandbox with clean persistent state",
-	},
-	{args: []string{"start"}, title: "Start", description: "Start the sandbox"},
-	{args: []string{"stop"}, title: "Stop", description: "Stop the sandbox"},
-	{
-		args:        []string{"upload"},
-		title:       "Upload changes",
-		description: "Send local dirty changes to the sandbox",
+		title:       "Lifecycle…",
+		description: "Recreate, start, stop, or destroy the sandbox",
+		children:    herdrLifecycleItems,
 	},
 	{
-		args:        []string{"download"},
-		title:       "Download changes",
-		description: "Bring sandbox dirty changes into the workspace",
-	},
-	{
-		args:        []string{"pull"},
-		title:       "Pull commits",
-		description: "Pull committed changes from the sandbox",
-	},
-	{
-		args:        []string{"push"},
-		title:       "Push commits",
-		description: "Push committed changes to the sandbox",
-	},
-	{
-		args:        []string{"destroy"},
-		title:       "Destroy",
-		description: "Confirm and permanently remove the sandbox",
+		title:       "Synchronize…",
+		description: "Upload, download, pull, or push changes",
+		children:    herdrSyncItems,
 	},
 	{
 		title:       "Settings…",
@@ -110,6 +127,8 @@ type herdrDashboardModel struct {
 	settingCursor      int
 	chosenSetting      string
 	settingsNeedInit   bool
+	submenu            []herdrDashboardItem
+	submenuTitle       string
 	sandbox            string
 	sandboxes          []string
 	syncedSandboxes    map[string]bool
@@ -148,6 +167,10 @@ func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateFilter(key)
 	}
 	matches := m.filteredDashboardItems()
+	if index, ok := dashboardDigitIndex(key.String()); ok && index < len(matches) {
+		m.cursor = index
+		return m.chooseDashboardItem(matches)
+	}
 	switch key.String() {
 	case "ctrl+c", "esc", "q":
 		return m, tea.Quit
@@ -187,7 +210,16 @@ func (m herdrDashboardModel) chooseDashboardItem(matches []int) (tea.Model, tea.
 	if m.cursor >= len(matches) {
 		return m, nil
 	}
-	item := herdrDashboardItems[matches[m.cursor]]
+	items := m.activeDashboardItems()
+	item := items[matches[m.cursor]]
+	if len(item.children) > 0 {
+		m.submenu = item.children
+		m.submenuTitle = item.title
+		m.cursor = 0
+		m.filter = nil
+		m.filterMode = false
+		return m, nil
+	}
 	if item.custom {
 		m.commandMode = true
 		m.filterMode = false
@@ -228,6 +260,10 @@ func (m herdrDashboardModel) updateForceInit(key tea.KeyPressMsg) (tea.Model, te
 }
 
 func (m herdrDashboardModel) updateSettings(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if index, ok := dashboardDigitIndex(key.String()); ok && index < len(m.settings) {
+		m.chosenSetting = m.settings[index].path
+		return m, tea.Quit
+	}
 	switch key.String() {
 	case "ctrl+c", "esc":
 		return m, tea.Quit
@@ -256,6 +292,10 @@ func (m herdrDashboardModel) updateSettings(key tea.KeyPressMsg) (tea.Model, tea
 
 func (m herdrDashboardModel) updateFilter(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	matches := m.filteredDashboardItems()
+	if index, ok := dashboardDigitIndex(key.String()); ok && index < len(matches) {
+		m.cursor = index
+		return m.chooseDashboardItem(matches)
+	}
 	switch key.String() {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -292,16 +332,41 @@ func (m herdrDashboardModel) updateFilter(key tea.KeyPressMsg) (tea.Model, tea.C
 	return m, nil
 }
 
+func (m herdrDashboardModel) activeDashboardItems() []herdrDashboardItem {
+	if len(m.submenu) > 0 {
+		return m.submenu
+	}
+	return herdrDashboardItems
+}
+
 func (m herdrDashboardModel) filteredDashboardItems() []int {
 	query := strings.TrimSpace(string(m.filter))
-	matches := make([]int, 0, len(herdrDashboardItems))
-	for index, item := range herdrDashboardItems {
+	items := m.activeDashboardItems()
+	matches := make([]int, 0, len(items))
+	for index, item := range items {
 		candidate := item.title + " " + item.description + " " + strings.Join(item.args, " ")
 		if fuzzyMatch(query, candidate) {
 			matches = append(matches, index)
 		}
 	}
 	return matches
+}
+
+func dashboardDigitIndex(key string) (int, bool) {
+	if len(key) != 1 || key[0] < '0' || key[0] > '9' {
+		return 0, false
+	}
+	if key == "0" {
+		return 9, true
+	}
+	return int(key[0] - '1'), true
+}
+
+func dashboardDigitLabel(index int) string {
+	if index == 9 {
+		return "0"
+	}
+	return fmt.Sprintf("%d", index+1)
 }
 
 func fuzzyMatch(query, candidate string) bool {
@@ -483,9 +548,16 @@ func (m herdrDashboardModel) View() tea.View {
 			if index == m.settingCursor {
 				cursor = "> "
 			}
-			fmt.Fprintf(&view, "%s%-10s %s\n", cursor, setting.label, setting.path)
+			fmt.Fprintf(
+				&view,
+				"%s[%s] %-8s %s\n",
+				cursor,
+				dashboardDigitLabel(index),
+				setting.label,
+				setting.path,
+			)
 		}
-		view.WriteString("\n↑/↓ or j/k move  •  enter edit  •  esc close\n")
+		view.WriteString("\ndigit edit  •  ↑/↓ or j/k move  •  enter edit  •  esc close\n")
 		result := tea.NewView(view.String())
 		result.AltScreen = true
 		return result
@@ -542,7 +614,11 @@ func (m herdrDashboardModel) View() tea.View {
 	if m.sandbox != "" {
 		sandbox = m.sandbox
 	}
-	fmt.Fprintf(&view, "Manage this workspace's sandbox\nSandbox: %s\n", sandbox)
+	title := "Manage this workspace's sandbox"
+	if m.submenuTitle != "" {
+		title += " / " + strings.TrimSuffix(m.submenuTitle, "…")
+	}
+	fmt.Fprintf(&view, "%s\nSandbox: %s\n", title, sandbox)
 	if m.filterMode || len(m.filter) > 0 {
 		fmt.Fprintf(&view, "Filter: %s█\n", string(m.filter))
 	}
@@ -550,23 +626,31 @@ func (m herdrDashboardModel) View() tea.View {
 		fmt.Fprintf(&view, "Error: %s\n", m.err)
 	}
 	view.WriteString("\n")
+	items := m.activeDashboardItems()
 	matches := m.filteredDashboardItems()
 	for position, index := range matches {
-		item := herdrDashboardItems[index]
+		item := items[index]
 		cursor := "  "
 		if position == m.cursor {
 			cursor = "> "
 		}
-		fmt.Fprintf(&view, "%s%-20s %s\n", cursor, item.title, item.description)
+		fmt.Fprintf(
+			&view,
+			"%s[%s] %-18s %s\n",
+			cursor,
+			dashboardDigitLabel(position),
+			item.title,
+			item.description,
+		)
 	}
 	if len(matches) == 0 {
 		view.WriteString("  No matching actions\n")
 	}
 	if m.filterMode {
-		view.WriteString("\n↑/↓ move  •  enter select  •  esc close\n")
+		view.WriteString("\ndigit select  •  ↑/↓ move  •  enter select  •  esc close\n")
 	} else {
 		view.WriteString(
-			"\n↑/↓ or j/k move  •  / filter  •  s sandbox  •  enter select  •  esc close\n",
+			"\ndigit select  •  ↑/↓ or j/k move  •  / filter  •  s sandbox  •  esc close\n",
 		)
 	}
 	result := tea.NewView(view.String())
@@ -605,6 +689,11 @@ func runHerdrDashboard(ctx context.Context, _ *cli.Command) error {
 		model.settingsMode = false
 		model.forceInitMode = false
 		model.commandMode = false
+		model.submenu = nil
+		model.submenuTitle = ""
+		model.cursor = 0
+		model.filter = nil
+		model.filterMode = false
 		if chosenSetting == "" && len(command) == 0 {
 			return nil
 		}
