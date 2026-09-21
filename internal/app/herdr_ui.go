@@ -550,7 +550,7 @@ func (m herdrDashboardModel) View() tea.View {
 	if m.settingsMode {
 		view.WriteString("Choose a configuration to edit\n")
 		if m.settingsNeedInit {
-			view.WriteString("No project configuration found; Mezha will initialize it first.\n")
+			view.WriteString("No Mezha configuration found; Mezha will initialize it first.\n")
 		}
 		view.WriteString("\n")
 		for index, setting := range m.settings {
@@ -764,16 +764,12 @@ func herdrDashboardSettings(projectDir string) ([]herdrDashboardSetting, bool, e
 		return nil, false, err
 	}
 	mezhaPath := filepath.Join(repoRoot, "mezha.yaml")
-	legacyMezhaPath := filepath.Join(repoRoot, "mezha.yml")
 	devenvPath := filepath.Join(repoRoot, ".mezha", "devenv.nix")
 	settings := make([]herdrDashboardSetting, 0, 2)
-	for _, path := range []string{mezhaPath, legacyMezhaPath} {
-		if _, err := os.Stat(path); err == nil {
-			settings = append(settings, herdrDashboardSetting{label: "Mezha", path: path})
-			break
-		} else if !os.IsNotExist(err) {
-			return nil, false, fmt.Errorf("inspect Mezha settings: %w", err)
-		}
+	if _, configPath, err := LoadConfig(repoRoot); err != nil {
+		return nil, false, fmt.Errorf("load Mezha settings: %w", err)
+	} else if configPath != "" {
+		settings = append(settings, herdrDashboardSetting{label: "Mezha", path: configPath})
 	}
 	if _, err := os.Stat(devenvPath); err == nil {
 		settings = append(settings, herdrDashboardSetting{label: "devenv", path: devenvPath})
@@ -820,9 +816,12 @@ func herdrRepoInitialized(projectDir string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if config, _, err := LoadConfig(repoRoot); err != nil {
+		return false, fmt.Errorf("load Mezha configuration: %w", err)
+	} else if config != nil {
+		return true, nil
+	}
 	paths := []string{
-		filepath.Join(repoRoot, "mezha.yaml"),
-		filepath.Join(repoRoot, "mezha.yml"),
 		filepath.Join(repoRoot, ".mezha", "devenv.nix"),
 	}
 	for _, path := range paths {

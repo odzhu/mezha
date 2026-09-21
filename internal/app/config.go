@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-git/go-git/v5"
 	"gopkg.in/yaml.v3"
 )
 
@@ -156,8 +157,11 @@ type SandboxConfig struct {
 	NoLoginShell bool `yaml:"no_login_shell,omitempty"`
 }
 
-// HomeConfigDir returns the mezha home configuration directory (~/.mezha).
+// HomeConfigDir returns MEZHA_HOME or the default mezha home directory (~/.mezha).
 func HomeConfigDir() (string, error) {
+	if dir := os.Getenv("MEZHA_HOME"); dir != "" {
+		return filepath.Clean(dir), nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve home directory: %w", err)
@@ -174,46 +178,75 @@ func HomeConfigPath() (string, error) {
 	return filepath.Join(dir, "mezha.yaml"), nil
 }
 
-// LoadConfig loads a project configuration when present; otherwise it loads
-// the home-level configuration. Project configuration never inherits or merges
-// values from the home-level configuration.
+// LoadConfig loads the most specific available configuration. Configurations do
+// not inherit or merge from lower-precedence locations.
 func LoadConfig(repoRoot string) (*MezhaConfig, string, error) {
+	homeDir, err := HomeConfigDir()
+	if err != nil {
+		return nil, "", err
+	}
+	projectName, worktreeName, gitRef, err := configScopeNames(repoRoot)
+	if err != nil {
+		return nil, "", err
+	}
 
-	projectPaths := []string{
+	// Check in reverse precedence order: repository, sandbox, worktree,
+	// project, then the general Mezha home configuration.
+	paths := []string{
 		filepath.Join(repoRoot, "mezha.yaml"),
 		filepath.Join(repoRoot, "mezha.yml"),
+		filepath.Join(homeDir, "sandboxes", slugify(projectName+"-"+gitRef), "mezha.yaml"),
+		filepath.Join(homeDir, "worktrees", slugify(projectName+"-"+worktreeName), "mezha.yaml"),
+		filepath.Join(homeDir, "projects", slugify(projectName), "mezha.yaml"),
+		filepath.Join(homeDir, "mezha.yaml"),
 	}
-	var project map[string]any
-	var projectPath string
-	for _, path := range projectPaths {
-		var projectFound bool
-		var err error
-		project, projectFound, err = loadConfigMap(path)
+	for _, path := range paths {
+		config, found, err := loadConfigMap(path)
 		if err != nil {
 			return nil, "", err
 		}
-		if projectFound {
-			projectPath = path
-			break
+		if found {
+			return decodeConfig(config, path)
+		}
+	}
+	return nil, "", nil
+}
+
+// configScopeNames identifies the source project, current worktree, and ref.
+func configScopeNames(repoRoot string) (projectName, worktreeName, gitRef string, err error) {
+	projectRoot := repoRoot
+	gitPath := filepath.Join(repoRoot, ".git")
+	info, statErr := os.Stat(gitPath)
+	if statErr != nil {
+		return "", "", "", fmt.Errorf("inspect git metadata: %w", statErr)
+	}
+	if !info.IsDir() {
+		data, readErr := os.ReadFile(gitPath)
+		if readErr != nil {
+			return "", "", "", fmt.Errorf("read git worktree metadata: %w", readErr)
+		}
+		gitDir := strings.TrimSpace(strings.TrimPrefix(string(data), "gitdir:"))
+		if gitDir == string(data) || gitDir == "" {
+			return "", "", "", fmt.Errorf("parse git worktree metadata: %s", gitPath)
+		}
+		if !filepath.IsAbs(gitDir) {
+			gitDir = filepath.Join(repoRoot, gitDir)
+		}
+		gitDir = filepath.Clean(gitDir)
+		if filepath.Base(filepath.Dir(gitDir)) == "worktrees" {
+			projectRoot = filepath.Dir(filepath.Dir(filepath.Dir(gitDir)))
 		}
 	}
 
-	if projectPath != "" {
-		return decodeConfig(project, projectPath)
+	repo, openErr := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	if openErr != nil {
+		return "", "", "", fmt.Errorf("open git repository: %w", openErr)
 	}
-
-	homePath, err := HomeConfigPath()
+	gitRef, err = currentGitRef(repo)
 	if err != nil {
-		return nil, "", err
+		return "", "", "", err
 	}
-	home, homeFound, err := loadConfigMap(homePath)
-	if err != nil {
-		return nil, "", err
-	}
-	if !homeFound {
-		return nil, "", nil
-	}
-	return decodeConfig(home, homePath)
+	return filepath.Base(projectRoot), filepath.Base(repoRoot), gitRef, nil
 }
 
 func decodeConfig(config map[string]any, path string) (*MezhaConfig, string, error) {

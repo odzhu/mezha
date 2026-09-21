@@ -31,6 +31,8 @@ that need a terminal use their corresponding plugin pane.
 
 The dashboard provides:
 
+- editing for the active Mezha configuration, including `MEZHA_HOME` project,
+  worktree, and sandbox configuration layers
 - an interactive sandbox shell in a new tab
 - sandbox and persistent-volume listings
 - provision, start, and stop operations

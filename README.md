@@ -91,9 +91,31 @@ named after the selected sandbox is added to the host repository, so the same
 repository can synchronize with multiple sandboxes. The legacy `--name` option
 remains an alias for `--sandbox`.
 
-Run `mezha init --home` to create a default configuration
-at `~/.mezha/mezha.yaml`. Mezha always uses
-`ghcr.io/cachix/devenv/devenv:latest` and runs it as UID 0: Docker and k3s
+Run `mezha init --home` to create a default configuration at
+`$MEZHA_HOME/mezha.yaml` (`~/.mezha/mezha.yaml` when `MEZHA_HOME` is unset).
+Create a scoped home configuration from a Git checkout with one of:
+
+```sh
+mezha init --home --project
+mezha init --home --worktree
+mezha init --home --sandbox
+```
+
+The scope flags are mutually exclusive. They create the project, current
+worktree, or current branch sandbox configuration, respectively.
+Mezha selects one configuration rather than merging layers. The most specific
+existing file is used; precedence increases in this order:
+
+1. `$MEZHA_HOME/mezha.yaml`
+2. `$MEZHA_HOME/projects/<git-project>/mezha.yaml`
+3. `$MEZHA_HOME/worktrees/<git-project>-<worktree>/mezha.yaml`
+4. `$MEZHA_HOME/sandboxes/<git-project>-<git-branch>/mezha.yaml`
+5. `<project-root>/mezha.yaml`
+
+The project, worktree, and sandbox directory names use Mezha's safe sandbox
+name format; linked worktrees use the primary repository's name for
+`<git-project>`. Mezha always uses `ghcr.io/cachix/devenv/devenv:latest` and
+runs it as UID 0: Docker and k3s
 require it, and Microsandbox cannot resolve the native image's `1000:100` user
 declaration. Mezha uploads its managed devenv configuration during sandbox
 creation. Relative paths in `provision.add` are resolved relative to the
