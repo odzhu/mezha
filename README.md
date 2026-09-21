@@ -167,18 +167,21 @@ run: []
 ```
 
 `provision.add` and `provision.run` are applied only when a sandbox is first created.
-`mezha provision` performs this initialization and starts the configured core
+`mezha provision` performs this initialization and verifies the configured core
 devenv services, but does not publish, upload, or otherwise synchronize repository
 data. Mezha seeds the complete `/nix` directory into the shared `state` volume, which
-is mounted at `/nix`. It then symlinks `/home`, `/root`, `/sandbox`,
+is mounted at `/nix`. The temporary state-volume provisioning sandbox receives
+the same `microsandbox.env`, `microsandbox.network`, and `microsandbox.secrets`
+configuration (including secret host allowlists) as the primary sandbox. It then symlinks `/home`, `/root`, `/sandbox`,
 `/var/lib/docker`, and `/var/lib/rancher/k3s` into that volume before any
 initialization command or devenv shell runs. Mezha defaults `GOPATH` to `/sandbox/go` unless it is
 explicitly configured in `microsandbox.env`. The default `provision.add` installs
 Mezha's `.mezha/devenv.nix` at
 `/sandbox/devenv.nix`. It uses devenv `packages` for Docker, k3s, kubectl, Git,
-Lazygit, and GitHub CLI, plus `devenv:enterShell` tasks to start Docker and k3s, wait for readiness, and
-configure `kubectl`. Mezha enters that environment for every requested command
-or interactive session. Update that file and run `mezha run --recreate` to
+Lazygit, and GitHub CLI. Mezha starts Docker and k3s in the same Microsandbox
+exec job as each requested command or interactive session, waits for readiness,
+and configures `kubectl`. This is required because separate Microsandbox exec
+jobs have isolated runtime namespaces. Update that file and run `mezha run --recreate` to
 apply a changed managed environment.
 
 Set `services.docker.enabled: true` to start the Docker daemon before configured

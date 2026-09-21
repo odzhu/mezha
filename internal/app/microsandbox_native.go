@@ -39,7 +39,7 @@ func openMicrosandbox(
 	if err := ensureDevenvImage(ctx, rc.RepoRoot); err != nil {
 		return nil, nil, nil, fmt.Errorf("import Microsandbox image: %w", err)
 	}
-	if err := ensureStateVolume(ctx, params.SandboxName, cfg.Microsandbox.Volumes); err != nil {
+	if err := ensureStateVolume(ctx, params.SandboxName, *cfg.Microsandbox); err != nil {
 		return nil, nil, nil, err
 	}
 	opts, err := cfg.Microsandbox.sandboxOptions(rc.RepoRoot, params.SandboxName)
@@ -61,8 +61,9 @@ func openMicrosandbox(
 func ensureStateVolume(
 	ctx context.Context,
 	sandboxName string,
-	volumes []MicrosandboxVolume,
+	spec MicrosandboxSpec,
 ) error {
+	volumes := spec.Volumes
 	volume := MicrosandboxVolume{
 		Name: "state", Target: "/nix", Mode: "ensure-exists", Kind: "disk", SizeMiB: 51200,
 	}
@@ -89,12 +90,18 @@ func ensureStateVolume(
 	mount := msb.Mount.NamedWith(name, msb.MountOptions{}, msb.NamedVolumeOptions{
 		Mode: volume.Mode, Kind: volume.Kind, SizeMiB: volume.SizeMiB, QuotaMiB: volume.QuotaMiB,
 	})
-	bootstrap, err := msb.CreateSandbox(ctx, bootstrapName,
+	runtimeOpts, err := spec.runtimeOptions()
+	if err != nil {
+		return fmt.Errorf("configure state volume bootstrap sandbox: %w", err)
+	}
+	bootstrapOpts := []msb.SandboxOption{
 		msb.WithImage(defaultDevenvImage),
 		msb.WithDetached(),
 		msb.WithUser("0"),
 		msb.WithMounts(map[string]msb.MountConfig{"/mnt/mezha": mount}),
-	)
+	}
+	bootstrapOpts = append(bootstrapOpts, runtimeOpts...)
+	bootstrap, err := msb.CreateSandbox(ctx, bootstrapName, bootstrapOpts...)
 	if err != nil {
 		return fmt.Errorf("create state volume bootstrap sandbox: %w", err)
 	}

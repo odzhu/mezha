@@ -92,17 +92,11 @@ func (s MicrosandboxSpec) sandboxOptions(
 	// Microsandbox guest-user resolver cannot resolve. Docker and k3s also
 	// require root privileges, so always use root's numeric UID.
 	opts = append(opts, msb.WithUser("0"))
-	environment := make(map[string]string, len(s.Environment)+1)
-	for name, value := range s.Environment {
-		environment[name] = value
+	runtimeOpts, err := s.runtimeOptions()
+	if err != nil {
+		return nil, err
 	}
-	if _, exists := environment["GOPATH"]; !exists {
-		environment["GOPATH"] = "/sandbox/go"
-	}
-	opts = append(opts, msb.WithEnv(environment))
-	if len(s.Scripts) != 0 {
-		opts = append(opts, msb.WithScripts(s.Scripts))
-	}
+	opts = append(opts, runtimeOpts...)
 
 	mounts := make(map[string]msb.MountConfig, len(s.Mounts)+len(s.Volumes))
 	for _, mount := range s.Mounts {
@@ -160,6 +154,24 @@ func (s MicrosandboxSpec) sandboxOptions(
 		opts = append(opts, msb.WithMounts(mounts))
 	}
 
+	return opts, nil
+}
+
+// runtimeOptions returns configuration that must be present in every sandbox
+// that can execute provisioning commands, including the state-volume bootstrap.
+func (s MicrosandboxSpec) runtimeOptions() ([]msb.SandboxOption, error) {
+	environment := make(map[string]string, len(s.Environment)+1)
+	for name, value := range s.Environment {
+		environment[name] = value
+	}
+	if _, exists := environment["GOPATH"]; !exists {
+		environment["GOPATH"] = "/sandbox/go"
+	}
+	opts := []msb.SandboxOption{msb.WithEnv(environment)}
+	if len(s.Scripts) != 0 {
+		opts = append(opts, msb.WithScripts(s.Scripts))
+	}
+
 	network, err := s.networkConfig()
 	if err != nil {
 		return nil, err
@@ -176,18 +188,15 @@ func (s MicrosandboxSpec) sandboxOptions(
 		if len(secret.AllowHosts) == 0 && len(secret.AllowHostPatterns) == 0 {
 			return nil, fmt.Errorf("sandbox secret %q requires an allowlist", secret.EnvVar)
 		}
-		secrets = append(
-			secrets,
-			msb.Secret.Env(
-				secret.EnvVar,
-				os.Getenv(secret.ValueFromEnv),
-				msb.SecretEnvOptions{
-					AllowHosts:        secret.AllowHosts,
-					AllowHostPatterns: secret.AllowHostPatterns,
-					RequireTLS:        secret.RequireTLS,
-				},
-			),
-		)
+		secrets = append(secrets, msb.Secret.Env(
+			secret.EnvVar,
+			os.Getenv(secret.ValueFromEnv),
+			msb.SecretEnvOptions{
+				AllowHosts:        secret.AllowHosts,
+				AllowHostPatterns: secret.AllowHostPatterns,
+				RequireTLS:        secret.RequireTLS,
+			},
+		))
 	}
 	if len(secrets) != 0 {
 		opts = append(opts, msb.WithSecrets(secrets...))
