@@ -70,6 +70,16 @@ var herdrSyncItems = []herdrDashboardItem{
 
 var herdrDashboardItems = []herdrDashboardItem{
 	{
+		args:        []string{"list"},
+		title:       "List sandboxes",
+		description: "Show all local Mezha sandboxes",
+	},
+	{
+		args:        []string{"volumes", "--list"},
+		title:       "List volumes",
+		description: "Show persistent Microsandbox volumes",
+	},
+	{
 		args:        []string{"init"},
 		title:       "Initialize",
 		description: "Create the project Mezha configuration",
@@ -710,6 +720,10 @@ func runHerdrDashboard(ctx context.Context, _ *cli.Command) error {
 			}
 		} else {
 			actionErr = launchHerdrDashboardCommand(ctx, command)
+			// Pane operations take over the interaction.
+			if actionErr == nil && dashboardCommandUsesPane(command) {
+				return nil
+			}
 		}
 		if actionErr != nil {
 			model.err = actionErr.Error()
@@ -863,19 +877,23 @@ func listHerdrDashboardSandboxes(
 	return append([]string{""}, sandboxes...), synced, nil
 }
 
+func dashboardCommandUsesPane(command []string) bool {
+	return len(command) > 0 && (command[0] == "run" || command[0] == "destroy")
+}
+
 func launchHerdrDashboardCommand(ctx context.Context, command []string) error {
 	binary, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve Mezha executable: %w", err)
 	}
 	args := []string{"herdr"}
-	if command[0] == "run" || command[0] == "status" || command[0] == "destroy" {
+	if dashboardCommandUsesPane(command) {
 		args = append(args, "dispatch", command[0], "--")
-		args = append(args, command...)
 	} else {
-		args = append(args, "execute", "--")
-		args = append(args, command...)
+		// Keep command output visible until it is acknowledged.
+		args = append(args, "execute", "--wait", "--")
 	}
+	args = append(args, command...)
 	child := exec.CommandContext(ctx, binary, args...)
 	child.Stdin = os.Stdin
 	child.Stdout = os.Stdout

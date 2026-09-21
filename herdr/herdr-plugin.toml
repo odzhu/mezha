@@ -1,6 +1,6 @@
 id = "dev.mezha"
 name = "Mezha"
-version = "0.2.0"
+version = "0.3.0"
 min_herdr_version = "0.9.1"
 description = "Manage Mezha sandboxes from Herdr."
 platforms = ["linux", "macos"]
@@ -10,6 +10,102 @@ id = "dashboard"
 title = "Mezha"
 contexts = ["workspace"]
 command = ["mezha", "herdr", "dispatch", "dashboard"]
+
+[[actions]]
+id = "init"
+title = "Initialize Mezha"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "init"]
+
+[[actions]]
+id = "list"
+title = "List Mezha sandboxes"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "list"]
+
+[[actions]]
+id = "volumes"
+title = "List Mezha volumes"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "volumes", "--list"]
+
+[[actions]]
+id = "run"
+title = "Open Mezha sandbox"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "dispatch", "run"]
+
+[[actions]]
+id = "provision"
+title = "Provision Mezha sandbox"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "provision", "--herdr", "true"]
+
+[[actions]]
+id = "recreate"
+title = "Recreate Mezha sandbox"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "recreate", "--herdr", "true"]
+
+[[actions]]
+id = "start"
+title = "Start Mezha sandbox"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "start"]
+
+[[actions]]
+id = "stop"
+title = "Stop Mezha sandbox"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "stop"]
+
+[[actions]]
+id = "status"
+title = "Show Mezha status"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--wait", "--", "status"]
+
+[[actions]]
+id = "upload"
+title = "Upload Mezha changes"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "upload"]
+
+[[actions]]
+id = "download"
+title = "Download Mezha changes"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "download"]
+
+[[actions]]
+id = "pull"
+title = "Pull Mezha commits"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "pull"]
+
+[[actions]]
+id = "push"
+title = "Push Mezha commits"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "push"]
+
+[[actions]]
+id = "remote-repair"
+title = "Repair Mezha remote"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "remote", "repair"]
+
+[[actions]]
+id = "logs"
+title = "Show Mezha logs"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "logs"]
+
+[[actions]]
+id = "destroy"
+title = "Destroy Mezha sandbox"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "dispatch", "destroy"]
 
 [[panes]]
 id = "dashboard"

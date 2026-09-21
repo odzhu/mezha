@@ -62,13 +62,15 @@ func executeHerdrOperation(ctx context.Context, cmd *cli.Command) error {
 		wait = true
 		args = args[1:]
 	}
-	if len(args) > 0 && args[0] == "--" {
-		args = args[1:]
-	}
 	if paneCommand := os.Getenv(herdrPaneCommandEnv); paneCommand != "" {
 		if err := json.Unmarshal([]byte(paneCommand), &args); err != nil {
 			return fmt.Errorf("parse Herdr pane command: %w", err)
 		}
+	}
+	// A dispatched dashboard command is passed through the pane as an argv
+	// sequence and can retain its command separator.
+	if len(args) > 0 && args[0] == "--" {
+		args = args[1:]
 	}
 	if len(args) == 0 {
 		return errors.New("execute requires a Mezha command")
@@ -89,7 +91,7 @@ func executeHerdrOperation(ctx context.Context, cmd *cli.Command) error {
 	child.Stdout = os.Stdout
 	child.Stderr = os.Stderr
 	runErr := child.Run()
-	if wait && terminalIsTerminal(int(os.Stdin.Fd())) {
+	if wait {
 		fmt.Print("\nPress Enter to close...")
 		_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
 	}
