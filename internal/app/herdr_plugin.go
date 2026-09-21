@@ -48,7 +48,7 @@ func newHerdrPluginCommand() *cli.Command {
 			{
 				Name:      "dispatch",
 				Usage:     "Open a Herdr pane for an interactive Mezha operation",
-				ArgsUsage: "<dashboard|run|status|destroy> [-- command...]",
+				ArgsUsage: "<dashboard|shell|destroy> [-- command...]",
 				Action:    dispatchHerdrOperation,
 			},
 		},
@@ -111,8 +111,7 @@ func dispatchHerdrOperation(ctx context.Context, cmd *cli.Command) error {
 	}
 	commandArgs := cmd.Args().Slice()
 	operation := commandArgs[0]
-	if operation != "dashboard" && operation != "run" && operation != "status" &&
-		operation != "destroy" {
+	if operation != "dashboard" && operation != "shell" && operation != "destroy" {
 		return fmt.Errorf("operation %q has no Herdr pane", operation)
 	}
 	herdr := os.Getenv("HERDR_BIN_PATH")
@@ -136,7 +135,7 @@ func dispatchHerdrOperation(ctx context.Context, cmd *cli.Command) error {
 		}
 		args = append(args, "--env", herdrPaneCommandEnv+"="+string(paneCommand))
 	}
-	if operation == "run" || operation == "dashboard" {
+	if operation == "shell" || operation == "dashboard" {
 		args = append(args, "--focus")
 	}
 	child := exec.CommandContext(ctx, herdr, args...)

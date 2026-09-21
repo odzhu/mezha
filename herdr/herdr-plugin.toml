@@ -21,85 +21,85 @@ command = ["mezha", "herdr", "execute", "--", "init"]
 id = "list"
 title = "List Mezha sandboxes"
 contexts = ["workspace"]
-command = ["mezha", "herdr", "execute", "--", "list"]
+command = ["mezha", "herdr", "execute", "--", "sandbox", "list"]
 
 [[actions]]
 id = "volumes"
 title = "List Mezha volumes"
 contexts = ["workspace"]
-command = ["mezha", "herdr", "execute", "--", "volumes", "--list"]
+command = ["mezha", "herdr", "execute", "--", "volume", "list"]
 
 [[actions]]
-id = "run"
+id = "shell"
 title = "Open Mezha sandbox"
 contexts = ["workspace"]
-command = ["mezha", "herdr", "dispatch", "run"]
+command = ["mezha", "herdr", "dispatch", "shell", "--", "--herdr"]
 
 [[actions]]
-id = "provision"
-title = "Provision Mezha sandbox"
+id = "create"
+title = "Create Mezha sandbox"
 contexts = ["workspace"]
-command = ["mezha", "herdr", "execute", "--", "provision", "--herdr", "true"]
+command = ["mezha", "herdr", "execute", "--", "sandbox", "create", "--herdr"]
 
 [[actions]]
 id = "recreate"
 title = "Recreate Mezha sandbox"
 contexts = ["workspace"]
-command = ["mezha", "herdr", "execute", "--", "recreate", "--herdr", "true"]
+command = ["mezha", "herdr", "execute", "--", "sandbox", "recreate", "--herdr"]
 
 [[actions]]
 id = "start"
 title = "Start Mezha sandbox"
 contexts = ["workspace"]
-command = ["mezha", "herdr", "execute", "--", "start"]
+command = ["mezha", "herdr", "execute", "--", "sandbox", "start"]
 
 [[actions]]
 id = "stop"
 title = "Stop Mezha sandbox"
 contexts = ["workspace"]
-command = ["mezha", "herdr", "execute", "--", "stop"]
+command = ["mezha", "herdr", "execute", "--", "sandbox", "stop"]
 
 [[actions]]
 id = "status"
 title = "Show Mezha status"
 contexts = ["workspace"]
-command = ["mezha", "herdr", "execute", "--wait", "--", "status"]
+command = ["mezha", "herdr", "execute", "--wait", "--", "sync", "status"]
 
 [[actions]]
 id = "upload"
 title = "Upload Mezha changes"
 contexts = ["workspace"]
-command = ["mezha", "herdr", "execute", "--", "upload"]
+command = ["mezha", "herdr", "execute", "--", "sync", "upload"]
 
 [[actions]]
 id = "download"
 title = "Download Mezha changes"
 contexts = ["workspace"]
-command = ["mezha", "herdr", "execute", "--", "download"]
+command = ["mezha", "herdr", "execute", "--", "sync", "download"]
 
 [[actions]]
 id = "pull"
 title = "Pull Mezha commits"
 contexts = ["workspace"]
-command = ["mezha", "herdr", "execute", "--", "pull"]
+command = ["mezha", "herdr", "execute", "--", "sync", "pull"]
 
 [[actions]]
 id = "push"
 title = "Push Mezha commits"
 contexts = ["workspace"]
-command = ["mezha", "herdr", "execute", "--", "push"]
+command = ["mezha", "herdr", "execute", "--", "sync", "push"]
 
 [[actions]]
 id = "remote-repair"
 title = "Repair Mezha remote"
 contexts = ["workspace"]
-command = ["mezha", "herdr", "execute", "--", "remote", "repair"]
+command = ["mezha", "herdr", "execute", "--", "sync", "remote", "repair"]
 
 [[actions]]
 id = "logs"
 title = "Show Mezha logs"
 contexts = ["workspace"]
-command = ["mezha", "herdr", "execute", "--", "logs"]
+command = ["mezha", "herdr", "execute", "--", "sandbox", "logs"]
 
 [[actions]]
 id = "destroy"
@@ -114,18 +114,10 @@ placement = "overlay"
 command = ["mezha", "herdr", "execute", "--", "herdr", "ui"]
 
 [[panes]]
-id = "run"
+id = "shell"
 title = "Mezha sandbox"
 placement = "tab"
-command = ["mezha", "herdr", "execute", "--", "run", "--herdr", "true"]
-
-[[panes]]
-id = "status"
-title = "Mezha status"
-placement = "popup"
-width = "80%"
-height = "80%"
-command = ["mezha", "herdr", "execute", "--wait", "--", "status"]
+command = ["mezha", "herdr", "execute", "--", "--herdr"]
 
 [[panes]]
 id = "destroy"
@@ -133,4 +125,4 @@ title = "Destroy Mezha sandbox"
 placement = "popup"
 width = "70%"
 height = 20
-command = ["mezha", "herdr", "execute", "--", "destroy"]
+command = ["mezha", "herdr", "execute", "--", "sandbox", "destroy"]

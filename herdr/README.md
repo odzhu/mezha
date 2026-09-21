@@ -35,14 +35,14 @@ The dashboard provides:
   worktree, and sandbox configuration layers
 - an interactive sandbox shell in a new tab
 - sandbox and persistent-volume listings
-- provision, start, and stop operations
-- repository synchronization status in a popup
+- sandbox create, start, and stop operations
+- repository synchronization status
 - upload, download, pull, and push operations
 - sandbox destruction with confirmation
 - a command entry for every Mezha CLI command and argument
 
 Select **Command…** to enter the arguments that follow `mezha`, for example
-`run --sandbox shared-dev -- git status` or `logs --tail 200 --source sandbox`.
+`--sandbox shared-dev -- git status` or `sandbox logs --tail 200 --source sandbox`.
 Quoted arguments and escaped spaces are supported.
 
 The plugin does not install default keybindings. Invoke the action through Herdr

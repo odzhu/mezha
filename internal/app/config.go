@@ -34,7 +34,7 @@ type ServiceConfig struct {
 	Enabled bool `yaml:"enabled,omitempty"`
 }
 
-// FilesConfig describes local paths to add to the sandbox during mezha run.
+// FilesConfig describes local paths to add to the sandbox during a Mezha session.
 // Sources are resolved relative to the mezha.yaml that defines them, but may
 // use ../ or absolute paths. Targets are sandbox paths; relative targets are resolved
 // relative to sandbox.remote_dir.
@@ -103,7 +103,7 @@ func (a *FileAdd) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-// RunDirective is a command executed in the sandbox during mezha run. A YAML
+// RunDirective is a command executed in the sandbox during a Mezha session. A YAML
 // string uses Dockerfile RUN's shell form; a YAML sequence uses its exec form.
 type RunDirective struct {
 	Command []string
@@ -153,7 +153,7 @@ type SandboxConfig struct {
 	PolicyAdvisor *bool  `yaml:"policy_advisor,omitempty"`
 	Advisor       *bool  `yaml:"advisor,omitempty"`
 	// NoLoginShell skips sourcing shell login/profile startup files
-	// (bash -lc) when running the requested command/session in `mezha run`.
+	// (bash -lc) when running the requested command/session in Mezha.
 	NoLoginShell bool `yaml:"no_login_shell,omitempty"`
 }
 

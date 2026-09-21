@@ -29,67 +29,68 @@ make build
 ## Usage
 
 ```bash
+mezha [run-options] [-- command...]
 mezha init [options]
-mezha list
-mezha volumes --list|--destroy <name> [options]
-mezha run [options] [-- command...]
-mezha provision [options]
-mezha recreate [options]
-mezha start [options]
-mezha stop [options]
-mezha destroy [options]
-mezha upload [options] [local-path] [remote-path]
-mezha download [options] [remote-path] [local-path]
-mezha pull
-mezha push
-mezha status [options]
-mezha remote repair [options]
-mezha logs [options]
+mezha sandbox list
+mezha sandbox create [options]
+mezha sandbox recreate [options]
+mezha sandbox start [options]
+mezha sandbox stop [options]
+mezha sandbox destroy [options]
+mezha sandbox status [options]
+mezha sandbox logs [options]
+mezha sync status [options]
+mezha sync upload [options] [local-path] [remote-path]
+mezha sync download [options] [remote-path] [local-path]
+mezha sync pull [options]
+mezha sync push [options]
+mezha sync remote repair [options]
+mezha volume list
+mezha volume rm <name> [options]
 ```
 
 Examples:
 
 ```bash
 mezha init
-mezha list
-mezha volumes --list
-mezha run
-mezha run -- git status
-mezha run --herdr true -- git status
+mezha sandbox list
+mezha volume list
+mezha
+mezha -- git status
+mezha --herdr -- git status
 # Create the sandbox and start its core services without synchronizing the repository.
-mezha provision
-mezha provision --herdr true
+mezha sandbox create
+mezha sandbox create --herdr
 # Recreate the sandbox and its persistent state, then provision it.
-mezha recreate --herdr true
+mezha sandbox recreate --herdr
 # Reuse one sandbox for this and other projects.
-mezha run --sandbox shared-dev -- git status
-mezha upload
-mezha download reports/result.json ./result.json
-mezha pull
-mezha push
+mezha --sandbox shared-dev -- git status
+mezha sync upload
+mezha sync download reports/result.json ./result.json
+mezha sync pull
+mezha sync push
 # Stop the sandbox while retaining it, then start it again later.
-mezha stop
-mezha start
-mezha destroy
+mezha sandbox stop
+mezha sandbox start
+mezha sandbox destroy
 # List all local sandboxes and volumes. Volume output includes capacity and users.
-mezha list
-mezha volumes --list
+mezha sandbox list
+mezha volume list
 # Remove an unused volume after confirmation.
-mezha volumes --destroy shared-dev-state
+mezha volume rm shared-dev-state
 # Remove the sandbox and its retained named volumes.
-mezha destroy --volumes-flush true
+mezha sandbox destroy --volumes-flush
 ```
 
 ## Configuration
 
 Run `mezha init` in a repository to create `mezha.yaml` and
 `.mezha/devenv.nix`. By default, Mezha generates a sandbox name for the current
-repository and Git ref. Use `--sandbox <name>` on `run`, synchronization,
-transfer, logs, and destroy commands to select a reusable sandbox instead.
-Each project is kept in its own `/sandbox/<project>` directory. A Git remote
-named after the selected sandbox is added to the host repository, so the same
-repository can synchronize with multiple sandboxes. The legacy `--name` option
-remains an alias for `--sandbox`.
+repository and Git ref. Use `--sandbox <name>` (or `-s <name>`) with the default session, `sandbox`,
+and `sync` commands to select a reusable sandbox instead. Each project is kept
+in its own `/sandbox/<project>` directory. A Git remote named after the selected
+sandbox is added to the host repository, so the same repository can synchronize
+with multiple sandboxes.
 
 Run `mezha init --home` to create a default configuration at
 `$MEZHA_HOME/mezha.yaml` (`~/.mezha/mezha.yaml` when `MEZHA_HOME` is unset).
@@ -167,7 +168,7 @@ run: []
 ```
 
 `provision.add` and `provision.run` are applied only when a sandbox is first created.
-`mezha provision` performs this initialization and verifies the configured core
+`mezha sandbox create` performs this initialization and verifies the configured core
 devenv services, but does not publish, upload, or otherwise synchronize repository
 data. Mezha seeds the complete `/nix` directory into the shared `state` volume, which
 is mounted at `/nix`. The temporary state-volume provisioning sandbox receives
@@ -185,7 +186,7 @@ configuration. It starts the requested processes once with `devenv up -d` and
 waits for their readiness probes before opening commands or interactive
 sessions. Subsequent sessions attach to the same process manager, so concurrent
 sessions share one Docker daemon and one k3s cluster. Update that file and run
-`mezha run --recreate` to apply a changed managed environment.
+`mezha --recreate` to apply a changed managed environment.
 
 Set `services.docker.enabled: true` to start the shared Docker process before
 configured or requested commands. Set `services.k3s.enabled: true` to start the
@@ -198,9 +199,8 @@ sandbox name, so each sandbox receives its own volume. Volumes are retained when
 the sandbox is recreated or destroyed; this includes the Nix store, the complete
 `/sandbox` workspace, `/home`, and `/root` with their caches and configuration, avoiding
 repeated downloads and evaluation after
-`mezha
-run --recreate`. Use `--volumes-flush` with
-`mezha destroy`, or with `mezha run --recreate`, only when a clean set of
+`mezha --recreate`. Use `--volumes-flush` with
+`mezha sandbox destroy`, or with `mezha --recreate`, only when a clean set of
 persistent volumes is required. Entries in `run` execute before the requested
 command. Strings use
 shell form; YAML sequences use exec form.
@@ -208,12 +208,12 @@ shell form; YAML sequences use exec form.
 ## Herdr integration
 
 When the local `herdr` command is installed, register the sandbox as a saved
-Herdr SSH machine while provisioning or running it with:
+Herdr SSH machine while creating a sandbox or opening a session with:
 
 ```bash
-mezha provision --herdr true
-# Or provision, synchronize the repository, and open a session.
-mezha run --herdr true
+mezha sandbox create --herdr
+# Or create, synchronize the repository, and open a session.
+mezha --herdr
 ```
 
 To enable this by default for the project, set it in `mezha.yaml` (Mezha does
@@ -224,8 +224,8 @@ sandbox:
   herdr: true
 ```
 
-The default is `false`; an explicit `--herdr true` or `--herdr false` on
-`provision` or `run` overrides the configured value for that invocation.
+The default is `false`; `--herdr` or `--no-herdr` on `sandbox create` or the
+default session overrides the configured value for that invocation.
 
 The registration is idempotent and uses Mezha's sandbox SSH proxy. Mezha
 installs the matching Linux Herdr release in the sandbox before registration,
@@ -235,7 +235,7 @@ Mezha also natively installs GitHub-managed local Herdr plugins in the sandbox,
 preserves their enabled state, and copies each plugin's local configuration
 directory. Plugin installation and build commands run through Mezha's managed
 `devenv` environment. The generated `.mezha/devenv.nix` includes Go for native
-plugin builds; add other plugin-specific build tools there. `mezha destroy`
+plugin builds; add other plugin-specific build tools there. `mezha sandbox destroy`
 removes the corresponding saved Herdr machine profile. Herdr
 is optional: if its command is not on `PATH`, Mezha skips both operations.
 
@@ -243,9 +243,8 @@ is optional: if its command is not on `PATH`, Mezha skips both operations.
 
 The plugin in `herdr` exposes a `dev.mezha.dashboard` action that opens an
 interactive terminal interface in a Herdr-managed overlay pane. The dashboard
-provides shortcuts for `run`, `provision`, `recreate`, `start`, `stop`, `status`,
-`upload`, `download`, `pull`, `push`, and `destroy`, plus a command entry that accepts any
-Mezha CLI command and arguments. It does not install keybindings.
+provides shortcuts for the default shell, sandbox lifecycle, and repository
+synchronization commands, plus a command entry that accepts any Mezha CLI command and arguments. It does not install keybindings.
 
 Install it from GitHub:
 
@@ -254,9 +253,9 @@ herdr plugin install odzhu/mezha/herdr
 ```
 
 The `mezha` executable must be available on the environment inherited by Herdr.
-The dashboard follows the herdr-plus launcher-and-pane architecture. Run opens
-the interactive sandbox shell in a new tab, while status and destroy use
-popups. See `herdr/README.md` for local development instructions.
+The dashboard follows the herdr-plus launcher-and-pane architecture. The default
+session opens the interactive sandbox shell in a new tab, while destruction uses
+a popup. See `herdr/README.md` for local development instructions.
 
 ## Environment variables
 

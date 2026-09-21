@@ -200,7 +200,7 @@ func requireSandboxGitRemote(ctx context.Context, repoRoot, remoteName string) e
 		remoteName,
 	); err != nil {
 		return fmt.Errorf(
-			"sandbox Git remote is not configured; create the sandbox with `mezha run` first: %w",
+			"sandbox Git remote is not configured; create the sandbox with `mezha sandbox create` first: %w",
 			err,
 		)
 	}
@@ -246,7 +246,7 @@ func ensureSandboxSSHConfig(_, _, sandboxName string) (string, error) {
 		"    ServerAliveCountMax 3",
 		"    ProxyCommand " + shellQuote(
 			executable,
-		) + " ssh-proxy --name " + shellQuote(
+		) + " ssh-proxy --sandbox " + shellQuote(
 			sandboxName,
 		),
 		end,

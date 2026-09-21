@@ -32,14 +32,14 @@ type herdrDashboardSetting struct {
 
 var herdrLifecycleItems = []herdrDashboardItem{
 	{
-		args:        []string{"recreate", "--herdr", "true"},
+		args:        []string{"sandbox", "recreate", "--herdr"},
 		title:       "Recreate",
 		description: "Recreate the sandbox with clean persistent state",
 	},
-	{args: []string{"start"}, title: "Start", description: "Start the sandbox"},
-	{args: []string{"stop"}, title: "Stop", description: "Stop the sandbox"},
+	{args: []string{"sandbox", "start"}, title: "Start", description: "Start the sandbox"},
+	{args: []string{"sandbox", "stop"}, title: "Stop", description: "Stop the sandbox"},
 	{
-		args:        []string{"destroy"},
+		args:        []string{"sandbox", "destroy"},
 		title:       "Destroy",
 		description: "Confirm and permanently remove the sandbox",
 	},
@@ -47,22 +47,22 @@ var herdrLifecycleItems = []herdrDashboardItem{
 
 var herdrSyncItems = []herdrDashboardItem{
 	{
-		args:        []string{"upload"},
+		args:        []string{"sync", "upload"},
 		title:       "Upload changes",
 		description: "Send local dirty changes to the sandbox",
 	},
 	{
-		args:        []string{"download"},
+		args:        []string{"sync", "download"},
 		title:       "Download changes",
 		description: "Bring sandbox dirty changes into the workspace",
 	},
 	{
-		args:        []string{"pull"},
+		args:        []string{"sync", "pull"},
 		title:       "Pull commits",
 		description: "Pull committed changes from the sandbox",
 	},
 	{
-		args:        []string{"push"},
+		args:        []string{"sync", "push"},
 		title:       "Push commits",
 		description: "Push committed changes to the sandbox",
 	},
@@ -70,12 +70,12 @@ var herdrSyncItems = []herdrDashboardItem{
 
 var herdrDashboardItems = []herdrDashboardItem{
 	{
-		args:        []string{"list"},
+		args:        []string{"sandbox", "list"},
 		title:       "List sandboxes",
 		description: "Show all local Mezha sandboxes",
 	},
 	{
-		args:        []string{"volumes", "--list"},
+		args:        []string{"volume", "list"},
 		title:       "List volumes",
 		description: "Show persistent Microsandbox volumes",
 	},
@@ -85,17 +85,17 @@ var herdrDashboardItems = []herdrDashboardItem{
 		description: "Create the project Mezha configuration",
 	},
 	{
-		args:        []string{"run", "--herdr", "true"},
+		args:        []string{"shell", "--herdr"},
 		title:       "Open sandbox shell",
 		description: "Open an interactive shell in a new tab",
 	},
 	{
-		args:        []string{"status"},
+		args:        []string{"sync", "status"},
 		title:       "Show status",
 		description: "Inspect repository synchronization status",
 	},
 	{
-		args:        []string{"provision", "--herdr", "true"},
+		args:        []string{"sandbox", "create", "--herdr"},
 		title:       "Provision",
 		description: "Create and initialize the configured sandbox",
 	},
@@ -877,7 +877,8 @@ func listHerdrDashboardSandboxes(
 }
 
 func dashboardCommandUsesPane(command []string) bool {
-	return len(command) > 0 && (command[0] == "run" || command[0] == "destroy")
+	return len(command) > 0 && (command[0] == "shell" ||
+		(len(command) > 1 && command[0] == "sandbox" && command[1] == "destroy"))
 }
 
 func launchHerdrDashboardCommand(ctx context.Context, command []string) error {
@@ -887,12 +888,19 @@ func launchHerdrDashboardCommand(ctx context.Context, command []string) error {
 	}
 	args := []string{"herdr"}
 	if dashboardCommandUsesPane(command) {
-		args = append(args, "dispatch", command[0], "--")
+		operation := command[0]
+		paneCommand := command[1:]
+		if operation == "sandbox" {
+			operation = "destroy"
+			paneCommand = command[2:]
+		}
+		args = append(args, "dispatch", operation, "--")
+		args = append(args, paneCommand...)
 	} else {
 		// Keep command output visible until it is acknowledged.
 		args = append(args, "execute", "--wait", "--")
+		args = append(args, command...)
 	}
-	args = append(args, command...)
 	child := exec.CommandContext(ctx, binary, args...)
 	child.Stdin = os.Stdin
 	child.Stdout = os.Stdout
