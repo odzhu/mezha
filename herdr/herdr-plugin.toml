@@ -21,7 +21,7 @@ command = ["mezha", "herdr", "ui"]
 id = "run"
 title = "Mezha sandbox"
 placement = "tab"
-command = ["mezha", "run", "--herdr", "true"]
+command = ["mezha", "herdr", "execute", "run", "--herdr", "true"]
 
 [[panes]]
 id = "status"
