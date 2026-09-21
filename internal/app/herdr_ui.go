@@ -209,7 +209,12 @@ func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.chooseDashboardItem(matches)
 	}
 	switch key.String() {
-	case "ctrl+c", "esc", "q":
+	case "ctrl+c", "q":
+		return m, tea.Quit
+	case "esc":
+		if len(m.submenu) > 0 {
+			return m.closeDashboardSubmenu(), nil
+		}
 		return m, tea.Quit
 	case "up", "k":
 		if m.cursor > 0 {
@@ -288,10 +293,8 @@ func (m herdrDashboardModel) updateForceInit(key tea.KeyPressMsg) (tea.Model, te
 	case "y", "Y":
 		m.chosen = []string{"init", "--force"}
 		return m, tea.Quit
-	case "n", "N", "enter":
+	case "n", "N", "enter", "esc":
 		m.forceInitMode = false
-	case "esc":
-		return m, tea.Quit
 	}
 	return m, nil
 }
@@ -302,8 +305,11 @@ func (m herdrDashboardModel) updateSettings(key tea.KeyPressMsg) (tea.Model, tea
 		return m, tea.Quit
 	}
 	switch key.String() {
-	case "ctrl+c", "esc":
+	case "ctrl+c":
 		return m, tea.Quit
+	case "esc":
+		m.settingsMode = false
+		return m, nil
 	case "up", "k":
 		if m.settingCursor > 0 {
 			m.settingCursor--
@@ -327,6 +333,15 @@ func (m herdrDashboardModel) updateSettings(key tea.KeyPressMsg) (tea.Model, tea
 	return m, nil
 }
 
+func (m herdrDashboardModel) closeDashboardSubmenu() herdrDashboardModel {
+	m.submenu = nil
+	m.submenuTitle = ""
+	m.cursor = 0
+	m.filter = nil
+	m.filterMode = false
+	return m
+}
+
 func (m herdrDashboardModel) updateFilter(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	matches := m.filteredDashboardItems()
 	if index, ok := dashboardDigitIndex(key.String()); ok && index < len(matches) {
@@ -337,7 +352,10 @@ func (m herdrDashboardModel) updateFilter(key tea.KeyPressMsg) (tea.Model, tea.C
 	case "ctrl+c":
 		return m, tea.Quit
 	case "esc":
-		return m, tea.Quit
+		m.filterMode = false
+		m.filter = nil
+		m.cursor = 0
+		return m, nil
 	case "up", "ctrl+p":
 		if m.cursor > 0 {
 			m.cursor--
@@ -437,8 +455,11 @@ func fuzzyMatch(query, candidate string) bool {
 func (m herdrDashboardModel) updateSandbox(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	itemCount := len(m.sandboxes) + 1
 	switch key.String() {
-	case "ctrl+c", "esc":
+	case "ctrl+c":
 		return m, tea.Quit
+	case "esc":
+		m.sandboxMode = false
+		return m, nil
 	case "up", "k":
 		if m.sandboxCursor > 0 {
 			m.sandboxCursor--
@@ -467,8 +488,12 @@ func (m herdrDashboardModel) updateSandbox(key tea.KeyPressMsg) (tea.Model, tea.
 
 func (m herdrDashboardModel) updateSandboxInput(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
-	case "ctrl+c", "esc":
+	case "ctrl+c":
 		return m, tea.Quit
+	case "esc":
+		m.sandboxCustomMode = false
+		m.sandboxMode = true
+		return m, nil
 	case "left":
 		if m.sandboxInputCursor > 0 {
 			m.sandboxInputCursor--
@@ -517,8 +542,14 @@ func (m herdrDashboardModel) updateSandboxInput(key tea.KeyPressMsg) (tea.Model,
 
 func (m herdrDashboardModel) updateCommand(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
-	case "ctrl+c", "esc":
+	case "ctrl+c":
 		return m, tea.Quit
+	case "esc":
+		m.commandMode = false
+		m.input = nil
+		m.inputCursor = 0
+		m.err = ""
+		return m, nil
 	case "left":
 		if m.inputCursor > 0 {
 			m.inputCursor--
@@ -578,7 +609,7 @@ func (m herdrDashboardModel) View() tea.View {
 		view.WriteString(
 			"This repository already has a Mezha configuration.\n" +
 				"Reinitialize it with --force? [y/N]\n\n" +
-				"y overwrite  •  n/enter cancel  •  esc close\n",
+				"y overwrite  •  n/enter cancel  •  esc back\n",
 		)
 		result := tea.NewView(view.String())
 		result.AltScreen = true
@@ -604,7 +635,7 @@ func (m herdrDashboardModel) View() tea.View {
 				setting.path,
 			)
 		}
-		view.WriteString("\ndigit edit  •  ↑/↓ or j/k move  •  enter edit  •  esc close\n")
+		view.WriteString("\ndigit edit  •  ↑/↓ or j/k move  •  enter edit  •  esc back\n")
 		result := tea.NewView(view.String())
 		result.AltScreen = true
 		return result
@@ -629,7 +660,7 @@ func (m herdrDashboardModel) View() tea.View {
 			cursor = "> "
 		}
 		fmt.Fprintf(&view, "%sCustom sandbox…\n", cursor)
-		view.WriteString("\n↑/↓ or j/k move  •  enter select  •  esc close\n")
+		view.WriteString("\n↑/↓ or j/k move  •  enter select  •  esc back\n")
 		result := tea.NewView(view.String())
 		result.AltScreen = true
 		return result
@@ -639,7 +670,7 @@ func (m herdrDashboardModel) View() tea.View {
 		before := string(m.sandboxInput[:m.sandboxInputCursor])
 		after := string(m.sandboxInput[m.sandboxInputCursor:])
 		fmt.Fprintf(&view, "%s█%s\n", before, after)
-		view.WriteString("\nenter select  •  esc close\n")
+		view.WriteString("\nenter select  •  esc back\n")
 		result := tea.NewView(view.String())
 		result.AltScreen = true
 		return result
@@ -652,7 +683,7 @@ func (m herdrDashboardModel) View() tea.View {
 		if m.err != "" {
 			fmt.Fprintf(&view, "\n%s\n", m.err)
 		}
-		view.WriteString("\nenter run  •  esc close\n")
+		view.WriteString("\nenter run  •  esc back\n")
 		result := tea.NewView(view.String())
 		result.AltScreen = true
 		return result
@@ -713,9 +744,13 @@ func (m herdrDashboardModel) View() tea.View {
 	if m.filterMode {
 		view.WriteString(dashboardFooterStyle.Render("↑/↓ move · enter select · esc clear filter"))
 	} else {
+		escape := "esc close"
+		if len(m.submenu) > 0 {
+			escape = "esc back"
+		}
 		view.WriteString(
 			dashboardFooterStyle.Render(
-				"↑/↓ move · enter select · / filter · s sandbox · esc close",
+				"↑/↓ move · enter select · / filter · s sandbox · " + escape,
 			),
 		)
 	}
