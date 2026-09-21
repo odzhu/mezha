@@ -15,13 +15,13 @@ command = ["mezha", "herdr", "dispatch", "dashboard"]
 id = "dashboard"
 title = "Mezha"
 placement = "overlay"
-command = ["mezha", "herdr", "ui"]
+command = ["mezha", "herdr", "execute", "--", "herdr", "ui"]
 
 [[panes]]
 id = "run"
 title = "Mezha sandbox"
 placement = "tab"
-command = ["mezha", "herdr", "execute", "run", "--herdr", "true"]
+command = ["mezha", "herdr", "execute", "--", "run", "--herdr", "true"]
 
 [[panes]]
 id = "status"
@@ -29,7 +29,7 @@ title = "Mezha status"
 placement = "popup"
 width = "80%"
 height = "80%"
-command = ["mezha", "herdr", "execute", "--wait", "status"]
+command = ["mezha", "herdr", "execute", "--wait", "--", "status"]
 
 [[panes]]
 id = "destroy"
@@ -37,4 +37,4 @@ title = "Destroy Mezha sandbox"
 placement = "popup"
 width = "70%"
 height = 20
-command = ["mezha", "herdr", "execute", "destroy"]
+command = ["mezha", "herdr", "execute", "--", "destroy"]

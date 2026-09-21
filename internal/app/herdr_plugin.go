@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	herdrPluginID      = "dev.mezha"
-	herdrProjectDirEnv = "MEZHA_HERDR_PROJECT_DIR"
+	herdrPluginID       = "dev.mezha"
+	herdrProjectDirEnv  = "MEZHA_HERDR_PROJECT_DIR"
+	herdrPaneCommandEnv = "MEZHA_HERDR_PANE_COMMAND"
 )
 
 type herdrInvocationContext struct {
@@ -47,7 +48,7 @@ func newHerdrPluginCommand() *cli.Command {
 			{
 				Name:      "dispatch",
 				Usage:     "Open a Herdr pane for an interactive Mezha operation",
-				ArgsUsage: "<dashboard|run|status|destroy>",
+				ArgsUsage: "<dashboard|run|status|destroy> [-- command...]",
 				Action:    dispatchHerdrOperation,
 			},
 		},
@@ -63,6 +64,11 @@ func executeHerdrOperation(ctx context.Context, cmd *cli.Command) error {
 	}
 	if len(args) > 0 && args[0] == "--" {
 		args = args[1:]
+	}
+	if paneCommand := os.Getenv(herdrPaneCommandEnv); paneCommand != "" {
+		if err := json.Unmarshal([]byte(paneCommand), &args); err != nil {
+			return fmt.Errorf("parse Herdr pane command: %w", err)
+		}
 	}
 	if len(args) == 0 {
 		return errors.New("execute requires a Mezha command")
@@ -98,10 +104,11 @@ func executeHerdrOperation(ctx context.Context, cmd *cli.Command) error {
 }
 
 func dispatchHerdrOperation(ctx context.Context, cmd *cli.Command) error {
-	if cmd.NArg() != 1 {
-		return errors.New("dispatch requires exactly one operation")
+	if cmd.NArg() < 1 {
+		return errors.New("dispatch requires an operation")
 	}
-	operation := cmd.Args().First()
+	commandArgs := cmd.Args().Slice()
+	operation := commandArgs[0]
 	if operation != "dashboard" && operation != "run" && operation != "status" &&
 		operation != "destroy" {
 		return fmt.Errorf("operation %q has no Herdr pane", operation)
@@ -119,6 +126,13 @@ func dispatchHerdrOperation(ctx context.Context, cmd *cli.Command) error {
 		"--plugin", herdrPluginID,
 		"--entrypoint", operation,
 		"--env", herdrProjectDirEnv + "=" + projectDir,
+	}
+	if len(commandArgs) > 1 {
+		paneCommand, err := json.Marshal(commandArgs[1:])
+		if err != nil {
+			return fmt.Errorf("encode Herdr pane command: %w", err)
+		}
+		args = append(args, "--env", herdrPaneCommandEnv+"="+string(paneCommand))
 	}
 	if operation == "run" || operation == "dashboard" {
 		args = append(args, "--focus")
