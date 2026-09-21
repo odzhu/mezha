@@ -95,7 +95,7 @@ func provisionMicrosandbox(
 	if herdrEnabled {
 		workdir := cfg.Microsandbox.Workdir
 		if workdir == "" {
-			workdir = params.RemoteRepoDir
+			workdir = "/sandbox"
 		}
 		if err := ensureSandboxHerdr(ctx, sandbox, workdir, useDevenv); err != nil {
 			return err

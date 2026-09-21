@@ -81,6 +81,10 @@ func runMicrosandbox(
 	if workdir == "" {
 		workdir = repoDir
 	}
+	herdrWorkdir := cfg.Microsandbox.Workdir
+	if herdrWorkdir == "" {
+		herdrWorkdir = "/sandbox"
+	}
 	herdrEnabled := reregisterHerdr && herdrCommandAvailable()
 	if cfg.Services.Docker.Enabled || params.Kubernetes || herdrEnabled {
 		if err := ensureManagedDevenvConfig(ctx, sandbox, cfg.Provision); err != nil {
@@ -91,7 +95,7 @@ func runMicrosandbox(
 		if err := ensureSandboxHerdr(
 			ctx,
 			sandbox,
-			workdir,
+			herdrWorkdir,
 			cfg.Services.Docker.Enabled || params.Kubernetes,
 		); err != nil {
 			if !sandboxExisted {
