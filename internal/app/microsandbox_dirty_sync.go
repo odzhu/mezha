@@ -136,7 +136,7 @@ func downloadDirtyRepoFromMicrosandbox(
 		)
 	}
 	for _, raw := range bytesSplit(outUntracked.StdoutBytes(), 0) {
-		if path := string(raw); path != "" {
+		if path := string(raw); path != "" && !ignoredSyncPath(path) {
 			dirty.copy = append(dirty.copy, path)
 		}
 	}
