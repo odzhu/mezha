@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"unicode"
@@ -23,6 +24,11 @@ type herdrDashboardItem struct {
 }
 
 var herdrDashboardItems = []herdrDashboardItem{
+	{
+		args:        []string{"init"},
+		title:       "Initialize",
+		description: "Create the project Mezha configuration",
+	},
 	{
 		args:        []string{"run", "--herdr", "true"},
 		title:       "Open sandbox shell",
@@ -82,6 +88,7 @@ type herdrDashboardModel struct {
 	chosen             []string
 	commandMode        bool
 	filterMode         bool
+	forceInitMode      bool
 	sandboxMode        bool
 	sandboxCustomMode  bool
 	input              []rune
@@ -90,6 +97,7 @@ type herdrDashboardModel struct {
 	sandbox            string
 	sandboxes          []string
 	syncedSandboxes    map[string]bool
+	repoInitialized    bool
 	sandboxCursor      int
 	sandboxInput       []rune
 	sandboxInputCursor int
@@ -107,6 +115,9 @@ func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if m.commandMode {
 		return m.updateCommand(key)
+	}
+	if m.forceInitMode {
+		return m.updateForceInit(key)
 	}
 	if m.sandboxCustomMode {
 		return m.updateSandboxInput(key)
@@ -164,11 +175,29 @@ func (m herdrDashboardModel) chooseDashboardItem(matches []int) (tea.Model, tea.
 		m.err = ""
 		return m, nil
 	}
+	if len(item.args) > 0 && item.args[0] == "init" && m.repoInitialized {
+		m.forceInitMode = true
+		m.filterMode = false
+		return m, nil
+	}
 	m.chosen = append([]string(nil), item.args...)
-	if m.sandbox != "" {
+	if m.sandbox != "" && item.args[0] != "init" {
 		m.chosen = append(m.chosen, "--sandbox", m.sandbox)
 	}
 	return m, tea.Quit
+}
+
+func (m herdrDashboardModel) updateForceInit(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch key.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "y", "Y":
+		m.chosen = []string{"init", "--force"}
+		return m, tea.Quit
+	case "n", "N", "enter", "esc":
+		m.forceInitMode = false
+	}
+	return m, nil
 }
 
 func (m herdrDashboardModel) updateFilter(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -390,6 +419,16 @@ func (m herdrDashboardModel) updateCommand(key tea.KeyPressMsg) (tea.Model, tea.
 func (m herdrDashboardModel) View() tea.View {
 	var view strings.Builder
 	view.WriteString("Mezha\n")
+	if m.forceInitMode {
+		view.WriteString(
+			"This repository already has a Mezha configuration.\n" +
+				"Reinitialize it with --force? [y/N]\n\n" +
+				"y overwrite  •  n/enter/esc cancel\n",
+		)
+		result := tea.NewView(view.String())
+		result.AltScreen = true
+		return result
+	}
 	if m.sandboxMode {
 		view.WriteString("Choose a sandbox for dashboard actions\n\n")
 		for index, sandbox := range m.sandboxes {
@@ -480,9 +519,14 @@ func runHerdrDashboard(ctx context.Context, _ *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	repoInitialized, err := herdrRepoInitialized(projectDir)
+	if err != nil {
+		return err
+	}
 	program := tea.NewProgram(herdrDashboardModel{
 		sandboxes:       sandboxes,
 		syncedSandboxes: syncedSandboxes,
+		repoInitialized: repoInitialized,
 	})
 	result, err := program.Run()
 	if err != nil {
@@ -493,6 +537,26 @@ func runHerdrDashboard(ctx context.Context, _ *cli.Command) error {
 		return nil
 	}
 	return launchHerdrDashboardCommand(ctx, model.chosen)
+}
+
+func herdrRepoInitialized(projectDir string) (bool, error) {
+	repoRoot, err := findRepoRoot(projectDir)
+	if err != nil {
+		return false, err
+	}
+	paths := []string{
+		filepath.Join(repoRoot, "mezha.yaml"),
+		filepath.Join(repoRoot, "mezha.yml"),
+		filepath.Join(repoRoot, ".mezha", "devenv.nix"),
+	}
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			return true, nil
+		} else if !os.IsNotExist(err) {
+			return false, fmt.Errorf("inspect Mezha configuration: %w", err)
+		}
+	}
+	return false, nil
 }
 
 func listHerdrDashboardSandboxes(
