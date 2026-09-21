@@ -118,6 +118,7 @@ func dispatchHerdrOperation(ctx context.Context, cmd *cli.Command) error {
 		"plugin", "pane", "open",
 		"--plugin", herdrPluginID,
 		"--entrypoint", operation,
+		"--cwd", projectDir,
 		"--env", herdrProjectDirEnv + "=" + projectDir,
 	}
 	if operation == "run" || operation == "dashboard" {
