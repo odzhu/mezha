@@ -130,6 +130,8 @@ func runMicrosandbox(
 		); err != nil {
 			return err
 		}
+	} else if err := syncSandboxGitIdentity(ctx, sandbox, rc.RepoRoot, repoDir); err != nil {
+		return err
 	} else if err := repairMicrosandboxGitRemote(
 		ctx,
 		rc,
