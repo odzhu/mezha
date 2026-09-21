@@ -184,7 +184,7 @@ func runMicrosandbox(
 			command, args = dockerCommand(command, args, params.Kubernetes)
 		}
 		if interactiveTTYEnabled(params.TTY) {
-			code, err := sandbox.AttachWith(ctx, command, args, msb.WithAttachCwd(workdir))
+			code, err := sandbox.AttachWith(ctx, command, args, sandboxAttachOptions(workdir)...)
 			if err != nil {
 				return err
 			}
@@ -219,7 +219,7 @@ func runMicrosandbox(
 			// second `devenv shell` here runs its enterShell tasks twice.
 			command, args = dockerCommand("bash", nil, params.Kubernetes)
 		}
-		code, err := sandbox.AttachWith(ctx, command, args, msb.WithAttachCwd(workdir))
+		code, err := sandbox.AttachWith(ctx, command, args, sandboxAttachOptions(workdir)...)
 		if err != nil {
 			return err
 		}
@@ -247,12 +247,12 @@ func runMicrosandbox(
 	}
 	var shellArgs []string
 	if !params.NoLoginShell && filepath.Base(shell) == "bash" {
-		shellArgs = []string{"-lc", shellBootstrap + "; exec \"$0\" -l", shell}
+		shellArgs = []string{"-lc", shellBootstrap() + "; exec \"$0\" -l", shell}
 	}
 	if cfg.Services.Docker.Enabled || params.Kubernetes {
 		shell, shellArgs = dockerCommand(shell, shellArgs, params.Kubernetes)
 	}
-	code, err := sandbox.AttachWith(ctx, shell, shellArgs, msb.WithAttachCwd(workdir))
+	code, err := sandbox.AttachWith(ctx, shell, shellArgs, sandboxAttachOptions(workdir)...)
 	if err != nil {
 		return err
 	}
@@ -272,7 +272,7 @@ func sandboxCommandPath(
 	output, err := sandbox.Exec(
 		ctx,
 		"sh",
-		[]string{"-c", shellBootstrap + "; command -v " + name},
+		[]string{"-c", shellBootstrap() + "; command -v " + name},
 		msb.WithExecCwd(workdir),
 	)
 	if err != nil {
@@ -284,11 +284,28 @@ func sandboxCommandPath(
 	return strings.TrimSpace(output.Stdout()), nil
 }
 
-// shellBootstrap makes the profile-installed tools available and gives the
-// attached PTY a usable initial size. Microsandbox's PTY can initially report
-// zero rows or columns, which causes terminal-aware commands such as devenv to
-// fail with EINVAL.
-const shellBootstrap = `if [ -t 0 ]; then stty rows 24 cols 80 2>/dev/null || :; fi; if [ -d "$HOME/.nix-profile/bin" ]; then PATH="$HOME/.nix-profile/bin:$PATH"; export PATH; fi`
+// sandboxAttachOptions passes the local terminal type to interactive sessions.
+func sandboxAttachOptions(workdir string) []msb.AttachOption {
+	term := os.Getenv("TERM")
+	if term == "" {
+		term = "xterm-256color"
+	}
+	return []msb.AttachOption{
+		msb.WithAttachCwd(workdir),
+		msb.WithAttachEnv(map[string]string{"TERM": term}),
+	}
+}
+
+// shellBootstrap makes profile-installed tools available and sets the attached
+// PTY to the dimensions of the local terminal when Microsandbox reports zero.
+func shellBootstrap() string {
+	cols, rows := terminalSize(int(os.Stdout.Fd()))
+	return fmt.Sprintf(
+		`if [ -t 0 ]; then stty rows %d cols %d 2>/dev/null || :; fi; if [ -d "$HOME/.nix-profile/bin" ]; then PATH="$HOME/.nix-profile/bin:$PATH"; export PATH; fi`,
+		rows,
+		cols,
+	)
+}
 
 // remoteCommand runs commands through a login shell by default. The fixed
 // script preserves every command argument without shell interpolation.
@@ -297,7 +314,7 @@ func remoteCommand(command []string, noLoginShell bool) (string, []string) {
 		return command[0], command[1:]
 	}
 	args := make([]string, 0, len(command)+4)
-	args = append(args, "-lc", shellBootstrap+`; exec "$@"`, "mezha-run")
+	args = append(args, "-lc", shellBootstrap()+`; exec "$@"`, "mezha-run")
 	args = append(args, command...)
 	return "bash", args
 }
