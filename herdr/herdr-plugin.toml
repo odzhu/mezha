@@ -1,0 +1,40 @@
+id = "dev.mezha"
+name = "Mezha"
+version = "0.2.0"
+min_herdr_version = "0.9.1"
+description = "Manage Mezha sandboxes from Herdr."
+platforms = ["linux", "macos"]
+
+[[actions]]
+id = "dashboard"
+title = "Mezha"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "dispatch", "dashboard"]
+
+[[panes]]
+id = "dashboard"
+title = "Mezha"
+placement = "overlay"
+command = ["mezha", "herdr", "execute", "--", "herdr", "ui"]
+
+[[panes]]
+id = "run"
+title = "Mezha sandbox"
+placement = "tab"
+command = ["mezha", "herdr", "execute", "--", "run", "--herdr", "true"]
+
+[[panes]]
+id = "status"
+title = "Mezha status"
+placement = "popup"
+width = "80%"
+height = "80%"
+command = ["mezha", "herdr", "execute", "--wait", "--", "status"]
+
+[[panes]]
+id = "destroy"
+title = "Destroy Mezha sandbox"
+placement = "popup"
+width = "70%"
+height = 20
+command = ["mezha", "herdr", "execute", "--", "destroy"]

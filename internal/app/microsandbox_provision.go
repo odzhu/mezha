@@ -5,7 +5,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
 
 	msb "github.com/superradcompany/microsandbox/sdk/go"
 )
@@ -54,11 +53,13 @@ func provisionMicrosandbox(
 	if err != nil {
 		return err
 	}
+	fmt.Printf("Starting or connecting to Microsandbox: %s...\n", params.SandboxName)
 	sandbox, err := msb.ConnectOrCreateSandbox(ctx, params.SandboxName, opts...)
 	if err != nil {
 		return fmt.Errorf("start Microsandbox %q: %w", params.SandboxName, err)
 	}
 	defer func() { _ = sandbox.Detach(context.Background()) }()
+	fmt.Printf("Connected to Microsandbox: %s\n", params.SandboxName)
 
 	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
 		return err
@@ -69,22 +70,29 @@ func provisionMicrosandbox(
 		}
 	}
 	useDevenv := cfg.Services.Docker.Enabled || params.Kubernetes
+	herdrEnabled := params.Herdr && herdrCommandAvailable()
+	if useDevenv || herdrEnabled {
+		if err := ensureManagedDevenvConfig(ctx, sandbox, cfg.Provision); err != nil {
+			return err
+		}
+	}
 	if useDevenv {
+		fmt.Println("Provisioning core devenv services...")
 		command, args := dockerCommand("true", nil, params.Kubernetes)
-		output, err := sandbox.Exec(ctx, command, args, msb.WithExecCwd(managedDevenvPath))
+		code, err := sandbox.AttachWith(
+			ctx,
+			command,
+			args,
+			msb.WithAttachCwd(managedDevenvPath),
+		)
 		if err != nil {
 			return fmt.Errorf("provision core devenv services: %w", err)
 		}
-		fmt.Print(output.Stdout())
-		fmt.Fprint(os.Stderr, output.Stderr())
-		if !output.Success() {
-			return fmt.Errorf(
-				"provision core devenv services exited with code %d",
-				output.ExitCode(),
-			)
+		if code != 0 {
+			return fmt.Errorf("provision core devenv services exited with code %d", code)
 		}
 	}
-	if params.Herdr && herdrCommandAvailable() {
+	if herdrEnabled {
 		workdir := cfg.Microsandbox.Workdir
 		if workdir == "" {
 			workdir = params.RemoteRepoDir
