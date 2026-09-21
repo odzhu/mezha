@@ -216,11 +216,11 @@ func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.closeDashboardSubmenu(), nil
 		}
 		return m, tea.Quit
-	case "up", "k":
+	case "up":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "down", "j":
+	case "down":
 		if m.cursor < len(matches)-1 {
 			m.cursor++
 		}
@@ -232,7 +232,7 @@ func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case "/":
 		m.filterMode = true
-	case "s":
+	case "space":
 		m.sandboxMode = true
 		m.sandboxCursor = len(m.sandboxes)
 		for index, sandbox := range m.sandboxes {
@@ -244,6 +244,13 @@ func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = ""
 	case "enter":
 		return m.chooseDashboardItem(matches)
+	default:
+		runes := []rune(key.Key().Text)
+		if len(runes) > 0 {
+			m.filterMode = true
+			m.filter = append(m.filter, runes...)
+			m.cursor = 0
+		}
 	}
 	return m, nil
 }
@@ -750,7 +757,7 @@ func (m herdrDashboardModel) View() tea.View {
 		}
 		view.WriteString(
 			dashboardFooterStyle.Render(
-				"↑/↓ move · enter select · / filter · s sandbox · " + escape,
+				"↑/↓ move · enter select · type filter · space sandbox · " + escape,
 			),
 		)
 	}
