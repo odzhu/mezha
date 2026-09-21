@@ -71,7 +71,7 @@ mezha push
 mezha stop
 mezha start
 mezha destroy
-# List all local sandboxes and volumes. Volume output includes capacity and usage.
+# List all local sandboxes and volumes. Volume output includes capacity and users.
 mezha list
 mezha volumes --list
 # Remove an unused volume after confirmation.

@@ -20,7 +20,11 @@ func listMicrosandboxVolumes(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list Microsandbox volumes: %w", err)
 	}
-	fmt.Println("NAME\tKIND\tSIZE\tUSED")
+	users, err := microsandboxVolumeUsers(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%-32s\t%s\t%s\t%s\n", "NAME", "KIND", "SIZE", "SANDBOXES")
 	for _, volume := range volumes {
 		size := "-"
 		if capacity := volume.CapacityBytes(); capacity != nil {
@@ -29,11 +33,11 @@ func listMicrosandboxVolumes(ctx context.Context) error {
 			size = fmt.Sprintf("%dMiB", *quota)
 		}
 		fmt.Printf(
-			"%s\t%s\t%s\t%s\n",
+			"%-32s\t%s\t%s\t%s\n",
 			volume.Name(),
 			volume.Kind(),
 			size,
-			formatVolumeBytes(volume.UsedBytes()),
+			strings.Join(users[volume.Name()], ","),
 		)
 	}
 	return nil
