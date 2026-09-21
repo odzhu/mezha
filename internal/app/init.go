@@ -109,6 +109,8 @@ const defaultManagedDevenv = `{ pkgs, ... }:
     pkgs.k3s
     pkgs.kubectl
     pkgs.git
+    pkgs.lazygit
+    pkgs.gh
     pkgs.go
     pkgs.procps
   ];

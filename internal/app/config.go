@@ -420,8 +420,8 @@ microsandbox:
   #     value_from_env: API_KEY
   #     allow_hosts: ["api.example.com"]
 
-# Docker and k3s are declaratively installed and started by the packages and
-# enterShell tasks in .mezha/devenv.nix. Mezha uploads that configuration when
+# Docker, k3s, Git, Lazygit, and GitHub CLI are declaratively installed through
+# the packages and enterShell tasks in .mezha/devenv.nix. Mezha uploads that configuration when
 # the sandbox is created.
 services:
   docker:

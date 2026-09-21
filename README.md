@@ -9,7 +9,7 @@ Declarative agent sandboxes powered by Microsandbox.
 - synchronize committed changes through a sandbox Git remote
 - upload and download dirty working-tree changes or selected files
 - use the native `ghcr.io/cachix/devenv/devenv:latest` image for sandbox tooling
-- provision Docker, k3s, and kubectl declaratively through a Mezha-managed devenv environment
+- provision Docker, k3s, kubectl, Git, Lazygit, and GitHub CLI declaratively through a Mezha-managed devenv environment
 - optionally run a single-node k3s server in the primary Microsandbox
 
 ## Requirements
@@ -159,7 +159,7 @@ sandbox:
   herdr: false
 
 provision:
-  # This devenv.nix declaratively provides Docker, k3s, and kubectl.
+  # This devenv.nix declaratively provides Docker, k3s, kubectl, Git, Lazygit, and GitHub CLI.
   add:
     - [.mezha/devenv.nix, /sandbox/devenv.nix]
 
@@ -175,8 +175,8 @@ is mounted at `/nix`. It then symlinks `/home`, `/root`, `/sandbox`,
 initialization command or devenv shell runs. Mezha defaults `GOPATH` to `/sandbox/go` unless it is
 explicitly configured in `microsandbox.env`. The default `provision.add` installs
 Mezha's `.mezha/devenv.nix` at
-`/sandbox/devenv.nix`. It uses devenv `packages` for Docker, k3s, and kubectl
-and `devenv:enterShell` tasks to start Docker and k3s, wait for readiness, and
+`/sandbox/devenv.nix`. It uses devenv `packages` for Docker, k3s, kubectl, Git,
+Lazygit, and GitHub CLI, plus `devenv:enterShell` tasks to start Docker and k3s, wait for readiness, and
 configure `kubectl`. Mezha enters that environment for every requested command
 or interactive session. Update that file and run `mezha run --recreate` to
 apply a changed managed environment.
