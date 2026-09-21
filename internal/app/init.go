@@ -108,6 +108,8 @@ const defaultManagedDevenv = `{ pkgs, ... }:
     pkgs.docker
     pkgs.k3s
     pkgs.kubectl
+    pkgs.less
+    pkgs.unixtools.col
     pkgs.git
     pkgs.lazygit
     pkgs.gh
@@ -115,6 +117,11 @@ const defaultManagedDevenv = `{ pkgs, ... }:
     pkgs.groff
     pkgs.procps
   ];
+
+  # Render manpages safely when command output is captured instead of attached
+  # to a terminal. grotty then emits overstrikes and col removes them.
+  env.GROFF_NO_SGR = "1";
+  env.MANPAGER = "col -b";
 
   # Mezha starts Docker and k3s in the Microsandbox exec job that needs them.
   # They cannot run as devenv tasks because task and command jobs use separate
