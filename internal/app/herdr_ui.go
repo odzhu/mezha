@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/odzhu/mezha/internal/execx"
 	cli "github.com/urfave/cli/v3"
 )
@@ -29,6 +30,25 @@ type herdrDashboardSetting struct {
 	label string
 	path  string
 }
+
+var (
+	dashboardTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#11111B")).
+				Background(lipgloss.Color("#A78BFA")).
+				Padding(0, 1)
+	dashboardPromptStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true)
+	dashboardNameStyle    = lipgloss.NewStyle()
+	dashboardNameSelStyle = lipgloss.NewStyle().Bold(true)
+	dashboardDescStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	dashboardBarStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true)
+	dashboardFooterStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	dashboardErrorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	dashboardDetailStyle  = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("5")).
+				Padding(0, 1)
+)
 
 var herdrLifecycleItems = []herdrDashboardItem{
 	{
@@ -96,7 +116,7 @@ var herdrDashboardItems = []herdrDashboardItem{
 	},
 	{
 		args:        []string{"sandbox", "create", "--herdr"},
-		title:       "Provision",
+		title:       "Create sandbox",
 		description: "Create and initialize the configured sandbox",
 	},
 	{
@@ -146,6 +166,8 @@ type herdrDashboardModel struct {
 	sandboxCursor      int
 	sandboxInput       []rune
 	sandboxInputCursor int
+	width              int
+	height             int
 	err                string
 }
 
@@ -154,6 +176,11 @@ func (m herdrDashboardModel) Init() tea.Cmd {
 }
 
 func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if size, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = size.Width
+		m.height = size.Height
+		return m, nil
+	}
 	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return m, nil
@@ -379,6 +406,17 @@ func dashboardDigitLabel(index int) string {
 	return fmt.Sprintf("%d", index+1)
 }
 
+func truncateDashboardText(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	if limit < 2 {
+		return string(runes[:limit])
+	}
+	return string(runes[:limit-1]) + "…"
+}
+
 func fuzzyMatch(query, candidate string) bool {
 	queryRunes := []rune(strings.ToLower(query))
 	if len(queryRunes) == 0 {
@@ -536,7 +574,6 @@ func (m herdrDashboardModel) updateCommand(key tea.KeyPressMsg) (tea.Model, tea.
 
 func (m herdrDashboardModel) View() tea.View {
 	var view strings.Builder
-	view.WriteString("Mezha\n")
 	if m.forceInitMode {
 		view.WriteString(
 			"This repository already has a Mezha configuration.\n" +
@@ -620,47 +657,66 @@ func (m herdrDashboardModel) View() tea.View {
 		result.AltScreen = true
 		return result
 	}
-	sandbox := "configured default"
+	w := m.width
+	if w <= 0 {
+		w = 80
+	}
+	sandbox := "Configured default"
 	if m.sandbox != "" {
 		sandbox = m.sandbox
 	}
-	title := "Manage this workspace's sandbox"
+	section := "Sandbox"
 	if m.submenuTitle != "" {
-		title += " / " + strings.TrimSuffix(m.submenuTitle, "…")
+		section = strings.TrimSuffix(m.submenuTitle, "…")
 	}
-	fmt.Fprintf(&view, "%s\nSandbox: %s\n", title, sandbox)
+	view.WriteString(dashboardTitleStyle.Width(w).Render(section))
+	view.WriteString("\n\n")
+
+	detail := dashboardDescStyle.Render("Sandbox  ") + dashboardNameStyle.Render(sandbox)
 	if m.filterMode || len(m.filter) > 0 {
-		fmt.Fprintf(&view, "Filter: %s█\n", string(m.filter))
+		detail += "\n" + dashboardPromptStyle.Render("❯ ") + string(m.filter) + "█"
 	}
 	if m.err != "" {
-		fmt.Fprintf(&view, "Error: %s\n", m.err)
+		detail += "\n" + dashboardErrorStyle.Render(truncateDashboardText(m.err, w-6))
 	}
-	view.WriteString("\n")
+	view.WriteString(dashboardDetailStyle.Width(max(w-2, 20)).Render(detail))
+	view.WriteString("\n\n")
+
 	items := m.activeDashboardItems()
 	matches := m.filteredDashboardItems()
 	for position, index := range matches {
 		item := items[index]
-		cursor := "  "
-		if position == m.cursor {
-			cursor = "> "
+		selected := position == m.cursor
+		if selected {
+			view.WriteString(dashboardBarStyle.Render("▌ "))
+		} else {
+			view.WriteString("  ")
 		}
-		fmt.Fprintf(
-			&view,
-			"%s[%s] %-18s %s\n",
-			cursor,
-			dashboardDigitLabel(position),
-			item.title,
-			item.description,
-		)
+		nameStyle := dashboardNameStyle
+		if selected {
+			nameStyle = dashboardNameSelStyle
+		}
+		view.WriteString(nameStyle.Render("[" + dashboardDigitLabel(position) + "] "))
+		view.WriteString("   ")
+		view.WriteString(nameStyle.Render(item.title))
+		if item.description != "" {
+			view.WriteString("  ")
+			view.WriteString(dashboardDescStyle.Render(item.description))
+		}
+		view.WriteString("\n")
 	}
 	if len(matches) == 0 {
-		view.WriteString("  No matching actions\n")
+		view.WriteString(dashboardDescStyle.Render("  No matching actions."))
+		view.WriteString("\n")
 	}
+	view.WriteString("\n")
 	if m.filterMode {
-		view.WriteString("\ndigit select  •  ↑/↓ move  •  enter select  •  esc close\n")
+		view.WriteString(dashboardFooterStyle.Render("↑/↓ move · enter select · esc clear filter"))
 	} else {
 		view.WriteString(
-			"\ndigit select  •  ↑/↓ or j/k move  •  / filter  •  s sandbox  •  esc close\n",
+			dashboardFooterStyle.Render(
+				"↑/↓ move · enter select · / filter · s sandbox · esc close",
+			),
 		)
 	}
 	result := tea.NewView(view.String())
