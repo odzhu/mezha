@@ -112,6 +112,7 @@ const defaultManagedDevenv = `{ pkgs, ... }:
     pkgs.lazygit
     pkgs.gh
     pkgs.go
+    pkgs.groff
     pkgs.procps
   ];
 

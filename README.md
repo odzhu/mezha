@@ -178,7 +178,7 @@ initialization command or devenv shell runs. Mezha defaults `GOPATH` to `/sandbo
 explicitly configured in `microsandbox.env`. The default `provision.add` installs
 Mezha's `.mezha/devenv.nix` at
 `/sandbox/devenv.nix`. It uses devenv `packages` for Docker, k3s, kubectl, Git,
-Lazygit, and GitHub CLI. Mezha starts Docker and k3s in the same Microsandbox
+Lazygit, GitHub CLI, Go, and Groff. Mezha starts Docker and k3s in the same Microsandbox
 exec job as each requested command or interactive session, waits for readiness,
 and configures `kubectl`. This is required because separate Microsandbox exec
 jobs have isolated runtime namespaces. Update that file and run `mezha run --recreate` to
