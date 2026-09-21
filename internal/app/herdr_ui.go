@@ -21,6 +21,12 @@ type herdrDashboardItem struct {
 	title       string
 	description string
 	custom      bool
+	settings    bool
+}
+
+type herdrDashboardSetting struct {
+	label string
+	path  string
 }
 
 var herdrDashboardItems = []herdrDashboardItem{
@@ -77,6 +83,11 @@ var herdrDashboardItems = []herdrDashboardItem{
 		description: "Confirm and permanently remove the sandbox",
 	},
 	{
+		title:       "Settings…",
+		description: "Edit the Mezha or managed devenv configuration",
+		settings:    true,
+	},
+	{
 		title:       "Command…",
 		description: "Run any Mezha command with arguments",
 		custom:      true,
@@ -89,11 +100,16 @@ type herdrDashboardModel struct {
 	commandMode        bool
 	filterMode         bool
 	forceInitMode      bool
+	settingsMode       bool
 	sandboxMode        bool
 	sandboxCustomMode  bool
 	input              []rune
 	inputCursor        int
 	filter             []rune
+	settings           []herdrDashboardSetting
+	settingCursor      int
+	chosenSetting      string
+	settingsNeedInit   bool
 	sandbox            string
 	sandboxes          []string
 	syncedSandboxes    map[string]bool
@@ -118,6 +134,9 @@ func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if m.forceInitMode {
 		return m.updateForceInit(key)
+	}
+	if m.settingsMode {
+		return m.updateSettings(key)
 	}
 	if m.sandboxCustomMode {
 		return m.updateSandboxInput(key)
@@ -175,6 +194,12 @@ func (m herdrDashboardModel) chooseDashboardItem(matches []int) (tea.Model, tea.
 		m.err = ""
 		return m, nil
 	}
+	if item.settings {
+		m.settingsMode = true
+		m.settingCursor = 0
+		m.filterMode = false
+		return m, nil
+	}
 	if len(item.args) > 0 && item.args[0] == "init" && m.repoInitialized {
 		m.forceInitMode = true
 		m.filterMode = false
@@ -196,6 +221,35 @@ func (m herdrDashboardModel) updateForceInit(key tea.KeyPressMsg) (tea.Model, te
 		return m, tea.Quit
 	case "n", "N", "enter", "esc":
 		m.forceInitMode = false
+	}
+	return m, nil
+}
+
+func (m herdrDashboardModel) updateSettings(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch key.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.settingsMode = false
+	case "up", "k":
+		if m.settingCursor > 0 {
+			m.settingCursor--
+		}
+	case "down", "j":
+		if m.settingCursor < len(m.settings)-1 {
+			m.settingCursor++
+		}
+	case "home", "g":
+		m.settingCursor = 0
+	case "end", "G":
+		if len(m.settings) > 0 {
+			m.settingCursor = len(m.settings) - 1
+		}
+	case "enter":
+		if m.settingCursor < len(m.settings) {
+			m.chosenSetting = m.settings[m.settingCursor].path
+			return m, tea.Quit
+		}
 	}
 	return m, nil
 }
@@ -429,6 +483,24 @@ func (m herdrDashboardModel) View() tea.View {
 		result.AltScreen = true
 		return result
 	}
+	if m.settingsMode {
+		view.WriteString("Choose a configuration to edit\n")
+		if m.settingsNeedInit {
+			view.WriteString("No project configuration found; Mezha will initialize it first.\n")
+		}
+		view.WriteString("\n")
+		for index, setting := range m.settings {
+			cursor := "  "
+			if index == m.settingCursor {
+				cursor = "> "
+			}
+			fmt.Fprintf(&view, "%s%-10s %s\n", cursor, setting.label, setting.path)
+		}
+		view.WriteString("\n↑/↓ or j/k move  •  enter edit  •  esc back\n")
+		result := tea.NewView(view.String())
+		result.AltScreen = true
+		return result
+	}
 	if m.sandboxMode {
 		view.WriteString("Choose a sandbox for dashboard actions\n\n")
 		for index, sandbox := range m.sandboxes {
@@ -523,20 +595,98 @@ func runHerdrDashboard(ctx context.Context, _ *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	settings, settingsNeedInit, err := herdrDashboardSettings(projectDir)
+	if err != nil {
+		return err
+	}
 	program := tea.NewProgram(herdrDashboardModel{
-		sandboxes:       sandboxes,
-		syncedSandboxes: syncedSandboxes,
-		repoInitialized: repoInitialized,
+		sandboxes:        sandboxes,
+		syncedSandboxes:  syncedSandboxes,
+		repoInitialized:  repoInitialized,
+		settings:         settings,
+		settingsNeedInit: settingsNeedInit,
 	})
 	result, err := program.Run()
 	if err != nil {
 		return fmt.Errorf("run Mezha dashboard: %w", err)
 	}
 	model, ok := result.(herdrDashboardModel)
-	if !ok || len(model.chosen) == 0 {
+	if !ok {
+		return nil
+	}
+	if model.chosenSetting != "" {
+		repoRoot, err := findRepoRoot(projectDir)
+		if err != nil {
+			return err
+		}
+		if model.settingsNeedInit {
+			if err := Init(ctx, RepoContext{RepoRoot: repoRoot}, false); err != nil {
+				return fmt.Errorf("initialize Mezha settings: %w", err)
+			}
+		}
+		return launchHerdrSettingsEditor(ctx, repoRoot, model.chosenSetting)
+	}
+	if len(model.chosen) == 0 {
 		return nil
 	}
 	return launchHerdrDashboardCommand(ctx, model.chosen)
+}
+
+func herdrDashboardSettings(projectDir string) ([]herdrDashboardSetting, bool, error) {
+	repoRoot, err := findRepoRoot(projectDir)
+	if err != nil {
+		return nil, false, err
+	}
+	mezhaPath := filepath.Join(repoRoot, "mezha.yaml")
+	legacyMezhaPath := filepath.Join(repoRoot, "mezha.yml")
+	devenvPath := filepath.Join(repoRoot, ".mezha", "devenv.nix")
+	settings := make([]herdrDashboardSetting, 0, 2)
+	for _, path := range []string{mezhaPath, legacyMezhaPath} {
+		if _, err := os.Stat(path); err == nil {
+			settings = append(settings, herdrDashboardSetting{label: "Mezha", path: path})
+			break
+		} else if !os.IsNotExist(err) {
+			return nil, false, fmt.Errorf("inspect Mezha settings: %w", err)
+		}
+	}
+	if _, err := os.Stat(devenvPath); err == nil {
+		settings = append(settings, herdrDashboardSetting{label: "devenv", path: devenvPath})
+	} else if !os.IsNotExist(err) {
+		return nil, false, fmt.Errorf("inspect devenv settings: %w", err)
+	}
+	if len(settings) > 0 {
+		return settings, false, nil
+	}
+	return []herdrDashboardSetting{
+		{label: "Mezha", path: mezhaPath},
+		{label: "devenv", path: devenvPath},
+	}, true, nil
+}
+
+func launchHerdrSettingsEditor(ctx context.Context, repoRoot, path string) error {
+	editor := strings.TrimSpace(os.Getenv("VISUAL"))
+	if editor == "" {
+		editor = strings.TrimSpace(os.Getenv("EDITOR"))
+	}
+	if editor == "" {
+		editor = "vi"
+	}
+	args, err := parseCommandLine(editor)
+	if err != nil {
+		return fmt.Errorf("parse editor command: %w", err)
+	}
+	if len(args) == 0 {
+		return errors.New("editor command is empty")
+	}
+	child := exec.CommandContext(ctx, args[0], append(args[1:], path)...)
+	child.Dir = repoRoot
+	child.Stdin = os.Stdin
+	child.Stdout = os.Stdout
+	child.Stderr = os.Stderr
+	if err := child.Run(); err != nil {
+		return fmt.Errorf("open %s in editor: %w", path, err)
+	}
+	return nil
 }
 
 func herdrRepoInitialized(projectDir string) (bool, error) {
