@@ -81,10 +81,12 @@ type herdrDashboardModel struct {
 	cursor             int
 	chosen             []string
 	commandMode        bool
+	filterMode         bool
 	sandboxMode        bool
 	sandboxCustomMode  bool
 	input              []rune
 	inputCursor        int
+	filter             []rune
 	sandbox            string
 	sandboxes          []string
 	syncedSandboxes    map[string]bool
@@ -112,6 +114,10 @@ func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.sandboxMode {
 		return m.updateSandbox(key)
 	}
+	if m.filterMode {
+		return m.updateFilter(key)
+	}
+	matches := m.filteredDashboardItems()
 	switch key.String() {
 	case "ctrl+c", "esc", "q":
 		return m, tea.Quit
@@ -120,13 +126,17 @@ func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor--
 		}
 	case "down", "j":
-		if m.cursor < len(herdrDashboardItems)-1 {
+		if m.cursor < len(matches)-1 {
 			m.cursor++
 		}
 	case "home", "g":
 		m.cursor = 0
 	case "end", "G":
-		m.cursor = len(herdrDashboardItems) - 1
+		if len(matches) > 0 {
+			m.cursor = len(matches) - 1
+		}
+	case "/":
+		m.filterMode = true
 	case "s":
 		m.sandboxMode = true
 		m.sandboxCursor = len(m.sandboxes)
@@ -138,19 +148,96 @@ func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = ""
 	case "enter":
-		item := herdrDashboardItems[m.cursor]
-		if item.custom {
-			m.commandMode = true
-			m.err = ""
-			return m, nil
-		}
-		m.chosen = append([]string(nil), item.args...)
-		if m.sandbox != "" {
-			m.chosen = append(m.chosen, "--sandbox", m.sandbox)
-		}
-		return m, tea.Quit
+		return m.chooseDashboardItem(matches)
 	}
 	return m, nil
+}
+
+func (m herdrDashboardModel) chooseDashboardItem(matches []int) (tea.Model, tea.Cmd) {
+	if m.cursor >= len(matches) {
+		return m, nil
+	}
+	item := herdrDashboardItems[matches[m.cursor]]
+	if item.custom {
+		m.commandMode = true
+		m.filterMode = false
+		m.err = ""
+		return m, nil
+	}
+	m.chosen = append([]string(nil), item.args...)
+	if m.sandbox != "" {
+		m.chosen = append(m.chosen, "--sandbox", m.sandbox)
+	}
+	return m, tea.Quit
+}
+
+func (m herdrDashboardModel) updateFilter(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	matches := m.filteredDashboardItems()
+	switch key.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.filterMode = false
+		m.filter = nil
+		m.cursor = 0
+	case "up", "ctrl+p":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case "down", "ctrl+n":
+		if m.cursor < len(matches)-1 {
+			m.cursor++
+		}
+	case "home":
+		m.cursor = 0
+	case "end":
+		if len(matches) > 0 {
+			m.cursor = len(matches) - 1
+		}
+	case "backspace", "ctrl+h":
+		if len(m.filter) > 0 {
+			m.filter = m.filter[:len(m.filter)-1]
+			m.cursor = 0
+		}
+	case "enter":
+		return m.chooseDashboardItem(matches)
+	default:
+		runes := []rune(key.Key().Text)
+		if len(runes) > 0 {
+			m.filter = append(m.filter, runes...)
+			m.cursor = 0
+		}
+	}
+	return m, nil
+}
+
+func (m herdrDashboardModel) filteredDashboardItems() []int {
+	query := strings.TrimSpace(string(m.filter))
+	matches := make([]int, 0, len(herdrDashboardItems))
+	for index, item := range herdrDashboardItems {
+		candidate := item.title + " " + item.description + " " + strings.Join(item.args, " ")
+		if fuzzyMatch(query, candidate) {
+			matches = append(matches, index)
+		}
+	}
+	return matches
+}
+
+func fuzzyMatch(query, candidate string) bool {
+	queryRunes := []rune(strings.ToLower(query))
+	if len(queryRunes) == 0 {
+		return true
+	}
+	matched := 0
+	for _, char := range strings.ToLower(candidate) {
+		if char == queryRunes[matched] {
+			matched++
+			if matched == len(queryRunes) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (m herdrDashboardModel) updateSandbox(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -355,15 +442,30 @@ func (m herdrDashboardModel) View() tea.View {
 	if m.sandbox != "" {
 		sandbox = m.sandbox
 	}
-	fmt.Fprintf(&view, "Manage this workspace's sandbox\nSandbox: %s\n\n", sandbox)
-	for index, item := range herdrDashboardItems {
+	fmt.Fprintf(&view, "Manage this workspace's sandbox\nSandbox: %s\n", sandbox)
+	if m.filterMode || len(m.filter) > 0 {
+		fmt.Fprintf(&view, "Filter: %s█\n", string(m.filter))
+	}
+	view.WriteString("\n")
+	matches := m.filteredDashboardItems()
+	for position, index := range matches {
+		item := herdrDashboardItems[index]
 		cursor := "  "
-		if index == m.cursor {
+		if position == m.cursor {
 			cursor = "> "
 		}
 		fmt.Fprintf(&view, "%s%-20s %s\n", cursor, item.title, item.description)
 	}
-	view.WriteString("\n↑/↓ or j/k move  •  s sandbox  •  enter select  •  esc close\n")
+	if len(matches) == 0 {
+		view.WriteString("  No matching actions\n")
+	}
+	if m.filterMode {
+		view.WriteString("\n↑/↓ move  •  enter select  •  esc clear filter\n")
+	} else {
+		view.WriteString(
+			"\n↑/↓ or j/k move  •  / filter  •  s sandbox  •  enter select  •  esc close\n",
+		)
+	}
 	result := tea.NewView(view.String())
 	result.AltScreen = true
 	return result
