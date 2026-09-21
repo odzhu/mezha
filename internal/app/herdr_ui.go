@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/odzhu/mezha/internal/execx"
 	cli "github.com/urfave/cli/v3"
 )
 
@@ -86,6 +87,7 @@ type herdrDashboardModel struct {
 	inputCursor        int
 	sandbox            string
 	sandboxes          []string
+	syncedSandboxes    map[string]bool
 	sandboxCursor      int
 	sandboxInput       []rune
 	sandboxInputCursor int
@@ -308,10 +310,13 @@ func (m herdrDashboardModel) View() tea.View {
 			if index == m.sandboxCursor {
 				cursor = "> "
 			}
+			label := sandbox
 			if sandbox == "" {
-				sandbox = "Configured default"
+				label = "Configured default"
+			} else if m.syncedSandboxes[sandbox] {
+				label += "  (synced with this repo)"
 			}
-			fmt.Fprintf(&view, "%s%s\n", cursor, sandbox)
+			fmt.Fprintf(&view, "%s%s\n", cursor, label)
 		}
 		cursor := "  "
 		if m.sandboxCursor == len(m.sandboxes) {
@@ -365,14 +370,18 @@ func (m herdrDashboardModel) View() tea.View {
 }
 
 func runHerdrDashboard(ctx context.Context, _ *cli.Command) error {
-	if _, err := herdrProjectDir(); err != nil {
-		return err
-	}
-	sandboxes, err := listHerdrDashboardSandboxes(ctx)
+	projectDir, err := herdrProjectDir()
 	if err != nil {
 		return err
 	}
-	program := tea.NewProgram(herdrDashboardModel{sandboxes: sandboxes})
+	sandboxes, syncedSandboxes, err := listHerdrDashboardSandboxes(ctx, projectDir)
+	if err != nil {
+		return err
+	}
+	program := tea.NewProgram(herdrDashboardModel{
+		sandboxes:       sandboxes,
+		syncedSandboxes: syncedSandboxes,
+	})
 	result, err := program.Run()
 	if err != nil {
 		return fmt.Errorf("run Mezha dashboard: %w", err)
@@ -384,12 +393,16 @@ func runHerdrDashboard(ctx context.Context, _ *cli.Command) error {
 	return launchHerdrDashboardCommand(ctx, model.chosen)
 }
 
-func listHerdrDashboardSandboxes(ctx context.Context) ([]string, error) {
+func listHerdrDashboardSandboxes(
+	ctx context.Context,
+	projectDir string,
+) ([]string, map[string]bool, error) {
 	machines, err := listHerdrMachines(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	seen := make(map[string]struct{})
+	synced := make(map[string]bool)
 	var sandboxes []string
 	for _, machine := range machines {
 		if !strings.HasPrefix(machine.Target, "mezha-sandbox-") {
@@ -404,9 +417,22 @@ func listHerdrDashboardSandboxes(ctx context.Context) ([]string, error) {
 		}
 		seen[name] = struct{}{}
 		sandboxes = append(sandboxes, name)
+		remoteURL, err := execx.Output(
+			ctx,
+			"git",
+			"-C",
+			projectDir,
+			"remote",
+			"get-url",
+			name,
+		)
+		if err == nil {
+			host := sandboxSSHHostAlias(name)
+			synced[name] = strings.Contains(string(remoteURL), "@"+host+"/")
+		}
 	}
 	sort.Strings(sandboxes)
-	return append([]string{""}, sandboxes...), nil
+	return append([]string{""}, sandboxes...), synced, nil
 }
 
 func launchHerdrDashboardCommand(ctx context.Context, command []string) error {
