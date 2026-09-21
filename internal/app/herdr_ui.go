@@ -219,18 +219,18 @@ func (m herdrDashboardModel) updateForceInit(key tea.KeyPressMsg) (tea.Model, te
 	case "y", "Y":
 		m.chosen = []string{"init", "--force"}
 		return m, tea.Quit
-	case "n", "N", "enter", "esc":
+	case "n", "N", "enter":
 		m.forceInitMode = false
+	case "esc":
+		return m, tea.Quit
 	}
 	return m, nil
 }
 
 func (m herdrDashboardModel) updateSettings(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
-	case "ctrl+c":
+	case "ctrl+c", "esc":
 		return m, tea.Quit
-	case "esc":
-		m.settingsMode = false
 	case "up", "k":
 		if m.settingCursor > 0 {
 			m.settingCursor--
@@ -260,9 +260,7 @@ func (m herdrDashboardModel) updateFilter(key tea.KeyPressMsg) (tea.Model, tea.C
 	case "ctrl+c":
 		return m, tea.Quit
 	case "esc":
-		m.filterMode = false
-		m.filter = nil
-		m.cursor = 0
+		return m, tea.Quit
 	case "up", "ctrl+p":
 		if m.cursor > 0 {
 			m.cursor--
@@ -326,10 +324,8 @@ func fuzzyMatch(query, candidate string) bool {
 func (m herdrDashboardModel) updateSandbox(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	itemCount := len(m.sandboxes) + 1
 	switch key.String() {
-	case "ctrl+c":
+	case "ctrl+c", "esc":
 		return m, tea.Quit
-	case "esc":
-		m.sandboxMode = false
 	case "up", "k":
 		if m.sandboxCursor > 0 {
 			m.sandboxCursor--
@@ -358,12 +354,8 @@ func (m herdrDashboardModel) updateSandbox(key tea.KeyPressMsg) (tea.Model, tea.
 
 func (m herdrDashboardModel) updateSandboxInput(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
-	case "ctrl+c":
+	case "ctrl+c", "esc":
 		return m, tea.Quit
-	case "esc":
-		m.sandboxCustomMode = false
-		m.sandboxMode = true
-		m.err = ""
 	case "left":
 		if m.sandboxInputCursor > 0 {
 			m.sandboxInputCursor--
@@ -412,11 +404,8 @@ func (m herdrDashboardModel) updateSandboxInput(key tea.KeyPressMsg) (tea.Model,
 
 func (m herdrDashboardModel) updateCommand(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
-	case "ctrl+c":
+	case "ctrl+c", "esc":
 		return m, tea.Quit
-	case "esc":
-		m.commandMode = false
-		m.err = ""
 	case "left":
 		if m.inputCursor > 0 {
 			m.inputCursor--
@@ -477,7 +466,7 @@ func (m herdrDashboardModel) View() tea.View {
 		view.WriteString(
 			"This repository already has a Mezha configuration.\n" +
 				"Reinitialize it with --force? [y/N]\n\n" +
-				"y overwrite  •  n/enter/esc cancel\n",
+				"y overwrite  •  n/enter cancel  •  esc close\n",
 		)
 		result := tea.NewView(view.String())
 		result.AltScreen = true
@@ -496,7 +485,7 @@ func (m herdrDashboardModel) View() tea.View {
 			}
 			fmt.Fprintf(&view, "%s%-10s %s\n", cursor, setting.label, setting.path)
 		}
-		view.WriteString("\n↑/↓ or j/k move  •  enter edit  •  esc back\n")
+		view.WriteString("\n↑/↓ or j/k move  •  enter edit  •  esc close\n")
 		result := tea.NewView(view.String())
 		result.AltScreen = true
 		return result
@@ -521,7 +510,7 @@ func (m herdrDashboardModel) View() tea.View {
 			cursor = "> "
 		}
 		fmt.Fprintf(&view, "%sCustom sandbox…\n", cursor)
-		view.WriteString("\n↑/↓ or j/k move  •  enter select  •  esc back\n")
+		view.WriteString("\n↑/↓ or j/k move  •  enter select  •  esc close\n")
 		result := tea.NewView(view.String())
 		result.AltScreen = true
 		return result
@@ -531,7 +520,7 @@ func (m herdrDashboardModel) View() tea.View {
 		before := string(m.sandboxInput[:m.sandboxInputCursor])
 		after := string(m.sandboxInput[m.sandboxInputCursor:])
 		fmt.Fprintf(&view, "%s█%s\n", before, after)
-		view.WriteString("\nenter select  •  esc back\n")
+		view.WriteString("\nenter select  •  esc close\n")
 		result := tea.NewView(view.String())
 		result.AltScreen = true
 		return result
@@ -544,7 +533,7 @@ func (m herdrDashboardModel) View() tea.View {
 		if m.err != "" {
 			fmt.Fprintf(&view, "\n%s\n", m.err)
 		}
-		view.WriteString("\nenter run  •  esc back  •  ctrl+c close\n")
+		view.WriteString("\nenter run  •  esc close\n")
 		result := tea.NewView(view.String())
 		result.AltScreen = true
 		return result
@@ -556,6 +545,9 @@ func (m herdrDashboardModel) View() tea.View {
 	fmt.Fprintf(&view, "Manage this workspace's sandbox\nSandbox: %s\n", sandbox)
 	if m.filterMode || len(m.filter) > 0 {
 		fmt.Fprintf(&view, "Filter: %s█\n", string(m.filter))
+	}
+	if m.err != "" {
+		fmt.Fprintf(&view, "Error: %s\n", m.err)
 	}
 	view.WriteString("\n")
 	matches := m.filteredDashboardItems()
@@ -571,7 +563,7 @@ func (m herdrDashboardModel) View() tea.View {
 		view.WriteString("  No matching actions\n")
 	}
 	if m.filterMode {
-		view.WriteString("\n↑/↓ move  •  enter select  •  esc clear filter\n")
+		view.WriteString("\n↑/↓ move  •  enter select  •  esc close\n")
 	} else {
 		view.WriteString(
 			"\n↑/↓ or j/k move  •  / filter  •  s sandbox  •  enter select  •  esc close\n",
@@ -587,6 +579,62 @@ func runHerdrDashboard(ctx context.Context, _ *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	repoRoot, err := findRepoRoot(projectDir)
+	if err != nil {
+		return err
+	}
+	model := herdrDashboardModel{}
+	for {
+		if err := refreshHerdrDashboard(ctx, projectDir, &model); err != nil {
+			return err
+		}
+		result, err := tea.NewProgram(model).Run()
+		if err != nil {
+			return fmt.Errorf("run Mezha dashboard: %w", err)
+		}
+		var ok bool
+		model, ok = result.(herdrDashboardModel)
+		if !ok {
+			return nil
+		}
+		chosenSetting := model.chosenSetting
+		settingsNeedInit := model.settingsNeedInit
+		command := append([]string(nil), model.chosen...)
+		model.chosenSetting = ""
+		model.chosen = nil
+		model.settingsMode = false
+		model.forceInitMode = false
+		model.commandMode = false
+		if chosenSetting == "" && len(command) == 0 {
+			return nil
+		}
+		var actionErr error
+		if chosenSetting != "" {
+			if settingsNeedInit {
+				actionErr = Init(ctx, RepoContext{RepoRoot: repoRoot}, false)
+				if actionErr != nil {
+					actionErr = fmt.Errorf("initialize Mezha settings: %w", actionErr)
+				}
+			}
+			if actionErr == nil {
+				actionErr = launchHerdrSettingsEditor(ctx, repoRoot, chosenSetting)
+			}
+		} else {
+			actionErr = launchHerdrDashboardCommand(ctx, command)
+		}
+		if actionErr != nil {
+			model.err = actionErr.Error()
+		} else {
+			model.err = ""
+		}
+	}
+}
+
+func refreshHerdrDashboard(
+	ctx context.Context,
+	projectDir string,
+	model *herdrDashboardModel,
+) error {
 	sandboxes, syncedSandboxes, err := listHerdrDashboardSandboxes(ctx, projectDir)
 	if err != nil {
 		return err
@@ -599,37 +647,12 @@ func runHerdrDashboard(ctx context.Context, _ *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	program := tea.NewProgram(herdrDashboardModel{
-		sandboxes:        sandboxes,
-		syncedSandboxes:  syncedSandboxes,
-		repoInitialized:  repoInitialized,
-		settings:         settings,
-		settingsNeedInit: settingsNeedInit,
-	})
-	result, err := program.Run()
-	if err != nil {
-		return fmt.Errorf("run Mezha dashboard: %w", err)
-	}
-	model, ok := result.(herdrDashboardModel)
-	if !ok {
-		return nil
-	}
-	if model.chosenSetting != "" {
-		repoRoot, err := findRepoRoot(projectDir)
-		if err != nil {
-			return err
-		}
-		if model.settingsNeedInit {
-			if err := Init(ctx, RepoContext{RepoRoot: repoRoot}, false); err != nil {
-				return fmt.Errorf("initialize Mezha settings: %w", err)
-			}
-		}
-		return launchHerdrSettingsEditor(ctx, repoRoot, model.chosenSetting)
-	}
-	if len(model.chosen) == 0 {
-		return nil
-	}
-	return launchHerdrDashboardCommand(ctx, model.chosen)
+	model.sandboxes = sandboxes
+	model.syncedSandboxes = syncedSandboxes
+	model.repoInitialized = repoInitialized
+	model.settings = settings
+	model.settingsNeedInit = settingsNeedInit
+	return nil
 }
 
 func herdrDashboardSettings(projectDir string) ([]herdrDashboardSetting, bool, error) {
@@ -761,7 +784,7 @@ func launchHerdrDashboardCommand(ctx context.Context, command []string) error {
 		args = append(args, "dispatch", command[0], "--")
 		args = append(args, command...)
 	} else {
-		args = append(args, "execute", "--wait", "--")
+		args = append(args, "execute", "--")
 		args = append(args, command...)
 	}
 	child := exec.CommandContext(ctx, binary, args...)
