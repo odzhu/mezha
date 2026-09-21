@@ -37,6 +37,27 @@ func ensureSandboxHerdr(
 	if useDevenv {
 		shell = "exec devenv shell --from path:/sandbox -- bash"
 	}
+	const herdrDevenvPath = "/root/.mezha/herdr-devenv"
+	setup, err := sandbox.Exec(ctx, "sh", []string{"-c", `set -eu
+mkdir -p "$1"
+cat > "$1/devenv.nix" <<'EOF'
+{ pkgs, ... }:
+{
+  imports = [ /sandbox/devenv.nix ];
+  packages = [ pkgs.curl ];
+}
+EOF
+`, "mezha-herdr-env", herdrDevenvPath})
+	if err != nil {
+		return fmt.Errorf("prepare Herdr installation environment: %w", err)
+	}
+	if !setup.Success() {
+		return fmt.Errorf(
+			"prepare Herdr installation environment: %s",
+			strings.TrimSpace(setup.Stderr()),
+		)
+	}
+
 	script := fmt.Sprintf(`set -eu
 mezha_dir="$HOME/.mezha"
 binary="$mezha_dir/herdr-bin"
@@ -50,11 +71,7 @@ if [ "$("$binary" --version 2>/dev/null || :)" != "herdr %[1]s" ]; then
   mkdir -p "$mezha_dir"
   tmp="$binary.tmp.$$"
   url="https://github.com/herdrdev/herdr/releases/download/v%[1]s/herdr-linux-$arch"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" -o "$tmp"
-  else
-    wget -q -O "$tmp" "$url"
-  fi
+  curl -fsSL --retry 3 --retry-all-errors "$url" -o "$tmp"
   chmod 755 "$tmp"
   mv "$tmp" "$binary"
 fi
@@ -83,7 +100,7 @@ new_cwd = %[4]s
 EOF
 `, version, shell, strconv.Quote("/root/.mezha/herdr-shell"), strconv.Quote(workdir))
 	fmt.Println("Provisioning Herdr through devenv...")
-	args := []string{"shell", "--from", "path:" + managedDevenvPath, "--", "sh", "-c", script}
+	args := []string{"shell", "--from", "path:" + herdrDevenvPath, "--", "sh", "-c", script}
 	var code int
 	for attempt := 0; attempt < 20; attempt++ {
 		code, err = sandbox.AttachWith(ctx, nativeDevenvPath, args)

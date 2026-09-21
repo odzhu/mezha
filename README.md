@@ -30,6 +30,8 @@ make build
 
 ```bash
 mezha init [options]
+mezha list
+mezha volumes --list|--destroy <name> [options]
 mezha run [options] [-- command...]
 mezha provision [options]
 mezha recreate [options]
@@ -49,6 +51,8 @@ Examples:
 
 ```bash
 mezha init
+mezha list
+mezha volumes --list
 mezha run
 mezha run -- git status
 mezha run --herdr true -- git status
@@ -67,6 +71,11 @@ mezha push
 mezha stop
 mezha start
 mezha destroy
+# List all local sandboxes and volumes. Volume output includes capacity and usage.
+mezha list
+mezha volumes --list
+# Remove an unused volume after confirmation.
+mezha volumes --destroy shared-dev-state
 # Remove the sandbox and its retained named volumes.
 mezha destroy --volumes-flush true
 ```

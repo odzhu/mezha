@@ -14,6 +14,8 @@ import (
 
 const rootUsageText = `Usage:
   mezha init [options]
+  mezha list
+  mezha volumes --list|--destroy <name> [options]
   mezha run [options] [-- command...]
   mezha provision [options]
   mezha recreate [options]
@@ -43,6 +45,8 @@ through its managed devenv environment.
 Examples:
   mezha init
   mezha init --home
+  mezha list
+  mezha volumes --list
   mezha run
   mezha run --recreate
   mezha provision
@@ -84,6 +88,8 @@ func New() *cli.Command {
 		UsageText: rootUsageText,
 		Commands: []*cli.Command{
 			newInitCommand(),
+			newListCommand(),
+			newVolumesCommand(),
 			newRunCommand(),
 			newProvisionCommand(),
 			newRecreateCommand(),
@@ -116,6 +122,36 @@ func newSSHProxyCommand() *cli.Command {
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return SSHProxy(ctx, cmd.String("name"))
+		},
+	}
+}
+
+func newVolumesCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "volumes",
+		Usage: "List or destroy Microsandbox volumes",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{Name: "list", Usage: "List all Microsandbox volumes"},
+			&cli.StringFlag{Name: "destroy", Usage: "Destroy a named Microsandbox volume"},
+			&cli.BoolFlag{
+				Name:    "force",
+				Aliases: []string{"f"},
+				Usage:   "Destroy without prompting for confirmation",
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			listing := cmd.Bool("list")
+			volumeName := cmd.String("destroy")
+			if listing == (volumeName != "") {
+				return errors.New("specify exactly one of --list or --destroy <name>")
+			}
+			if listing {
+				if cmd.Bool("force") {
+					return errors.New("--force requires --destroy")
+				}
+				return ListVolumes(ctx)
+			}
+			return DestroyVolume(ctx, volumeName, cmd.Bool("force"))
 		},
 	}
 }
@@ -397,6 +433,14 @@ func newLifecycleCommand(
 				SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
 			})
 		},
+	}
+}
+
+func newListCommand() *cli.Command {
+	return &cli.Command{
+		Name:   "list",
+		Usage:  "List all local Microsandboxes",
+		Action: func(ctx context.Context, _ *cli.Command) error { return ListSandboxes(ctx) },
 	}
 }
 
@@ -747,7 +791,8 @@ func sandboxFlag() cli.Flag {
 }
 
 func resolveSandboxParam(cmd *cli.Command, cfgVal, defaultVal string) string {
-	return slugify(resolveParam(cmd, "sandbox", os.Getenv("SANDBOX_NAME"), cfgVal, defaultVal))
+	// Preserve persistent Microsandbox identifiers, including names from older Mezha versions.
+	return resolveParam(cmd, "sandbox", os.Getenv("SANDBOX_NAME"), cfgVal, defaultVal)
 }
 
 func resolveParam(
