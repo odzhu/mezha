@@ -36,10 +36,6 @@ func ensureSandboxHerdr(
 		return fmt.Errorf("unrecognized Herdr version %q", strings.TrimSpace(string(versionOutput)))
 	}
 	version := matches[1]
-	shell := "exec bash"
-	if useDevenv {
-		shell = "exec devenv shell --from path:/sandbox -- bash"
-	}
 	const herdrDevenvPath = "/root/.mezha/herdr-devenv"
 	setup, err := sandbox.Exec(ctx, "sh", []string{"-c", `set -eu
 mkdir -p "$1"
@@ -82,20 +78,15 @@ mkdir -p "$(dirname "$launcher")"
 cat > "$launcher" <<'EOF'
 #!/bin/sh
 export HERDR_CONFIG_PATH="$HOME/.mezha/herdr.toml"
-for arg in "$@"; do
-  if [ "$arg" = "remote-client-bridge" ]; then
+case "${1:-}" in
+  remote-client-bridge|server)
     exec devenv shell --no-tui --quiet --from path:/sandbox -- "$HOME/.mezha/herdr-bin" "$@"
-  fi
-done
+    ;;
+esac
 exec "$HOME/.mezha/herdr-bin" "$@"
 EOF
 chmod 755 "$launcher"
-cat > "$mezha_dir/herdr-shell" <<'EOF'
-#!/bin/sh
-%[2]s
-EOF
-chmod 755 "$mezha_dir/herdr-shell"
-`, version, shell)
+`, version)
 	fmt.Println("Provisioning Herdr through devenv...")
 	args := []string{"shell", "--from", "path:" + herdrDevenvPath, "--", "sh", "-c", script}
 	var code int
@@ -144,7 +135,7 @@ func syncSandboxHerdrConfig(ctx context.Context, sandbox *msb.Sandbox, workdir s
 		}
 	}
 	config["terminal"] = map[string]string{
-		"default_shell": "/root/.mezha/herdr-shell",
+		"default_shell": "bash",
 		"shell_mode":    "non_login",
 		"new_cwd":       workdir,
 	}
