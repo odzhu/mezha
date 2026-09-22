@@ -78,17 +78,17 @@ fi
 mkdir -p "$(dirname "$launcher")"
 bashrc="$HOME/.bashrc"
 touch "$bashrc"
-if ! grep -Fqx '# mezha devenv hook' "$bashrc"; then
-  cat >> "$bashrc" <<'EOF'
+# Replace the managed hook so existing sandboxes receive hook fixes on provision.
+sed -i '/^# mezha devenv hook$/,/^eval "$(devenv hook bash)"$/d' "$bashrc"
+cat >> "$bashrc" <<'EOF'
 # mezha devenv hook
-# The server inherits devenv's environment. Clear its active-project marker in
-# the parent pane so the hook can activate the managed environment; hook-spawned children keep it.
-if [ "${MEZHA_HERDR_PANE:-}" = 1 ] && [ -z "${_DEVENV_HOOK_DIR:-}" ]; then
-  unset DEVENV_ROOT
+# A Herdr pane inherits the server's devenv environment. Consume this marker
+# before activating so the hook-spawned shell keeps DEVENV_ROOT and cannot recurse.
+if [ "${MEZHA_HERDR_PANE:-}" = 1 ]; then
+  unset DEVENV_ROOT MEZHA_HERDR_PANE
 fi
 eval "$(devenv hook bash)"
 EOF
-fi
 (cd /root/.config/mezha/services/devenv && devenv allow)
 cat > "$launcher" <<'EOF'
 #!/bin/sh
