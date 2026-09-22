@@ -25,7 +25,7 @@ stage-secretspec-static:
 
 build: stage-secretspec-static
 	@mkdir -p $(BIN_DIR)
-	CGO_ENABLED=$(CGO_ENABLED) GOWORK=$(CURDIR)/.secretspec-static.work $(GO) build -tags static -o $(BIN_DIR)/$(APP) $(CMD_DIR)
+	CGO_ENABLED=$(CGO_ENABLED) GOWORK=$(CURDIR)/.secretspec-static.work $(GO) build -tags static -ldflags='-s -w' -o $(BIN_DIR)/$(APP) $(CMD_DIR)
 
 install: build
 	@mkdir -p "$(DESTDIR)$(PREFIX)/bin"

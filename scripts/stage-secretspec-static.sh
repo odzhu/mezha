@@ -11,7 +11,9 @@ sdk_dir="$source_dir/secretspec-go"
 goos="$(go env GOOS)"
 goarch="$(go env GOARCH)"
 archive="$sdk_dir/lib/libsecretspec_${goos}_${goarch}.a"
+stage_marker="$sdk_dir/lib/.mezha-stage"
 workfile="$root/.secretspec-static.work"
+stage_id="release-keyring-only"
 
 if [[ ! -f "$source_dir/Cargo.toml" ]]; then
   command -v curl >/dev/null || { echo "curl is required to download SecretSpec source" >&2; exit 1; }
@@ -37,9 +39,26 @@ if [[ ! -f "$source_dir/Cargo.toml" ]]; then
   tar -xzf "$temp_dir/source.tar.gz" --strip-components=1 -C "$source_dir"
 fi
 
-if [[ ! -f "$archive" ]]; then
+# The env provider has no optional dependencies. On macOS, `keyring` uses the
+# system Keychain; do not link SecretSpec's other cloud and vault providers.
+python3 - "$source_dir/Cargo.toml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+source = path.read_text()
+original = 'secretspec-core = { package = "secretspec", version = "0.20.0", path = "./secretspec" }'
+minimal = 'secretspec-core = { package = "secretspec", version = "0.20.0", path = "./secretspec", default-features = false, features = ["keyring"] }'
+if original in source:
+    path.write_text(source.replace(original, minimal, 1))
+elif minimal not in source:
+    raise SystemExit("unexpected SecretSpec workspace dependency declaration")
+PY
+
+if [[ ! -f "$archive" || ! -f "$stage_marker" || "$(<"$stage_marker")" != "$stage_id" ]]; then
   command -v cargo >/dev/null || { echo "cargo is required to build SecretSpec's static library" >&2; exit 1; }
-  bash "$sdk_dir/scripts/stage-staticlib.sh"
+  SECRETSPEC_FFI_PROFILE=release bash "$sdk_dir/scripts/stage-staticlib.sh"
+  printf '%s\n' "$stage_id" > "$stage_marker"
 fi
 
 cat > "$workfile" <<EOF
