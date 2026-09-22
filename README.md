@@ -288,8 +288,9 @@ installs the matching Linux Herdr release in the sandbox before registration,
 then records its SSH host key for Herdr's strict saved-machine connection.
 New Herdr panes use Mezha's configured working directory and the environment
 inherited from the remote Herdr server. Mezha launches that server through its
-managed `devenv` environment, while keeping Herdr's pane shell a direct `bash`
-process so plugins can reliably send startup commands as soon as a pane is ready.
+managed `devenv` environment and adds `eval "$(devenv hook bash)"` to root's
+`.bashrc`, while keeping Herdr's pane shell a direct `bash` process so plugins
+can reliably send startup commands as soon as a pane is ready.
 Mezha also natively installs GitHub-managed local Herdr plugins in the sandbox,
 preserves their enabled state, and copies each plugin's local configuration
 directory. It also copies the local Herdr `[keys]` configuration, so

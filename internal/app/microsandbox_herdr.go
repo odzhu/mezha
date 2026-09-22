@@ -75,6 +75,14 @@ if [ "$("$binary" --version 2>/dev/null || :)" != "herdr %[1]s" ]; then
   mv "$tmp" "$binary"
 fi
 mkdir -p "$(dirname "$launcher")"
+bashrc="$HOME/.bashrc"
+touch "$bashrc"
+if ! grep -Fqx '# mezha devenv hook' "$bashrc"; then
+  cat >> "$bashrc" <<'EOF'
+# mezha devenv hook
+eval "$(devenv hook bash)"
+EOF
+fi
 cat > "$launcher" <<'EOF'
 #!/bin/sh
 export HERDR_CONFIG_PATH="$HOME/.mezha/herdr.toml"
