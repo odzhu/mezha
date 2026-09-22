@@ -151,6 +151,11 @@ func runMicrosandbox(
 		return err
 	}
 
+	commandDevenvPath, err := ensureCommandDevenvConfig(ctx, sandbox, workdir)
+	if err != nil {
+		return err
+	}
+
 	for i, directive := range cfg.Run {
 		var output *msb.ExecOutput
 		if cfg.Services.Docker.Enabled || params.Kubernetes {
@@ -191,7 +196,18 @@ func runMicrosandbox(
 	if len(params.RemoteCommand) != 0 {
 		command, args := remoteCommand(params.RemoteCommand, params.NoLoginShell)
 		if cfg.Services.Docker.Enabled || params.Kubernetes {
-			command, args = dockerCommand(command, args, params.Kubernetes)
+			command, args = devenvCommand(commandDevenvPath, command, args)
+		} else {
+			devenv, err := sandboxCommandPath(ctx, sandbox, workdir, "devenv")
+			if err != nil {
+				return err
+			}
+			if devenv != "" {
+				devenvArgs := []string{
+					"shell", "--no-reload", "--from", "path:" + commandDevenvPath, "--", command,
+				}
+				command, args = devenv, append(devenvArgs, args...)
+			}
 		}
 		if interactiveTTYEnabled(params.TTY) {
 			code, err := sandbox.AttachWith(ctx, command, args, sandboxAttachOptions(workdir)...)
@@ -223,25 +239,27 @@ func runMicrosandbox(
 		return err
 	}
 	if devenv != "" {
-		command, args := devenv, []string{"shell", "--no-reload"}
+		command, args := devenv, []string{
+			"shell", "--no-reload", "--from", "path:" + commandDevenvPath,
+		}
 		if cfg.Services.Docker.Enabled || params.Kubernetes {
-			// dockerCommand already starts the managed devenv shell. Wrapping a
-			// second `devenv shell` here runs its enterShell tasks twice.
-			command, args = dockerCommand("bash", nil, params.Kubernetes)
+			// dockerCommand starts the managed devenv shell with its services.
+			command, args = devenvCommand(commandDevenvPath, "bash", nil)
 		}
-		code, err := sandbox.AttachWith(ctx, command, args, sandboxAttachOptions(workdir)...)
-		if err != nil {
-			return err
+		code, attachErr := sandbox.AttachWith(ctx, command, args, sandboxAttachOptions(workdir)...)
+		if attachErr == nil && code == 0 {
+			return nil
 		}
-		if code != 0 {
-			return fmt.Errorf("devenv shell exited with code %d", code)
+		if attachErr != nil {
+			fmt.Fprintf(os.Stderr, "devenv shell failed (%v); falling back to bash\n", attachErr)
+		} else {
+			fmt.Fprintf(os.Stderr, "devenv shell exited with code %d; falling back to bash\n", code)
 		}
-		return nil
 	}
 
 	// AttachShell cannot accept a working-directory override. Use AttachWith
 	// so an interactive shell starts in the repository. Prefer bash and use sh
-	// only when bash is unavailable.
+	// only when bash is unavailable. Do not wrap this fallback in devenv.
 	shell, err := sandboxCommandPath(ctx, sandbox, workdir, "bash")
 	if err != nil {
 		return err
@@ -258,9 +276,6 @@ func runMicrosandbox(
 	var shellArgs []string
 	if !params.NoLoginShell && filepath.Base(shell) == "bash" {
 		shellArgs = []string{"-lc", shellBootstrap() + "; exec \"$0\" -l", shell}
-	}
-	if cfg.Services.Docker.Enabled || params.Kubernetes {
-		shell, shellArgs = dockerCommand(shell, shellArgs, params.Kubernetes)
 	}
 	code, err := sandbox.AttachWith(ctx, shell, shellArgs, sandboxAttachOptions(workdir)...)
 	if err != nil {

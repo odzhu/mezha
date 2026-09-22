@@ -14,6 +14,7 @@ import (
 
 const managedDevenvPath = "/sandbox"
 const managedDevenvConfig = managedDevenvPath + "/devenv.nix"
+const commandDevenvPath = managedDevenvPath + "/.mezha/command-devenv"
 const nativeDevenvPath = "/home/devenv/.nix-profile/bin/devenv"
 const managedDevenvUserConfig = managedDevenvPath + "/.mezha/user-devenv.nix"
 const managedDevenvWrapperMarker = "# Mezha managed devenv services wrapper v3"
@@ -64,19 +65,23 @@ base // {
 }
 `
 
-// dockerCommand runs a command in the managed devenv environment. Docker and
-// k3s are long-lived devenv processes, never daemons started by a session.
-func dockerCommand(command string, args []string, _ bool) (string, []string) {
+// devenvCommand runs a command in the specified devenv configuration.
+func devenvCommand(devenvPath, command string, args []string) (string, []string) {
 	commandLine := shellQuote(command)
 	for _, arg := range args {
 		commandLine += " " + shellQuote(arg)
 	}
 	return "devenv", []string{
 		"shell",
-		"--from", "path:" + managedDevenvPath,
+		"--from", "path:" + devenvPath,
 		"--",
 		"sh", "-c", commandLine,
 	}
+}
+
+// dockerCommand runs a command in the managed devenv environment.
+func dockerCommand(command string, args []string, _ bool) (string, []string) {
+	return devenvCommand(managedDevenvPath, command, args)
 }
 
 // ensureDevenvServices starts the singleton devenv process manager and waits
@@ -167,8 +172,39 @@ func ensureManagedDevenvConfig(
 	return ensureManagedDevenvServicesConfig(ctx, sandbox)
 }
 
-// ensureManagedDevenvServicesConfig preserves the project configuration and
-// wraps it with the singleton services Mezha requires.
+// ensureCommandDevenvConfig combines managed and repository configurations.
+func ensureCommandDevenvConfig(
+	ctx context.Context,
+	sandbox *msb.Sandbox,
+	workdir string,
+) (string, error) {
+	projectConfig := filepath.ToSlash(filepath.Join(workdir, "devenv.nix"))
+	output, err := sandbox.Exec(ctx, "test", []string{"-f", projectConfig})
+	if err != nil {
+		return "", fmt.Errorf("inspect project devenv configuration: %w", err)
+	}
+	if !output.Success() {
+		return managedDevenvPath, nil
+	}
+
+	output, err = sandbox.Exec(ctx, "mkdir", []string{"-p", commandDevenvPath})
+	if err != nil {
+		return "", fmt.Errorf("create command devenv configuration directory: %w", err)
+	}
+	if !output.Success() {
+		return "", fmt.Errorf(
+			"create command devenv configuration directory: %s",
+			strings.TrimSpace(output.Stderr()),
+		)
+	}
+	config := fmt.Sprintf("{ ... }: { imports = [ %s %s ]; }\n", managedDevenvConfig, projectConfig)
+	if err := sandbox.FS().WriteString(ctx, commandDevenvPath+"/devenv.nix", config); err != nil {
+		return "", fmt.Errorf("write command devenv configuration: %w", err)
+	}
+	return commandDevenvPath, nil
+}
+
+// ensureManagedDevenvServicesConfig wraps configuration with Mezha services.
 func ensureManagedDevenvServicesConfig(ctx context.Context, sandbox *msb.Sandbox) error {
 	content, err := sandbox.FS().ReadString(ctx, managedDevenvConfig)
 	if err != nil {
