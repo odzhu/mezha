@@ -14,7 +14,6 @@ import (
 
 const managedDevenvPath = "/root/.config/mezha/services/devenv"
 const managedDevenvConfig = managedDevenvPath + "/devenv.nix"
-const commandDevenvPath = "/root/.config/mezha/command-devenv"
 const persistentRuntimeBin = "/nix/mezha/root/.mezha/runtime-bin"
 const nativeDevenvPath = persistentRuntimeBin + "/devenv"
 const managedDevenvUserConfig = managedDevenvPath + "/user-devenv.nix"
@@ -74,6 +73,15 @@ func devenvCommand(devenvPath, command string, args []string) (string, []string)
 		"--from", "path:" + devenvPath,
 		"--",
 		"sh", "-c", commandLine,
+	}
+}
+
+// devenvInteractiveShellCommand keeps managed tools on PATH without activating
+// the managed environment as the shell's project.
+func devenvInteractiveShellCommand() (string, []string) {
+	return "devenv", []string{
+		"shell", "--reload", "--from", "path:" + managedDevenvPath,
+		"--", "sh", "-c", "unset DEVENV_ROOT _DEVENV_HOOK_DIR; exec bash -i",
 	}
 }
 
@@ -177,49 +185,33 @@ func ensureManagedDevenvConfig(
 		}
 	}
 
-	return ensureManagedDevenvServicesConfig(ctx, sandbox)
+	if err := ensureManagedDevenvServicesConfig(ctx, sandbox); err != nil {
+		return err
+	}
+	return ensureDevenvBashHook(ctx, sandbox)
 }
 
-// ensureCommandDevenvConfig combines managed and repository configurations.
-func ensureCommandDevenvConfig(
-	ctx context.Context,
-	sandbox *msb.Sandbox,
-	workdir string,
-) (string, error) {
-	projectConfig := filepath.ToSlash(filepath.Join(workdir, "devenv.nix"))
-	output, err := sandbox.Exec(
-		ctx,
-		persistentRuntimeBin+"/sh",
-		[]string{"-c", "test -f \"$1\"", "mezha-test-file", projectConfig},
-		persistentRuntimeExecEnv(),
-	)
+// ensureDevenvBashHook enables directory-based devenv activation for Bash.
+func ensureDevenvBashHook(ctx context.Context, sandbox *msb.Sandbox) error {
+	output, err := sandbox.Exec(ctx, persistentRuntimeBin+"/sh", []string{"-c", `set -eu
+bashrc="$HOME/.bashrc"
+touch "$bashrc"
+sed -i '/^# mezha devenv hook$/,/^eval "$(devenv hook bash)"$/d' "$bashrc"
+cat >> "$bashrc" <<'EOF'
+# mezha devenv hook
+if [ "${MEZHA_HERDR_PANE:-}" = 1 ]; then
+  unset DEVENV_ROOT MEZHA_HERDR_PANE
+fi
+eval "$(devenv hook bash)"
+EOF
+`}, persistentRuntimeExecEnv())
 	if err != nil {
-		return "", fmt.Errorf("inspect project devenv configuration: %w", err)
+		return fmt.Errorf("install devenv Bash hook: %w", err)
 	}
 	if !output.Success() {
-		return managedDevenvPath, nil
+		return fmt.Errorf("install devenv Bash hook: %s", strings.TrimSpace(output.Stderr()))
 	}
-
-	output, err = sandbox.Exec(
-		ctx,
-		persistentRuntimeBin+"/mkdir",
-		[]string{"-p", commandDevenvPath},
-		persistentRuntimeExecEnv(),
-	)
-	if err != nil {
-		return "", fmt.Errorf("create command devenv configuration directory: %w", err)
-	}
-	if !output.Success() {
-		return "", fmt.Errorf(
-			"create command devenv configuration directory: %s",
-			strings.TrimSpace(output.Stderr()),
-		)
-	}
-	config := fmt.Sprintf("{ ... }: { imports = [ %s %s ]; }\n", managedDevenvConfig, projectConfig)
-	if err := sandbox.FS().WriteString(ctx, commandDevenvPath+"/devenv.nix", config); err != nil {
-		return "", fmt.Errorf("write command devenv configuration: %w", err)
-	}
-	return commandDevenvPath, nil
+	return nil
 }
 
 // ensureManagedDevenvServicesConfig writes Mezha's service wrapper.

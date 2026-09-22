@@ -65,8 +65,7 @@ func runMicrosandbox(
 			return err
 		}
 	}
-	// The repository is the default working directory. A microsandbox.workdir
-	// explicitly overrides it for commands that intentionally run elsewhere.
+	// Run directives use the repository by default; direct Mezha sessions start in /root.
 	repoDir := params.RemoteRepoDir
 	if repoDir == "" {
 		repoDir = cfg.Microsandbox.Workdir
@@ -78,13 +77,12 @@ func runMicrosandbox(
 	if workdir == "" {
 		workdir = repoDir
 	}
+	sessionWorkdir := "/root"
 	herdrWorkdir := "/root"
 	herdrEnabled := reregisterHerdr && herdrCommandAvailable()
 	useDevenv := cfg.Services.Docker.Enabled || params.Kubernetes
-	if useDevenv || herdrEnabled {
-		if err := ensureManagedDevenvConfig(ctx, sandbox, cfg.Provision); err != nil {
-			return err
-		}
+	if err := ensureManagedDevenvConfig(ctx, sandbox, cfg.Provision); err != nil {
+		return err
 	}
 	if useDevenv {
 		if err := ensureDevenvServices(ctx, sandbox, params.Kubernetes); err != nil {
@@ -145,11 +143,6 @@ func runMicrosandbox(
 		return err
 	}
 
-	commandDevenvPath, err := ensureCommandDevenvConfig(ctx, sandbox, workdir)
-	if err != nil {
-		return err
-	}
-
 	for i, directive := range cfg.Run {
 		var output *msb.ExecOutput
 		if cfg.Services.Docker.Enabled || params.Kubernetes {
@@ -190,7 +183,7 @@ func runMicrosandbox(
 	if len(params.RemoteCommand) != 0 {
 		command, args := remoteCommand(params.RemoteCommand, params.NoLoginShell)
 		if cfg.Services.Docker.Enabled || params.Kubernetes {
-			command, args = devenvCommand(commandDevenvPath, command, args)
+			command, args = devenvCommand(managedDevenvPath, command, args)
 		} else {
 			devenv, err := sandboxCommandPath(ctx, sandbox, workdir, "devenv")
 			if err != nil {
@@ -198,13 +191,17 @@ func runMicrosandbox(
 			}
 			if devenv != "" {
 				devenvArgs := []string{
-					"shell", "--reload", "--from", "path:" + commandDevenvPath, "--", command,
+					"shell", "--reload", "--from", "path:" + managedDevenvPath, "--", command,
 				}
 				command, args = devenv, append(devenvArgs, args...)
 			}
 		}
 		if interactiveTTYEnabled(params.TTY) {
-			code, err := sandbox.AttachWith(ctx, command, args, sandboxAttachOptions(workdir)...)
+			code, err := sandbox.AttachWith(
+				ctx,
+				command,
+				args,
+				sandboxAttachOptions(sessionWorkdir)...)
 			if err != nil {
 				return err
 			}
@@ -214,7 +211,7 @@ func runMicrosandbox(
 			return nil
 		}
 
-		output, err := sandbox.Exec(ctx, command, args, msb.WithExecCwd(workdir))
+		output, err := sandbox.Exec(ctx, command, args, msb.WithExecCwd(sessionWorkdir))
 		if err != nil {
 			return err
 		}
@@ -228,19 +225,17 @@ func runMicrosandbox(
 	if !interactiveTTYEnabled(params.TTY) {
 		return fmt.Errorf("interactive shell requires a terminal; pass a command after --")
 	}
-	devenv, err := sandboxCommandPath(ctx, sandbox, workdir, "devenv")
+	devenv, err := sandboxCommandPath(ctx, sandbox, sessionWorkdir, "devenv")
 	if err != nil {
 		return err
 	}
 	if devenv != "" {
-		command, args := devenv, []string{
-			"shell", "--reload", "--from", "path:" + commandDevenvPath,
-		}
-		if cfg.Services.Docker.Enabled || params.Kubernetes {
-			// dockerCommand starts the managed devenv shell with its services.
-			command, args = devenvCommand(commandDevenvPath, "bash", nil)
-		}
-		code, attachErr := sandbox.AttachWith(ctx, command, args, sandboxAttachOptions(workdir)...)
+		command, args := devenvInteractiveShellCommand()
+		code, attachErr := sandbox.AttachWith(
+			ctx,
+			command,
+			args,
+			sandboxAttachOptions(sessionWorkdir)...)
 		if attachErr == nil && code == 0 {
 			return nil
 		}
@@ -252,14 +247,14 @@ func runMicrosandbox(
 	}
 
 	// AttachShell cannot accept a working-directory override. Use AttachWith
-	// so an interactive shell starts in the repository. Prefer bash and use sh
-	// only when bash is unavailable. Do not wrap this fallback in devenv.
-	shell, err := sandboxCommandPath(ctx, sandbox, workdir, "bash")
+	// so an interactive shell starts in /root. Prefer bash and use sh only when
+	// bash is unavailable. Do not wrap this fallback in devenv.
+	shell, err := sandboxCommandPath(ctx, sandbox, sessionWorkdir, "bash")
 	if err != nil {
 		return err
 	}
 	if shell == "" {
-		shell, err = sandboxCommandPath(ctx, sandbox, workdir, "sh")
+		shell, err = sandboxCommandPath(ctx, sandbox, sessionWorkdir, "sh")
 		if err != nil {
 			return err
 		}
@@ -271,7 +266,7 @@ func runMicrosandbox(
 	if !params.NoLoginShell && filepath.Base(shell) == "bash" {
 		shellArgs = []string{"-lc", shellBootstrap() + "; exec \"$0\" -l", shell}
 	}
-	code, err := sandbox.AttachWith(ctx, shell, shellArgs, sandboxAttachOptions(workdir)...)
+	code, err := sandbox.AttachWith(ctx, shell, shellArgs, sandboxAttachOptions(sessionWorkdir)...)
 	if err != nil {
 		return err
 	}
@@ -326,14 +321,17 @@ func shellBootstrap() string {
 	)
 }
 
-// remoteCommand runs commands through a login shell by default. The fixed
-// script preserves every command argument without shell interpolation.
+// remoteCommand runs direct Mezha commands through Bash. The fixed script
+// preserves every command argument without shell interpolation.
 func remoteCommand(command []string, noLoginShell bool) (string, []string) {
+	mode := "-lc"
+	bootstrap := shellBootstrap() + "; "
 	if noLoginShell {
-		return command[0], command[1:]
+		mode = "-c"
+		bootstrap = ""
 	}
 	args := make([]string, 0, len(command)+4)
-	args = append(args, "-lc", shellBootstrap()+`; exec "$@"`, "mezha-run")
+	args = append(args, mode, bootstrap+`exec "$@"`, "mezha-run")
 	args = append(args, command...)
 	return "bash", args
 }
