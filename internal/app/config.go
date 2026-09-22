@@ -314,7 +314,7 @@ memory_mib = 4096
 # cpus = 2
 # workdir = "/workspace"
 
-# GOPATH defaults to /sandbox/go when it is not explicitly configured.
+# GOPATH defaults to /root/go when it is not explicitly configured.
 [microsandbox.env]
 MODE = "development"
 
@@ -371,7 +371,7 @@ herdr = false
 # Initialization applied only when a new sandbox is provisioned.
 [[provision.add]]
 source = ".mezha/devenv.nix"
-target = "/sandbox/devenv.nix"
+target = "/root/.config/mezha/services/devenv/user-devenv.nix"
 
 # Commands use tables: command may be a shell string or an exec-form array.
 # [[run]]

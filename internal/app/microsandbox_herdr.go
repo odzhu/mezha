@@ -36,13 +36,13 @@ func ensureSandboxHerdr(
 		return fmt.Errorf("unrecognized Herdr version %q", strings.TrimSpace(string(versionOutput)))
 	}
 	version := matches[1]
-	const herdrDevenvPath = "/root/.mezha/herdr-devenv"
+	const herdrDevenvPath = "/tmp/mezha-herdr-install"
 	setup, err := sandbox.Exec(ctx, "sh", []string{"-c", `set -eu
 mkdir -p "$1"
 cat > "$1/devenv.nix" <<'EOF'
 { pkgs, ... }:
 {
-  imports = [ /sandbox/devenv.nix ];
+  imports = [ /root/.config/mezha/services/devenv/devenv.nix ];
   packages = [ pkgs.curl ];
 }
 EOF
@@ -60,8 +60,7 @@ EOF
 	defer func() { _ = removeSandboxPath(context.Background(), sandbox, herdrDevenvPath) }()
 
 	script := fmt.Sprintf(`set -eu
-mezha_dir="$HOME/.mezha"
-binary="$mezha_dir/herdr-bin"
+binary="/nix/mezha/services/herdr/bin/herdr"
 launcher="$HOME/.local/bin/herdr"
 if [ "$("$binary" --version 2>/dev/null || :)" != "herdr %[1]s" ]; then
   case "$(uname -m)" in
@@ -69,7 +68,7 @@ if [ "$("$binary" --version 2>/dev/null || :)" != "herdr %[1]s" ]; then
     x86_64|amd64) arch=x86_64 ;;
     *) echo "unsupported Herdr architecture: $(uname -m)" >&2; exit 1 ;;
   esac
-  mkdir -p "$mezha_dir"
+  mkdir -p "$(dirname "$binary")"
   tmp="$binary.tmp.$$"
   url="https://github.com/herdrdev/herdr/releases/download/v%[1]s/herdr-linux-$arch"
   curl -fsSL --retry 3 --retry-all-errors "$url" -o "$tmp"
@@ -83,25 +82,25 @@ if ! grep -Fqx '# mezha devenv hook' "$bashrc"; then
   cat >> "$bashrc" <<'EOF'
 # mezha devenv hook
 # The server inherits devenv's environment. Clear its active-project marker in
-# the parent pane so the hook can activate /sandbox; hook-spawned children keep it.
+# the parent pane so the hook can activate the managed environment; hook-spawned children keep it.
 if [ "${MEZHA_HERDR_PANE:-}" = 1 ] && [ -z "${_DEVENV_HOOK_DIR:-}" ]; then
   unset DEVENV_ROOT
 fi
 eval "$(devenv hook bash)"
 EOF
 fi
-(cd /sandbox && devenv allow)
+(cd /root/.config/mezha/services/devenv && devenv allow)
 cat > "$launcher" <<'EOF'
 #!/bin/sh
-export HERDR_CONFIG_PATH="$HOME/.mezha/herdr.toml"
+export HERDR_CONFIG_PATH="/root/.config/mezha/services/herdr/config.toml"
 case "${1:-}" in
   remote-client-bridge|server)
     # Keep devenv's PATH and environment, but let each pane's Bash hook detect
     # and activate the project rather than inheriting an already-active shell.
-    exec devenv shell --no-tui --quiet --from path:/sandbox -- sh -c 'unset DEVENV_ROOT; export MEZHA_HERDR_PANE=1; exec "$@"' mezha-herdr "$HOME/.mezha/herdr-bin" "$@"
+    exec devenv shell --no-tui --quiet --from path:/root/.config/mezha/services/devenv -- sh -c 'unset DEVENV_ROOT; export MEZHA_HERDR_PANE=1; exec "$@"' mezha-herdr "/nix/mezha/services/herdr/bin/herdr" "$@"
     ;;
 esac
-exec "$HOME/.mezha/herdr-bin" "$@"
+exec "/nix/mezha/services/herdr/bin/herdr" "$@"
 EOF
 chmod 755 "$launcher"
 `, version)
@@ -174,7 +173,12 @@ func syncSandboxHerdrConfig(ctx context.Context, sandbox *msb.Sandbox, workdir s
 	if err := temp.Close(); err != nil {
 		return fmt.Errorf("close sandbox Herdr configuration: %w", err)
 	}
-	if err := nativeUpload(ctx, sandbox, temp.Name(), "/root/.mezha/herdr.toml"); err != nil {
+	if err := nativeUpload(
+		ctx,
+		sandbox,
+		temp.Name(),
+		"/root/.config/mezha/services/herdr/config.toml",
+	); err != nil {
 		return fmt.Errorf("copy Herdr keybindings to sandbox: %w", err)
 	}
 	// Reload an already-running remote server; a first connection loads it normally.

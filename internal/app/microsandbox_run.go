@@ -18,7 +18,7 @@ func runMicrosandbox(
 	params RunParams,
 	cfg *MezhaConfig,
 ) error {
-	if err := msb.EnsureInstalled(ctx); err != nil {
+	if _, err := msb.EnsureRuntime(ctx, msb.RuntimeConfig{}, msb.InstallOptions{}); err != nil {
 		return fmt.Errorf("install Microsandbox runtime: %w", err)
 	}
 	_, lookupErr := msb.GetSandbox(ctx, params.SandboxName)
@@ -78,10 +78,7 @@ func runMicrosandbox(
 	if workdir == "" {
 		workdir = repoDir
 	}
-	herdrWorkdir := cfg.Microsandbox.Workdir
-	if herdrWorkdir == "" {
-		herdrWorkdir = "/sandbox"
-	}
+	herdrWorkdir := "/root"
 	herdrEnabled := reregisterHerdr && herdrCommandAvailable()
 	useDevenv := cfg.Services.Docker.Enabled || params.Kubernetes
 	if useDevenv || herdrEnabled {

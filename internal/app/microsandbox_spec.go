@@ -169,7 +169,10 @@ func (s MicrosandboxSpec) runtimeOptions() ([]msb.SandboxOption, error) {
 		environment[name] = value
 	}
 	if _, exists := environment["GOPATH"]; !exists {
-		environment["GOPATH"] = "/sandbox/go"
+		environment["GOPATH"] = "/root/go"
+	}
+	if _, exists := environment["PATH"]; !exists {
+		environment["PATH"] = "/nix/mezha/root/.mezha/runtime-bin"
 	}
 	opts := []msb.SandboxOption{msb.WithEnv(environment)}
 	if len(s.Scripts) != 0 {
@@ -192,13 +195,14 @@ func (s MicrosandboxSpec) runtimeOptions() ([]msb.SandboxOption, error) {
 		if len(secret.AllowHosts) == 0 && len(secret.AllowHostPatterns) == 0 {
 			return nil, fmt.Errorf("sandbox secret %q requires an allowlist", secret.EnvVar)
 		}
+		allow := append([]string{}, secret.AllowHosts...)
+		allow = append(allow, secret.AllowHostPatterns...)
 		secrets = append(secrets, msb.Secret.Env(
 			secret.EnvVar,
 			os.Getenv(secret.ValueFromEnv),
 			msb.SecretEnvOptions{
-				AllowHosts:        secret.AllowHosts,
-				AllowHostPatterns: secret.AllowHostPatterns,
-				RequireTLS:        secret.RequireTLS,
+				Allow:              allow,
+				RequireTLSIdentity: secret.RequireTLS,
 			},
 		))
 	}
@@ -252,7 +256,7 @@ func (s MicrosandboxSpec) networkConfig() (*msb.NetworkConfig, error) {
 func persistentSymlinkTarget(target string) bool {
 	switch filepath.Clean(target) {
 	case "/nix/store", "/home", "/root", "/root/.cache/go-build", "/root/.cache/nix",
-		"/sandbox", "/sandbox/.devenv", "/var/lib/docker", "/var/lib/rancher/k3s":
+		"/var/lib/docker", "/var/lib/rancher/k3s":
 		return true
 	default:
 		return false

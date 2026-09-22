@@ -11,7 +11,7 @@ import (
 )
 
 func pullDevenvImage(ctx context.Context) error {
-	if err := msb.EnsureInstalled(ctx); err != nil {
+	if _, err := msb.EnsureRuntime(ctx, msb.RuntimeConfig{}, msb.InstallOptions{}); err != nil {
 		return fmt.Errorf("install Microsandbox runtime: %w", err)
 	}
 

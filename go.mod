@@ -8,7 +8,7 @@ require (
 	github.com/cachix/secretspec/secretspec-go v0.20.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/go-git/go-git/v5 v5.19.2
-	github.com/superradcompany/microsandbox/sdk/go v0.6.18
+	github.com/superradcompany/microsandbox/sdk/go v0.7.2
 	github.com/urfave/cli/v3 v3.10.1
 	golang.org/x/sys v0.47.0
 )

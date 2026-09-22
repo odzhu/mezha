@@ -95,7 +95,7 @@ Run `mezha init` in a repository to create `mezha.toml` and
 `.mezha/devenv.nix`. By default, Mezha generates a sandbox name for the current
 repository and Git ref. Use `--sandbox <name>` (or `-s <name>`) with the default session, `sandbox`,
 and `sync` commands to select a reusable sandbox instead. Each project is kept
-in its own `/sandbox/<project>` directory. A Git remote named after the selected
+in its own `/root/<project>` directory. A Git remote named after the selected
 sandbox is added to the host repository, so the same repository can synchronize
 with multiple sandboxes.
 
@@ -163,7 +163,7 @@ enabled = true
 [sandbox]
 # Default sandbox selection; --sandbox overrides it.
 # name = "development"
-# remote_dir = "/sandbox/my-project"
+# remote_dir = "/root/my-project"
 # policy_advisor = true
 # Register the sandbox with Herdr and synchronize local plugins.
 herdr = false
@@ -171,7 +171,7 @@ herdr = false
 # This devenv.nix declaratively provides Docker, k3s, kubectl, Git, Lazygit, and GitHub CLI.
 [[provision.add]]
 source = ".mezha/devenv.nix"
-target = "/sandbox/devenv.nix"
+target = "/root/.config/mezha/services/devenv/user-devenv.nix"
 
 # Commands use [[run]] tables. command may be a shell string or an exec-form array.
 # [[run]]
@@ -184,12 +184,12 @@ devenv services, but does not publish, upload, or otherwise synchronize reposito
 data. Mezha seeds the complete `/nix` directory into the shared `state` volume, which
 is mounted at `/nix`. The temporary state-volume provisioning sandbox receives
 the same `microsandbox.env`, `microsandbox.network`, and `microsandbox.secrets`
-configuration (including secret host allowlists) as the primary sandbox. It then symlinks `/home`, `/root`, `/sandbox`,
-`/var/lib/docker`, and `/var/lib/rancher/k3s` into that volume before any
-initialization command or devenv shell runs. Mezha defaults `GOPATH` to `/sandbox/go` unless it is
+configuration (including secret host allowlists) as the primary sandbox. It then symlinks `/root`,
+`/var/lib/docker`, and `/var/lib/rancher/k3s` into that volume before any initialization command
+or devenv shell runs; `/home` remains empty. Mezha defaults `GOPATH` to `/root/go` unless it is
 explicitly configured in `microsandbox.env`. The default `provision.add` installs
 Mezha's `.mezha/devenv.nix` at
-`/sandbox/devenv.nix`. It uses devenv `packages` for Docker, k3s, kubectl, Git,
+`/root/.config/mezha/services/devenv/user-devenv.nix`. It uses devenv `packages` for Docker, k3s, kubectl, Git,
 Lazygit, GitHub CLI, Go, Groff, Less, and `col`. It configures Groff and the
 manpage pager so captured help output is plain text rather than raw formatting
 control sequences. Mezha declares Docker and k3s as supervised `processes` in its managed devenv
@@ -207,9 +207,8 @@ state are stored in the shared persistent volume.
 k3s uses Docker as its container runtime, so Docker-built images are immediately
 available to Kubernetes. Named volume names are automatically prefixed with the
 sandbox name, so each sandbox receives its own volume. Volumes are retained when
-the sandbox is recreated or destroyed; this includes the Nix store, the complete
-`/sandbox` workspace, `/home`, and `/root` with their caches and configuration, avoiding
-repeated downloads and evaluation after
+the sandbox is recreated or destroyed; this includes the Nix store and `/root` with its project
+workspaces, caches, and configuration, avoiding repeated downloads and evaluation after
 `mezha --recreate`. Use `--volumes-flush` with
 `mezha sandbox destroy`, or with `mezha --recreate`, only when a clean set of
 persistent volumes is required. Entries in `run` execute before the requested
@@ -286,12 +285,11 @@ default session overrides the configured value for that invocation.
 The registration is idempotent and uses Mezha's sandbox SSH proxy. Mezha
 installs the matching Linux Herdr release in the sandbox before registration,
 then records its SSH host key for Herdr's strict saved-machine connection.
-New Herdr panes use Mezha's configured working directory and the environment
-inherited from the remote Herdr server. Mezha launches that server through its
-managed `devenv` environment, trusts `/sandbox` with `devenv allow`, and adds
-`eval "$(devenv hook bash)"` to root's `.bashrc`. The server retains the devenv
-environment but marks Herdr parent panes as not already activated, allowing that
-hook to activate `/sandbox` when a user enters it; hook-created child shells
+New Herdr panes start in `/root` and use the environment inherited from the remote Herdr server. Mezha launches that server through its
+managed `devenv` environment, trusts its managed service configuration with `devenv allow`, and
+adds `eval "$(devenv hook bash)"` to root's `.bashrc`. The server retains the devenv environment
+but marks Herdr parent panes as not already activated, allowing that hook to activate the managed
+environment when a user enters it; hook-created child shells
 retain their active-project marker. Herdr's pane shell remains a direct `bash`
 process so plugins can reliably send startup commands as soon as a pane is ready.
 Mezha also natively installs GitHub-managed local Herdr plugins in the sandbox,

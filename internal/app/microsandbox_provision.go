@@ -15,7 +15,7 @@ func provisionMicrosandbox(
 	params ProvisionParams,
 	cfg *MezhaConfig,
 ) error {
-	if err := msb.EnsureInstalled(ctx); err != nil {
+	if _, err := msb.EnsureRuntime(ctx, msb.RuntimeConfig{}, msb.InstallOptions{}); err != nil {
 		return fmt.Errorf("install Microsandbox runtime: %w", err)
 	}
 	_, lookupErr := msb.GetSandbox(ctx, params.SandboxName)
@@ -80,10 +80,7 @@ func provisionMicrosandbox(
 		}
 	}
 	if herdrEnabled {
-		workdir := cfg.Microsandbox.Workdir
-		if workdir == "" {
-			workdir = "/sandbox"
-		}
+		workdir := "/root"
 		if err := ensureSandboxHerdr(ctx, sandbox, workdir, useDevenv); err != nil {
 			return err
 		}
