@@ -33,7 +33,7 @@ command = ["mezha", "herdr", "execute", "--", "volume", "list"]
 id = "shell"
 title = "Open Mezha sandbox"
 contexts = ["workspace"]
-command = ["mezha", "herdr", "dispatch", "shell", "--", "--herdr"]
+command = ["mezha", "herdr", "dispatch", "shell", "--", "run", "--herdr"]
 
 [[actions]]
 id = "create"
@@ -117,7 +117,7 @@ command = ["mezha", "herdr", "execute", "--", "herdr", "ui"]
 id = "shell"
 title = "Mezha sandbox"
 placement = "tab"
-command = ["mezha", "herdr", "execute", "--", "--herdr"]
+command = ["mezha", "herdr", "execute", "--", "run", "--herdr"]
 
 [[panes]]
 id = "destroy"

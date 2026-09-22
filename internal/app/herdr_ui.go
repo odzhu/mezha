@@ -105,7 +105,7 @@ var herdrDashboardItems = []herdrDashboardItem{
 		description: "Create the project Mezha configuration",
 	},
 	{
-		args:        []string{"shell", "--herdr"},
+		args:        []string{"run", "--herdr"},
 		title:       "Open sandbox shell",
 		description: "Open an interactive shell in a new tab",
 	},
@@ -975,7 +975,7 @@ func listHerdrDashboardSandboxes(
 }
 
 func dashboardCommandUsesPane(command []string) bool {
-	return len(command) > 0 && (command[0] == "shell" ||
+	return len(command) > 0 && (command[0] == "run" ||
 		(len(command) > 1 && command[0] == "sandbox" && command[1] == "destroy"))
 }
 
@@ -988,7 +988,10 @@ func launchHerdrDashboardCommand(ctx context.Context, command []string) error {
 	if dashboardCommandUsesPane(command) {
 		operation := command[0]
 		paneCommand := command[1:]
-		if operation == "sandbox" {
+		switch operation {
+		case "run":
+			operation = "shell"
+		case "sandbox":
 			operation = "destroy"
 			paneCommand = command[2:]
 		}
