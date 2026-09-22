@@ -192,6 +192,8 @@ EOF
 			strings.TrimSpace(setup.Stderr()),
 		)
 	}
+	// This devenv project is only needed while installing a plugin.
+	defer func() { _ = removeSandboxPath(context.Background(), sandbox, pluginDevenvPath) }()
 	command := append(
 		[]string{"shell", "--from", "path:" + pluginDevenvPath, "--", "mezha-herdr"},
 		args...,

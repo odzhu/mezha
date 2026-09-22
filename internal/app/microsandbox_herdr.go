@@ -56,6 +56,8 @@ EOF
 			strings.TrimSpace(setup.Stderr()),
 		)
 	}
+	// This devenv project is only needed to install Herdr; retain no evaluation state.
+	defer func() { _ = removeSandboxPath(context.Background(), sandbox, herdrDevenvPath) }()
 
 	script := fmt.Sprintf(`set -eu
 mezha_dir="$HOME/.mezha"
