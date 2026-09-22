@@ -306,6 +306,13 @@ memory_mib = 4096
 [microsandbox.env]
 MODE = "development"
 
+# Secrets are sourced from the local environment and restricted to an allowlist.
+# [[microsandbox.secrets]]
+# env = "GITHUB_TOKEN"
+# value_from_env = "GITHUB_TOKEN"
+# allow_hosts = ["api.github.com"]
+# require_tls = true
+
 # Bind mounts use [[microsandbox.mounts]] tables.
 # [[microsandbox.mounts]]
 # source = "."
