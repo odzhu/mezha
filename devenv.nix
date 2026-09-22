@@ -8,7 +8,7 @@
 
 
   # https://devenv.sh/packages/
-  packages = [ pkgs.git pkgs.gitleaks ];
+  packages = [ pkgs.git pkgs.gitleaks pkgs.cargo pkgs.rustc ];
 
   # https://devenv.sh/languages/
   languages.go.enable = true;

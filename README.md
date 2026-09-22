@@ -17,7 +17,7 @@ Declarative agent sandboxes powered by Microsandbox.
 - Go
 - Microsandbox-supported local virtualization host (KVM on Linux or Apple Silicon on macOS)
 - a local Docker-compatible daemon to import the native devenv image
-- when SecretSpec integration is enabled, `libsecretspec` available to Mezha (for example through `SECRETSPEC_FFI_LIB`)
+- when SecretSpec integration is enabled, a C compiler, Cargo, and Rust (the build stages SecretSpec's static library)
 
 ## Build
 
@@ -252,9 +252,11 @@ allow_hosts = ["api.github.com"]
 require_tls = true
 ```
 
-SecretSpec’s Go SDK loads `libsecretspec` at runtime. Install the library and
-set `SECRETSPEC_FFI_LIB` to its path, or build Mezha using one of the SDK’s
-embedded, static, or pkg-config linking modes.
+Mezha statically links `libsecretspec` into its binary. `make build`, `make run`,
+and `make test` download the SecretSpec source release matching the pinned Go
+SDK, verify its checksum, and build its static archive on the first run. This
+requires Cargo, Rust, and a C compiler at build time, but neither
+`libsecretspec` nor `SECRETSPEC_FFI_LIB` is needed at runtime.
 
 ## Herdr integration
 
