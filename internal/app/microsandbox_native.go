@@ -177,7 +177,7 @@ func persistentRuntimeExecEnv() msb.ExecOption {
 
 // ensurePersistentLinks runs before any devenv shell or initialization command.
 func ensurePersistentLinks(ctx context.Context, sandbox *msb.Sandbox) error {
-	output, err := sandbox.Exec(ctx, "sh", []string{"-c", `set -eu
+	output, err := sandbox.Exec(ctx, persistentRuntimeBin+"/sh", []string{"-c", `set -eu
 if [ ! -f /nix/.mezha-state-v3 ]; then
   echo "shared persistent /nix volume is not mounted; recreate the sandbox" >&2
   exit 1
@@ -199,7 +199,7 @@ PATH=/nix/mezha/root/.mezha/runtime-bin
 rm -rf /home
 mkdir -p /home/devenv`},
 		msb.WithExecCwd("/"),
-		msb.WithExecEnv(map[string]string{"PATH": "/home/devenv/.nix-profile/bin"}),
+		persistentRuntimeExecEnv(),
 	)
 	if err != nil {
 		return fmt.Errorf("create persistent state symlinks: %w", err)
