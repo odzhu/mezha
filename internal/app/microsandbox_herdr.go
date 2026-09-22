@@ -83,6 +83,7 @@ if ! grep -Fqx '# mezha devenv hook' "$bashrc"; then
 eval "$(devenv hook bash)"
 EOF
 fi
+(cd /sandbox && devenv allow)
 cat > "$launcher" <<'EOF'
 #!/bin/sh
 export HERDR_CONFIG_PATH="$HOME/.mezha/herdr.toml"
