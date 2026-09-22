@@ -201,7 +201,7 @@ func runMicrosandbox(
 			}
 			if devenv != "" {
 				devenvArgs := []string{
-					"shell", "--no-reload", "--from", "path:" + commandDevenvPath, "--", command,
+					"shell", "--reload", "--from", "path:" + commandDevenvPath, "--", command,
 				}
 				command, args = devenv, append(devenvArgs, args...)
 			}
@@ -237,7 +237,7 @@ func runMicrosandbox(
 	}
 	if devenv != "" {
 		command, args := devenv, []string{
-			"shell", "--no-reload", "--from", "path:" + commandDevenvPath,
+			"shell", "--reload", "--from", "path:" + commandDevenvPath,
 		}
 		if cfg.Services.Docker.Enabled || params.Kubernetes {
 			// dockerCommand starts the managed devenv shell with its services.
