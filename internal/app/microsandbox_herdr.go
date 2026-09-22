@@ -3,13 +3,16 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/odzhu/mezha/internal/execx"
 	msb "github.com/superradcompany/microsandbox/sdk/go"
 )
@@ -92,13 +95,7 @@ cat > "$mezha_dir/herdr-shell" <<'EOF'
 %[2]s
 EOF
 chmod 755 "$mezha_dir/herdr-shell"
-cat > "$mezha_dir/herdr.toml" <<'EOF'
-[terminal]
-default_shell = %[3]s
-shell_mode = "non_login"
-new_cwd = %[4]s
-EOF
-`, version, shell, strconv.Quote("/root/.mezha/herdr-shell"), strconv.Quote(workdir))
+`, version, shell)
 	fmt.Println("Provisioning Herdr through devenv...")
 	args := []string{"shell", "--from", "path:" + herdrDevenvPath, "--", "sh", "-c", script}
 	var code int
@@ -119,5 +116,73 @@ EOF
 	if code != 0 {
 		return fmt.Errorf("install herdr in sandbox exited with code %d", code)
 	}
+	if err := syncSandboxHerdrConfig(ctx, sandbox, workdir); err != nil {
+		return err
+	}
 	return nil
+}
+
+// syncSandboxHerdrConfig copies local keybindings so remote Herdr servers can
+// invoke synchronized plugin actions, while retaining Mezha's terminal setup.
+func syncSandboxHerdrConfig(ctx context.Context, sandbox *msb.Sandbox, workdir string) error {
+	config := map[string]any{}
+	configPath, err := localHerdrConfigPath()
+	if err != nil {
+		return err
+	}
+	contents, err := os.ReadFile(configPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read local Herdr configuration: %w", err)
+	}
+	if err == nil {
+		var local map[string]any
+		if _, err := toml.Decode(string(contents), &local); err != nil {
+			return fmt.Errorf("parse local Herdr configuration: %w", err)
+		}
+		if keys, ok := local["keys"]; ok {
+			config["keys"] = keys
+		}
+	}
+	config["terminal"] = map[string]string{
+		"default_shell": "/root/.mezha/herdr-shell",
+		"shell_mode":    "non_login",
+		"new_cwd":       workdir,
+	}
+
+	var encoded bytes.Buffer
+	if err := toml.NewEncoder(&encoded).Encode(config); err != nil {
+		return fmt.Errorf("encode sandbox Herdr configuration: %w", err)
+	}
+	temp, err := os.CreateTemp("", "mezha-herdr-*.toml")
+	if err != nil {
+		return fmt.Errorf("create sandbox Herdr configuration: %w", err)
+	}
+	defer func() { _ = os.Remove(temp.Name()) }()
+	if _, err := temp.Write(encoded.Bytes()); err != nil {
+		_ = temp.Close()
+		return fmt.Errorf("write sandbox Herdr configuration: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return fmt.Errorf("close sandbox Herdr configuration: %w", err)
+	}
+	if err := nativeUpload(ctx, sandbox, temp.Name(), "/root/.mezha/herdr.toml"); err != nil {
+		return fmt.Errorf("copy Herdr keybindings to sandbox: %w", err)
+	}
+	// Reload an already-running remote server; a first connection loads it normally.
+	_, _ = sandbox.Exec(ctx, "/root/.local/bin/herdr", []string{"server", "reload-config"})
+	return nil
+}
+
+func localHerdrConfigPath() (string, error) {
+	if path := strings.TrimSpace(os.Getenv("HERDR_CONFIG_PATH")); path != "" {
+		return path, nil
+	}
+	if configHome := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); configHome != "" {
+		return filepath.Join(configHome, "herdr", "config.toml"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve local Herdr configuration: %w", err)
+	}
+	return filepath.Join(home, ".config", "herdr", "config.toml"), nil
 }

@@ -289,7 +289,9 @@ then records its SSH host key for Herdr's strict saved-machine connection.
 New Herdr panes use Mezha's configured working directory and shell environment.
 Mezha also natively installs GitHub-managed local Herdr plugins in the sandbox,
 preserves their enabled state, and copies each plugin's local configuration
-directory. Plugin installation and build commands run through Mezha's managed
+directory. It also copies the local Herdr `[keys]` configuration, so
+`plugin_action` hotkeys (such as herdr-plus) work on the remote Herdr server.
+Plugin installation and build commands run through Mezha's managed
 `devenv` environment. The generated `.mezha/devenv.nix` includes Go for native
 plugin builds; add other plugin-specific build tools there. `mezha sandbox destroy`
 removes the corresponding saved Herdr machine profile. Herdr
