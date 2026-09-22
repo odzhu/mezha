@@ -80,6 +80,11 @@ touch "$bashrc"
 if ! grep -Fqx '# mezha devenv hook' "$bashrc"; then
   cat >> "$bashrc" <<'EOF'
 # mezha devenv hook
+# The server inherits devenv's environment. Clear its active-project marker in
+# the parent pane so the hook can activate /sandbox; hook-spawned children keep it.
+if [ "${MEZHA_HERDR_PANE:-}" = 1 ] && [ -z "${_DEVENV_HOOK_DIR:-}" ]; then
+  unset DEVENV_ROOT
+fi
 eval "$(devenv hook bash)"
 EOF
 fi
@@ -91,7 +96,7 @@ case "${1:-}" in
   remote-client-bridge|server)
     # Keep devenv's PATH and environment, but let each pane's Bash hook detect
     # and activate the project rather than inheriting an already-active shell.
-    exec devenv shell --no-tui --quiet --from path:/sandbox -- sh -c 'unset DEVENV_ROOT; exec "$@"' mezha-herdr "$HOME/.mezha/herdr-bin" "$@"
+    exec devenv shell --no-tui --quiet --from path:/sandbox -- sh -c 'unset DEVENV_ROOT; export MEZHA_HERDR_PANE=1; exec "$@"' mezha-herdr "$HOME/.mezha/herdr-bin" "$@"
     ;;
 esac
 exec "$HOME/.mezha/herdr-bin" "$@"

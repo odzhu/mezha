@@ -290,10 +290,10 @@ New Herdr panes use Mezha's configured working directory and the environment
 inherited from the remote Herdr server. Mezha launches that server through its
 managed `devenv` environment, trusts `/sandbox` with `devenv allow`, and adds
 `eval "$(devenv hook bash)"` to root's `.bashrc`. The server retains the devenv
-environment but does not pass `DEVENV_ROOT` to panes, allowing that hook to
-activate `/sandbox` when a user enters it. Herdr's pane shell remains a direct
-`bash` process so plugins can reliably send startup commands as soon as a pane
-is ready.
+environment but marks Herdr parent panes as not already activated, allowing that
+hook to activate `/sandbox` when a user enters it; hook-created child shells
+retain their active-project marker. Herdr's pane shell remains a direct `bash`
+process so plugins can reliably send startup commands as soon as a pane is ready.
 Mezha also natively installs GitHub-managed local Herdr plugins in the sandbox,
 preserves their enabled state, and copies each plugin's local configuration
 directory. It also copies the local Herdr `[keys]` configuration, so
