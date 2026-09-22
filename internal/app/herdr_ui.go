@@ -52,6 +52,11 @@ var (
 
 var herdrLifecycleItems = []herdrDashboardItem{
 	{
+		args:        []string{"image", "pull"},
+		title:       "Pull latest image",
+		description: "Refresh the cached native devenv image",
+	},
+	{
 		args:        []string{"sandbox", "recreate", "--herdr"},
 		title:       "Recreate",
 		description: "Recreate the sandbox with clean persistent state",
@@ -121,7 +126,7 @@ var herdrDashboardItems = []herdrDashboardItem{
 	},
 	{
 		title:       "Lifecycle…",
-		description: "Recreate, start, stop, or destroy the sandbox",
+		description: "Pull the image, recreate, start, stop, or destroy the sandbox",
 		children:    herdrLifecycleItems,
 	},
 	{

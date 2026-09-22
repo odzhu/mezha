@@ -16,7 +16,7 @@ Declarative agent sandboxes powered by Microsandbox.
 
 - Go
 - Microsandbox-supported local virtualization host (KVM on Linux or Apple Silicon on macOS)
-- a local Docker-compatible daemon to import the native devenv image
+- network access to pull the native devenv image from GHCR on first use
 - when SecretSpec integration is enabled, a C compiler, Cargo, and Rust (the build stages SecretSpec's static library)
 
 ## Build
@@ -34,6 +34,7 @@ mezha [run-options] [-- command...]
 mezha run [run-options] [-- command...]
 mezha init [options]
 mezha sandbox list
+mezha image pull
 mezha sandbox create [options]
 mezha sandbox recreate [options]
 mezha sandbox start [options]
@@ -56,6 +57,8 @@ Examples:
 ```bash
 mezha init
 mezha sandbox list
+# Refresh the cached ghcr.io/cachix/devenv/devenv:latest image.
+mezha image pull
 mezha volume list
 mezha
 mezha -- git status

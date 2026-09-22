@@ -24,6 +24,12 @@ contexts = ["workspace"]
 command = ["mezha", "herdr", "execute", "--", "sandbox", "list"]
 
 [[actions]]
+id = "pull-image"
+title = "Pull latest Mezha image"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "image", "pull"]
+
+[[actions]]
 id = "volumes"
 title = "List Mezha volumes"
 contexts = ["workspace"]

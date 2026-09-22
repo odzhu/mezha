@@ -16,6 +16,7 @@ const rootUsageText = `Usage:
   mezha run [run-options] [-- command...]
   mezha init [options]
   mezha sandbox <list|create|recreate|start|stop|destroy|status|logs> [options]
+  mezha image pull
   mezha sync <status|push|pull|upload|download|remote> [options]
   mezha volume <list|rm> [options]
 
@@ -28,6 +29,7 @@ Examples:
   mezha --sandbox shared-dev -- bash -lc 'git status && pwd'
   mezha sandbox create --herdr
   mezha sandbox recreate
+  mezha image pull
   mezha sandbox logs --follow
   mezha sync upload
   mezha sync download results/report.json ./report.json
@@ -45,6 +47,7 @@ func New() *cli.Command {
 			newRunCommand(),
 			newInitCommand(),
 			newSandboxCommand(),
+			newImageCommand(),
 			newSyncCommand(),
 			newVolumeCommand(),
 			newSSHProxyCommand(),
@@ -375,6 +378,20 @@ func newSandboxCommand() *cli.Command {
 			newDestroyCommand(),
 			newStatusCommand(),
 			newLogsCommand(),
+		},
+	}
+}
+
+func newImageCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "image",
+		Usage: "Manage Microsandbox images",
+		Commands: []*cli.Command{
+			{
+				Name:   "pull",
+				Usage:  "Pull the latest native devenv image into Microsandbox",
+				Action: func(ctx context.Context, _ *cli.Command) error { return pullDevenvImage(ctx) },
+			},
 		},
 	}
 }

@@ -78,7 +78,11 @@ func (s MicrosandboxSpec) sandboxOptions(
 	configDir, sandboxName string,
 ) ([]msb.SandboxOption, error) {
 	image := defaultDevenvImage
-	opts := []msb.SandboxOption{msb.WithImage(image), msb.WithDetached()}
+	opts := []msb.SandboxOption{
+		msb.WithImage(image),
+		msb.WithDetached(),
+		msb.WithPullPolicy(msb.PullPolicyIfMissing),
+	}
 	if s.CPUs != 0 {
 		opts = append(opts, msb.WithCPUs(s.CPUs))
 	}

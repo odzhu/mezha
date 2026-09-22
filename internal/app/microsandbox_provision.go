@@ -42,9 +42,6 @@ func provisionMicrosandbox(
 		}
 	}
 	if !sandboxExisted {
-		if err := ensureDevenvImage(ctx, rc.RepoRoot); err != nil {
-			return fmt.Errorf("import Microsandbox image: %w", err)
-		}
 		if err := ensureStateVolume(ctx, params.SandboxName, *cfg.Microsandbox); err != nil {
 			return err
 		}

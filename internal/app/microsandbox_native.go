@@ -36,9 +36,6 @@ func openMicrosandbox(
 			}
 		}
 	}
-	if err := ensureDevenvImage(ctx, rc.RepoRoot); err != nil {
-		return nil, nil, nil, fmt.Errorf("import Microsandbox image: %w", err)
-	}
 	if err := ensureStateVolume(ctx, params.SandboxName, *cfg.Microsandbox); err != nil {
 		return nil, nil, nil, err
 	}
@@ -97,6 +94,7 @@ func ensureStateVolume(
 	bootstrapOpts := []msb.SandboxOption{
 		msb.WithImage(defaultDevenvImage),
 		msb.WithDetached(),
+		msb.WithPullPolicy(msb.PullPolicyIfMissing),
 		msb.WithUser("0"),
 		msb.WithMounts(map[string]msb.MountConfig{"/mnt/mezha": mount}),
 	}
@@ -144,6 +142,7 @@ func stateVolumeReady(ctx context.Context, name, marker string) (bool, error) {
 		probeName,
 		msb.WithImage(defaultDevenvImage),
 		msb.WithDetached(),
+		msb.WithPullPolicy(msb.PullPolicyIfMissing),
 		msb.WithUser("0"),
 		msb.WithMounts(map[string]msb.MountConfig{
 			"/mnt/mezha": msb.Mount.Named(name, msb.MountOptions{}),
