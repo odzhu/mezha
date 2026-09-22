@@ -5,6 +5,7 @@ go 1.26.5
 require (
 	charm.land/bubbletea/v2 v2.0.9
 	github.com/BurntSushi/toml v1.4.0
+	github.com/cachix/secretspec/secretspec-go v0.20.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/superradcompany/microsandbox/sdk/go v0.6.18
@@ -28,6 +29,7 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
+	github.com/ebitengine/purego v0.8.2 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.0 // indirect

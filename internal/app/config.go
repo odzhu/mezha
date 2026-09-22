@@ -20,6 +20,7 @@ type MezhaConfig struct {
 	Services     ServicesConfig    `toml:"services,omitempty"`
 	Files        FilesConfig       `toml:"files,omitempty"`
 	Provision    ProvisionConfig   `toml:"provision,omitempty"`
+	SecretSpec   SecretSpecConfig  `toml:"secretspec,omitempty"`
 	Run          []RunDirective    `toml:"run,omitempty"`
 }
 
@@ -32,6 +33,16 @@ type ServicesConfig struct {
 // ServiceConfig controls an individual sandbox service.
 type ServiceConfig struct {
 	Enabled bool `toml:"enabled,omitempty"`
+}
+
+// SecretSpecConfig configures host-side SecretSpec resolution for Mezha sessions.
+type SecretSpecConfig struct {
+	Enabled  bool   `toml:"enabled,omitempty"`
+	Path     string `toml:"path,omitempty"`
+	Provider string `toml:"provider,omitempty"`
+	Profile  string `toml:"profile,omitempty"`
+	Scope    string `toml:"scope,omitempty"`
+	Reason   string `toml:"reason,omitempty"`
 }
 
 // FilesConfig describes local paths to add to the sandbox during a Mezha session.
@@ -267,6 +278,7 @@ func expandConfigEnvValues(value any) {
 }
 
 func resolveConfigPaths(config *MezhaConfig, baseDir string) {
+	config.SecretSpec.Path = resolveConfigPath(baseDir, config.SecretSpec.Path)
 	for _, adds := range [][]FileAdd{config.Files.Add, config.Provision.Add} {
 		for i := range adds {
 			adds[i].Source = resolveConfigPath(baseDir, adds[i].Source)
@@ -333,6 +345,17 @@ size_mib = 51200
 # action = "allow"
 # direction = "egress"
 # destination = "public"
+
+# Resolve secrets with the SecretSpec SDK before Mezha starts the sandbox. The
+# values are exported to Mezha and can be passed into the sandbox with
+# [[microsandbox.secrets]] entries above.
+# [secretspec]
+# enabled = true
+# provider = "keyring"
+# profile = "devtools"
+# path = "secretspec.toml"
+# scope = "sandbox"
+# reason = "start development sandbox"
 
 # Docker, k3s, Git, Lazygit, and GitHub CLI are provided by .mezha/devenv.nix.
 [services.docker]

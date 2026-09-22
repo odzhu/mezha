@@ -14,5 +14,10 @@ func Provision(ctx context.Context, rc RepoContext, params ProvisionParams) erro
 	if cfg == nil || cfg.Microsandbox == nil {
 		return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 	}
+	closeSecrets, err := loadSecretSpec(cfg.SecretSpec)
+	if err != nil {
+		return err
+	}
+	defer closeSecrets()
 	return provisionMicrosandbox(ctx, rc, params, cfg)
 }

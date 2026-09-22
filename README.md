@@ -17,6 +17,7 @@ Declarative agent sandboxes powered by Microsandbox.
 - Go
 - Microsandbox-supported local virtualization host (KVM on Linux or Apple Silicon on macOS)
 - a local Docker-compatible daemon to import the native devenv image
+- when SecretSpec integration is enabled, `libsecretspec` available to Mezha (for example through `SECRETSPEC_FFI_LIB`)
 
 ## Build
 
@@ -211,6 +212,49 @@ repeated downloads and evaluation after
 persistent volumes is required. Entries in `run` execute before the requested
 command. In TOML, `[[run]]` entries use a string `command` for shell form or
 an array `command` for exec form.
+
+## SecretSpec integration
+
+Mezha can resolve a project’s `secretspec.toml` with the SecretSpec Go SDK before
+starting or provisioning a sandbox. This replaces a host-side wrapper such as:
+
+```sh
+secretspec run --provider keyring --profile devtools -- mezha --sandbox sandbox1 -- nvim
+```
+
+with:
+
+```sh
+mezha --sandbox sandbox1 -- nvim
+```
+
+Enable it in `mezha.toml` and configure the equivalent SecretSpec options:
+
+```toml
+[secretspec]
+enabled = true
+provider = "keyring"
+profile = "devtools"
+# path = "secretspec.toml" # optional; the default is SecretSpec's manifest search
+# scope = "sandbox"
+# reason = "start development sandbox"
+```
+
+Resolved values are exported only to the Mezha process. To pass a value to the
+Microsandbox, explicitly declare it in `[[microsandbox.secrets]]`; this keeps
+Microsandbox’s host allowlist and TLS policy in effect:
+
+```toml
+[[microsandbox.secrets]]
+env = "GITHUB_TOKEN"
+value_from_env = "GITHUB_TOKEN"
+allow_hosts = ["api.github.com"]
+require_tls = true
+```
+
+SecretSpec’s Go SDK loads `libsecretspec` at runtime. Install the library and
+set `SECRETSPEC_FFI_LIB` to its path, or build Mezha using one of the SDK’s
+embedded, static, or pkg-config linking modes.
 
 ## Herdr integration
 

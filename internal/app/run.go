@@ -16,6 +16,11 @@ func Run(ctx context.Context, rc RepoContext, params RunParams) error {
 	if cfg == nil || cfg.Microsandbox == nil {
 		return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 	}
+	closeSecrets, err := loadSecretSpec(cfg.SecretSpec)
+	if err != nil {
+		return err
+	}
+	defer closeSecrets()
 	return runMicrosandbox(ctx, rc, params, cfg)
 }
 func Upload(ctx context.Context, rc RepoContext, params UploadParams) error {
