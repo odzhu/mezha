@@ -4,7 +4,7 @@ Declarative agent sandboxes powered by Microsandbox.
 
 ## Features
 
-- project configuration in `mezha.yaml`
+- project configuration in `mezha.toml`
 - create, provision, start, stop, run, rebuild, and destroy Microsandbox sandboxes
 - synchronize committed changes through a sandbox Git remote
 - upload and download dirty working-tree changes or selected files
@@ -87,7 +87,7 @@ mezha sandbox destroy --volumes-flush
 
 ## Configuration
 
-Run `mezha init` in a repository to create `mezha.yaml` and
+Run `mezha init` in a repository to create `mezha.toml` and
 `.mezha/devenv.nix`. By default, Mezha generates a sandbox name for the current
 repository and Git ref. Use `--sandbox <name>` (or `-s <name>`) with the default session, `sandbox`,
 and `sync` commands to select a reusable sandbox instead. Each project is kept
@@ -96,7 +96,7 @@ sandbox is added to the host repository, so the same repository can synchronize
 with multiple sandboxes.
 
 Run `mezha init --home` to create a default configuration at
-`$MEZHA_HOME/mezha.yaml` (`~/.mezha/mezha.yaml` when `MEZHA_HOME` is unset).
+`$MEZHA_HOME/mezha.toml` (`~/.mezha/mezha.toml` when `MEZHA_HOME` is unset).
 Create a scoped home configuration from a Git checkout with one of:
 
 ```sh
@@ -110,11 +110,11 @@ worktree, or current branch sandbox configuration, respectively.
 Mezha selects one configuration rather than merging layers. The most specific
 existing file is used; precedence increases in this order:
 
-1. `$MEZHA_HOME/mezha.yaml`
-2. `$MEZHA_HOME/projects/<git-project>/mezha.yaml`
-3. `$MEZHA_HOME/worktrees/<git-project>-<worktree>/mezha.yaml`
-4. `$MEZHA_HOME/sandboxes/<git-project>-<git-branch>/mezha.yaml`
-5. `<project-root>/mezha.yaml`
+1. `$MEZHA_HOME/mezha.toml`
+2. `$MEZHA_HOME/projects/<git-project>/mezha.toml`
+3. `$MEZHA_HOME/worktrees/<git-project>-<worktree>/mezha.toml`
+4. `$MEZHA_HOME/sandboxes/<git-project>-<git-branch>/mezha.toml`
+5. `<project-root>/mezha.toml`
 
 The project, worktree, and sandbox directory names use Mezha's safe sandbox
 name format; linked worktrees use the primary repository's name for
@@ -125,49 +125,53 @@ declaration. Mezha uploads its managed devenv configuration during sandbox
 creation. Relative paths in `provision.add` are resolved relative to the
 configuration file.
 
-```yaml
-version: 1
+```toml
+version = 1
 
-microsandbox:
-  # Mezha always uses ghcr.io/cachix/devenv/devenv:latest as UID 0.
-  memory_mib: 4096
-  volumes:
-    # All persistent state shares this volume.
-    - name: state
-      target: /nix
-      mode: ensure-exists
-      kind: disk
-      size_mib: 51200
-  # network:
-  #   default_egress: deny
-  #   rules:
-  #     - action: allow
-  #       direction: egress
-  #       destination: public
+[microsandbox]
+# Mezha always uses ghcr.io/cachix/devenv/devenv:latest as UID 0.
+memory_mib = 4096
 
-services:
-  docker:
-    # Docker is supplied by the Mezha-managed devenv environment.
-    # Start dockerd when the sandbox is created or reused.
-    enabled: true
-  k3s:
-    # Run a k3s server alongside each Mezha session.
-    enabled: true
+# All persistent state shares this volume.
+[[microsandbox.volumes]]
+name = "state"
+target = "/nix"
+mode = "ensure-exists"
+kind = "disk"
+size_mib = 51200
 
-sandbox:
-  # Default sandbox selection; --sandbox overrides it.
-  # name: development
-  # remote_dir: /sandbox/my-project
-  # policy_advisor: true
-  # Register the sandbox with Herdr and synchronize local plugins.
-  herdr: false
+# [microsandbox.network]
+# default_egress = "deny"
+# [[microsandbox.network.rules]]
+# action = "allow"
+# direction = "egress"
+# destination = "public"
 
-provision:
-  # This devenv.nix declaratively provides Docker, k3s, kubectl, Git, Lazygit, and GitHub CLI.
-  add:
-    - [.mezha/devenv.nix, /sandbox/devenv.nix]
+[services.docker]
+# Docker is supplied by the Mezha-managed devenv environment.
+# Start dockerd when the sandbox is created or reused.
+enabled = true
 
-run: []
+[services.k3s]
+# Run a k3s server alongside each Mezha session.
+enabled = true
+
+[sandbox]
+# Default sandbox selection; --sandbox overrides it.
+# name = "development"
+# remote_dir = "/sandbox/my-project"
+# policy_advisor = true
+# Register the sandbox with Herdr and synchronize local plugins.
+herdr = false
+
+# This devenv.nix declaratively provides Docker, k3s, kubectl, Git, Lazygit, and GitHub CLI.
+[[provision.add]]
+source = ".mezha/devenv.nix"
+target = "/sandbox/devenv.nix"
+
+# Commands use [[run]] tables. command may be a shell string or an exec-form array.
+# [[run]]
+# command = "apk add --no-cache git"
 ```
 
 `provision.add` and `provision.run` are applied only when a sandbox is first created.
@@ -205,8 +209,8 @@ repeated downloads and evaluation after
 `mezha --recreate`. Use `--volumes-flush` with
 `mezha sandbox destroy`, or with `mezha --recreate`, only when a clean set of
 persistent volumes is required. Entries in `run` execute before the requested
-command. Strings use
-shell form; YAML sequences use exec form.
+command. In TOML, `[[run]]` entries use a string `command` for shell form or
+an array `command` for exec form.
 
 ## Herdr integration
 
@@ -219,12 +223,12 @@ mezha sandbox create --herdr
 mezha --herdr
 ```
 
-To enable this by default for the project, set it in `mezha.yaml` (Mezha does
+To enable this by default for the project, set it in `mezha.toml` (Mezha does
 not currently use a `mezha.nix` configuration file):
 
-```yaml
-sandbox:
-  herdr: true
+```toml
+[sandbox]
+herdr = true
 ```
 
 The default is `false`; `--herdr` or `--no-herdr` on `sandbox create` or the

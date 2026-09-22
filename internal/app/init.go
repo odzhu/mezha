@@ -12,16 +12,16 @@ import (
 func newInitCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "init",
-		Usage: "Create a project or home-level mezha.yaml configuration file",
+		Usage: "Create a project or home-level mezha.toml configuration file",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:    "force",
 				Aliases: []string{"f"},
-				Usage:   "Overwrite an existing mezha.yaml",
+				Usage:   "Overwrite an existing mezha.toml",
 			},
 			&cli.BoolFlag{
 				Name:  "home",
-				Usage: "Create the home-level configuration ($MEZHA_HOME/mezha.yaml)",
+				Usage: "Create the home-level configuration ($MEZHA_HOME/mezha.toml)",
 			},
 			&cli.BoolFlag{
 				Name:  "project",
@@ -67,10 +67,10 @@ func newInitCommand() *cli.Command {
 }
 
 func Init(_ context.Context, rc RepoContext, force bool) error {
-	configPath := filepath.Join(rc.RepoRoot, "mezha.yaml")
+	configPath := filepath.Join(rc.RepoRoot, "mezha.toml")
 	devenvPath := filepath.Join(rc.RepoRoot, ".mezha", "devenv.nix")
 	if !force {
-		for _, path := range []string{configPath, filepath.Join(rc.RepoRoot, "mezha.yml"), devenvPath} {
+		for _, path := range []string{configPath, devenvPath} {
 			if _, err := os.Stat(path); err == nil {
 				return fmt.Errorf(
 					"configuration file already exists: %s (use --force to overwrite)",
@@ -216,7 +216,7 @@ func InitHomeScope(rc RepoContext, scope string, force bool) error {
 	default:
 		return fmt.Errorf("unknown home configuration scope: %s", scope)
 	}
-	configPath := filepath.Join(configDir, "mezha.yaml")
+	configPath := filepath.Join(configDir, "mezha.toml")
 	devenvPath := filepath.Join(configDir, ".mezha", "devenv.nix")
 	if !force {
 		for _, path := range []string{configPath, devenvPath} {

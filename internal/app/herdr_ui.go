@@ -861,7 +861,7 @@ func herdrDashboardSettings(projectDir string) ([]herdrDashboardSetting, bool, e
 	if err != nil {
 		return nil, false, err
 	}
-	mezhaPath := filepath.Join(repoRoot, "mezha.yaml")
+	mezhaPath := filepath.Join(repoRoot, "mezha.toml")
 	devenvPath := filepath.Join(repoRoot, ".mezha", "devenv.nix")
 	settings := make([]herdrDashboardSetting, 0, 2)
 	if _, configPath, err := LoadConfig(repoRoot); err != nil {

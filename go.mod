@@ -4,12 +4,12 @@ go 1.26.5
 
 require (
 	charm.land/bubbletea/v2 v2.0.9
+	github.com/BurntSushi/toml v1.4.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/superradcompany/microsandbox/sdk/go v0.6.18
 	github.com/urfave/cli/v3 v3.10.1
 	golang.org/x/sys v0.47.0
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

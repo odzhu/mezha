@@ -23,7 +23,7 @@ func PullSandboxBranch(
 		}
 		return pullSandboxBranchInternal(ctx, rc, params, rebase, merge)
 	}
-	return fmt.Errorf("microsandbox configuration missing in mezha.yaml")
+	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 }
 
 func PushSandboxBranch(
@@ -42,7 +42,7 @@ func PushSandboxBranch(
 		}
 		return pushSandboxBranchInternal(ctx, rc, params.SandboxName, branch, forceWithLease)
 	}
-	return fmt.Errorf("microsandbox configuration missing in mezha.yaml")
+	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 }
 
 func RepairSandboxGitRemote(
@@ -54,7 +54,7 @@ func RepairSandboxGitRemote(
 	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		return repairMicrosandboxGitRemote(ctx, rc, params, replace)
 	}
-	return fmt.Errorf("microsandbox configuration missing in mezha.yaml")
+	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 }
 func SandboxGitStatus(ctx context.Context, rc RepoContext, params GitParams) error {
 	branch, err := currentBranch(ctx, rc.RepoRoot)
@@ -67,13 +67,13 @@ func SandboxGitStatus(ctx context.Context, rc RepoContext, params GitParams) err
 		}
 		return sandboxGitStatusMicrosandbox(ctx, rc, params, branch)
 	}
-	return fmt.Errorf("microsandbox configuration missing in mezha.yaml")
+	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 }
 func SSHProxy(ctx context.Context, sandboxName string) error {
 	if nativeMicrosandboxConfigured() {
 		return microsandboxSSHProxy(ctx, sandboxName)
 	}
-	return fmt.Errorf("microsandbox configuration missing in mezha.yaml")
+	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 }
 
 func currentBranch(ctx context.Context, repoRoot string) (string, error) {

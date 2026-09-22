@@ -12,7 +12,7 @@ func Provision(ctx context.Context, rc RepoContext, params ProvisionParams) erro
 		return fmt.Errorf("load mezha configuration: %w", err)
 	}
 	if cfg == nil || cfg.Microsandbox == nil {
-		return fmt.Errorf("microsandbox configuration missing in mezha.yaml")
+		return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 	}
 	return provisionMicrosandbox(ctx, rc, params, cfg)
 }

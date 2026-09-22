@@ -12,63 +12,63 @@ import (
 
 // MicrosandboxSpec is Mezha's local Microsandbox declaration. It intentionally
 // follows Microsandbox's resource model. Relative bind paths are resolved
-// from the declaring mezha.yaml.
+// from the declaring mezha.toml.
 type MicrosandboxSpec struct {
-	CPUs        uint8                `yaml:"cpus,omitempty"`
-	MemoryMiB   uint32               `yaml:"memory_mib,omitempty"`
-	Workdir     string               `yaml:"workdir,omitempty"`
-	Environment map[string]string    `yaml:"env,omitempty"`
-	Mounts      []MicrosandboxMount  `yaml:"mounts,omitempty"`
-	Volumes     []MicrosandboxVolume `yaml:"volumes,omitempty"`
-	Network     MicrosandboxNetwork  `yaml:"network,omitempty"`
-	Secrets     []MicrosandboxSecret `yaml:"secrets,omitempty"`
-	Scripts     map[string]string    `yaml:"scripts,omitempty"`
+	CPUs        uint8                `toml:"cpus,omitempty"`
+	MemoryMiB   uint32               `toml:"memory_mib,omitempty"`
+	Workdir     string               `toml:"workdir,omitempty"`
+	Environment map[string]string    `toml:"env,omitempty"`
+	Mounts      []MicrosandboxMount  `toml:"mounts,omitempty"`
+	Volumes     []MicrosandboxVolume `toml:"volumes,omitempty"`
+	Network     MicrosandboxNetwork  `toml:"network,omitempty"`
+	Secrets     []MicrosandboxSecret `toml:"secrets,omitempty"`
+	Scripts     map[string]string    `toml:"scripts,omitempty"`
 }
 
 type MicrosandboxMount struct {
-	Source   string `yaml:"source"`
-	Target   string `yaml:"target"`
-	ReadOnly bool   `yaml:"read_only,omitempty"`
-	NoExec   bool   `yaml:"noexec,omitempty"`
-	NoSUID   bool   `yaml:"nosuid,omitempty"`
-	NoDev    bool   `yaml:"nodev,omitempty"`
+	Source   string `toml:"source"`
+	Target   string `toml:"target"`
+	ReadOnly bool   `toml:"read_only,omitempty"`
+	NoExec   bool   `toml:"noexec,omitempty"`
+	NoSUID   bool   `toml:"nosuid,omitempty"`
+	NoDev    bool   `toml:"nodev,omitempty"`
 }
 
 // MicrosandboxVolume declares a named persistent volume mounted in the sandbox.
 type MicrosandboxVolume struct {
-	Name     string `yaml:"name"`
-	Target   string `yaml:"target"`
-	Mode     string `yaml:"mode,omitempty"`
-	Kind     string `yaml:"kind,omitempty"`
-	SizeMiB  uint32 `yaml:"size_mib,omitempty"`
-	QuotaMiB uint32 `yaml:"quota_mib,omitempty"`
-	ReadOnly bool   `yaml:"read_only,omitempty"`
-	NoExec   bool   `yaml:"noexec,omitempty"`
-	NoSUID   bool   `yaml:"nosuid,omitempty"`
-	NoDev    bool   `yaml:"nodev,omitempty"`
+	Name     string `toml:"name"`
+	Target   string `toml:"target"`
+	Mode     string `toml:"mode,omitempty"`
+	Kind     string `toml:"kind,omitempty"`
+	SizeMiB  uint32 `toml:"size_mib,omitempty"`
+	QuotaMiB uint32 `toml:"quota_mib,omitempty"`
+	ReadOnly bool   `toml:"read_only,omitempty"`
+	NoExec   bool   `toml:"noexec,omitempty"`
+	NoSUID   bool   `toml:"nosuid,omitempty"`
+	NoDev    bool   `toml:"nodev,omitempty"`
 }
 
 type MicrosandboxNetwork struct {
-	DefaultEgress  string                    `yaml:"default_egress,omitempty"`
-	DefaultIngress string                    `yaml:"default_ingress,omitempty"`
-	Strict         bool                      `yaml:"strict,omitempty"`
-	Rules          []MicrosandboxNetworkRule `yaml:"rules,omitempty"`
+	DefaultEgress  string                    `toml:"default_egress,omitempty"`
+	DefaultIngress string                    `toml:"default_ingress,omitempty"`
+	Strict         bool                      `toml:"strict,omitempty"`
+	Rules          []MicrosandboxNetworkRule `toml:"rules,omitempty"`
 }
 
 type MicrosandboxNetworkRule struct {
-	Action      string   `yaml:"action"`
-	Direction   string   `yaml:"direction"`
-	Destination string   `yaml:"destination"`
-	Protocols   []string `yaml:"protocols,omitempty"`
-	Ports       []string `yaml:"ports,omitempty"`
+	Action      string   `toml:"action"`
+	Direction   string   `toml:"direction"`
+	Destination string   `toml:"destination"`
+	Protocols   []string `toml:"protocols,omitempty"`
+	Ports       []string `toml:"ports,omitempty"`
 }
 
 type MicrosandboxSecret struct {
-	EnvVar            string   `yaml:"env"`
-	ValueFromEnv      string   `yaml:"value_from_env"`
-	AllowHosts        []string `yaml:"allow_hosts,omitempty"`
-	AllowHostPatterns []string `yaml:"allow_host_patterns,omitempty"`
-	RequireTLS        *bool    `yaml:"require_tls,omitempty"`
+	EnvVar            string   `toml:"env"`
+	ValueFromEnv      string   `toml:"value_from_env"`
+	AllowHosts        []string `toml:"allow_hosts,omitempty"`
+	AllowHostPatterns []string `toml:"allow_host_patterns,omitempty"`
+	RequireTLS        *bool    `toml:"require_tls,omitempty"`
 }
 
 // sandboxOptions converts a declarative Mezha sandbox to native SDK options.
