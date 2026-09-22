@@ -89,7 +89,9 @@ cat > "$launcher" <<'EOF'
 export HERDR_CONFIG_PATH="$HOME/.mezha/herdr.toml"
 case "${1:-}" in
   remote-client-bridge|server)
-    exec devenv shell --no-tui --quiet --from path:/sandbox -- "$HOME/.mezha/herdr-bin" "$@"
+    # Keep devenv's PATH and environment, but let each pane's Bash hook detect
+    # and activate the project rather than inheriting an already-active shell.
+    exec devenv shell --no-tui --quiet --from path:/sandbox -- sh -c 'unset DEVENV_ROOT; exec "$@"' mezha-herdr "$HOME/.mezha/herdr-bin" "$@"
     ;;
 esac
 exec "$HOME/.mezha/herdr-bin" "$@"
