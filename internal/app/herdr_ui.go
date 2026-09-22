@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/odzhu/mezha/internal/execx"
 	cli "github.com/urfave/cli/v3"
 )
@@ -30,16 +31,35 @@ type herdrDashboardSetting struct {
 	path  string
 }
 
+var (
+	dashboardTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#11111B")).
+				Background(lipgloss.Color("#A78BFA")).
+				Padding(0, 1)
+	dashboardPromptStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true)
+	dashboardNameStyle    = lipgloss.NewStyle()
+	dashboardNameSelStyle = lipgloss.NewStyle().Bold(true)
+	dashboardDescStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	dashboardBarStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true)
+	dashboardFooterStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	dashboardErrorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	dashboardDetailStyle  = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("5")).
+				Padding(0, 1)
+)
+
 var herdrLifecycleItems = []herdrDashboardItem{
 	{
-		args:        []string{"recreate", "--herdr", "true"},
+		args:        []string{"sandbox", "recreate", "--herdr"},
 		title:       "Recreate",
 		description: "Recreate the sandbox with clean persistent state",
 	},
-	{args: []string{"start"}, title: "Start", description: "Start the sandbox"},
-	{args: []string{"stop"}, title: "Stop", description: "Stop the sandbox"},
+	{args: []string{"sandbox", "start"}, title: "Start", description: "Start the sandbox"},
+	{args: []string{"sandbox", "stop"}, title: "Stop", description: "Stop the sandbox"},
 	{
-		args:        []string{"destroy"},
+		args:        []string{"sandbox", "destroy"},
 		title:       "Destroy",
 		description: "Confirm and permanently remove the sandbox",
 	},
@@ -47,22 +67,22 @@ var herdrLifecycleItems = []herdrDashboardItem{
 
 var herdrSyncItems = []herdrDashboardItem{
 	{
-		args:        []string{"upload"},
+		args:        []string{"sync", "upload"},
 		title:       "Upload changes",
 		description: "Send local dirty changes to the sandbox",
 	},
 	{
-		args:        []string{"download"},
+		args:        []string{"sync", "download"},
 		title:       "Download changes",
 		description: "Bring sandbox dirty changes into the workspace",
 	},
 	{
-		args:        []string{"pull"},
+		args:        []string{"sync", "pull"},
 		title:       "Pull commits",
 		description: "Pull committed changes from the sandbox",
 	},
 	{
-		args:        []string{"push"},
+		args:        []string{"sync", "push"},
 		title:       "Push commits",
 		description: "Push committed changes to the sandbox",
 	},
@@ -70,23 +90,33 @@ var herdrSyncItems = []herdrDashboardItem{
 
 var herdrDashboardItems = []herdrDashboardItem{
 	{
+		args:        []string{"sandbox", "list"},
+		title:       "List sandboxes",
+		description: "Show all local Mezha sandboxes",
+	},
+	{
+		args:        []string{"volume", "list"},
+		title:       "List volumes",
+		description: "Show persistent Microsandbox volumes",
+	},
+	{
 		args:        []string{"init"},
 		title:       "Initialize",
 		description: "Create the project Mezha configuration",
 	},
 	{
-		args:        []string{"run", "--herdr", "true"},
+		args:        []string{"run", "--herdr"},
 		title:       "Open sandbox shell",
 		description: "Open an interactive shell in a new tab",
 	},
 	{
-		args:        []string{"status"},
+		args:        []string{"sync", "status"},
 		title:       "Show status",
 		description: "Inspect repository synchronization status",
 	},
 	{
-		args:        []string{"provision", "--herdr", "true"},
-		title:       "Provision",
+		args:        []string{"sandbox", "create", "--herdr"},
+		title:       "Create sandbox",
 		description: "Create and initialize the configured sandbox",
 	},
 	{
@@ -136,6 +166,8 @@ type herdrDashboardModel struct {
 	sandboxCursor      int
 	sandboxInput       []rune
 	sandboxInputCursor int
+	width              int
+	height             int
 	err                string
 }
 
@@ -144,6 +176,11 @@ func (m herdrDashboardModel) Init() tea.Cmd {
 }
 
 func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if size, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = size.Width
+		m.height = size.Height
+		return m, nil
+	}
 	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return m, nil
@@ -172,13 +209,18 @@ func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.chooseDashboardItem(matches)
 	}
 	switch key.String() {
-	case "ctrl+c", "esc", "q":
+	case "ctrl+c", "q":
 		return m, tea.Quit
-	case "up", "k":
+	case "esc":
+		if len(m.submenu) > 0 {
+			return m.closeDashboardSubmenu(), nil
+		}
+		return m, tea.Quit
+	case "up":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "down", "j":
+	case "down":
 		if m.cursor < len(matches)-1 {
 			m.cursor++
 		}
@@ -190,7 +232,7 @@ func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case "/":
 		m.filterMode = true
-	case "s":
+	case "space":
 		m.sandboxMode = true
 		m.sandboxCursor = len(m.sandboxes)
 		for index, sandbox := range m.sandboxes {
@@ -202,6 +244,13 @@ func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = ""
 	case "enter":
 		return m.chooseDashboardItem(matches)
+	default:
+		runes := []rune(key.Key().Text)
+		if len(runes) > 0 {
+			m.filterMode = true
+			m.filter = append(m.filter, runes...)
+			m.cursor = 0
+		}
 	}
 	return m, nil
 }
@@ -251,10 +300,8 @@ func (m herdrDashboardModel) updateForceInit(key tea.KeyPressMsg) (tea.Model, te
 	case "y", "Y":
 		m.chosen = []string{"init", "--force"}
 		return m, tea.Quit
-	case "n", "N", "enter":
+	case "n", "N", "enter", "esc":
 		m.forceInitMode = false
-	case "esc":
-		return m, tea.Quit
 	}
 	return m, nil
 }
@@ -265,8 +312,11 @@ func (m herdrDashboardModel) updateSettings(key tea.KeyPressMsg) (tea.Model, tea
 		return m, tea.Quit
 	}
 	switch key.String() {
-	case "ctrl+c", "esc":
+	case "ctrl+c":
 		return m, tea.Quit
+	case "esc":
+		m.settingsMode = false
+		return m, nil
 	case "up", "k":
 		if m.settingCursor > 0 {
 			m.settingCursor--
@@ -290,6 +340,15 @@ func (m herdrDashboardModel) updateSettings(key tea.KeyPressMsg) (tea.Model, tea
 	return m, nil
 }
 
+func (m herdrDashboardModel) closeDashboardSubmenu() herdrDashboardModel {
+	m.submenu = nil
+	m.submenuTitle = ""
+	m.cursor = 0
+	m.filter = nil
+	m.filterMode = false
+	return m
+}
+
 func (m herdrDashboardModel) updateFilter(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	matches := m.filteredDashboardItems()
 	if index, ok := dashboardDigitIndex(key.String()); ok && index < len(matches) {
@@ -300,7 +359,10 @@ func (m herdrDashboardModel) updateFilter(key tea.KeyPressMsg) (tea.Model, tea.C
 	case "ctrl+c":
 		return m, tea.Quit
 	case "esc":
-		return m, tea.Quit
+		m.filterMode = false
+		m.filter = nil
+		m.cursor = 0
+		return m, nil
 	case "up", "ctrl+p":
 		if m.cursor > 0 {
 			m.cursor--
@@ -369,6 +431,17 @@ func dashboardDigitLabel(index int) string {
 	return fmt.Sprintf("%d", index+1)
 }
 
+func truncateDashboardText(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	if limit < 2 {
+		return string(runes[:limit])
+	}
+	return string(runes[:limit-1]) + "…"
+}
+
 func fuzzyMatch(query, candidate string) bool {
 	queryRunes := []rune(strings.ToLower(query))
 	if len(queryRunes) == 0 {
@@ -389,8 +462,11 @@ func fuzzyMatch(query, candidate string) bool {
 func (m herdrDashboardModel) updateSandbox(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	itemCount := len(m.sandboxes) + 1
 	switch key.String() {
-	case "ctrl+c", "esc":
+	case "ctrl+c":
 		return m, tea.Quit
+	case "esc":
+		m.sandboxMode = false
+		return m, nil
 	case "up", "k":
 		if m.sandboxCursor > 0 {
 			m.sandboxCursor--
@@ -419,8 +495,12 @@ func (m herdrDashboardModel) updateSandbox(key tea.KeyPressMsg) (tea.Model, tea.
 
 func (m herdrDashboardModel) updateSandboxInput(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
-	case "ctrl+c", "esc":
+	case "ctrl+c":
 		return m, tea.Quit
+	case "esc":
+		m.sandboxCustomMode = false
+		m.sandboxMode = true
+		return m, nil
 	case "left":
 		if m.sandboxInputCursor > 0 {
 			m.sandboxInputCursor--
@@ -469,8 +549,14 @@ func (m herdrDashboardModel) updateSandboxInput(key tea.KeyPressMsg) (tea.Model,
 
 func (m herdrDashboardModel) updateCommand(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
-	case "ctrl+c", "esc":
+	case "ctrl+c":
 		return m, tea.Quit
+	case "esc":
+		m.commandMode = false
+		m.input = nil
+		m.inputCursor = 0
+		m.err = ""
+		return m, nil
 	case "left":
 		if m.inputCursor > 0 {
 			m.inputCursor--
@@ -526,12 +612,11 @@ func (m herdrDashboardModel) updateCommand(key tea.KeyPressMsg) (tea.Model, tea.
 
 func (m herdrDashboardModel) View() tea.View {
 	var view strings.Builder
-	view.WriteString("Mezha\n")
 	if m.forceInitMode {
 		view.WriteString(
 			"This repository already has a Mezha configuration.\n" +
 				"Reinitialize it with --force? [y/N]\n\n" +
-				"y overwrite  •  n/enter cancel  •  esc close\n",
+				"y overwrite  •  n/enter cancel  •  esc back\n",
 		)
 		result := tea.NewView(view.String())
 		result.AltScreen = true
@@ -540,7 +625,7 @@ func (m herdrDashboardModel) View() tea.View {
 	if m.settingsMode {
 		view.WriteString("Choose a configuration to edit\n")
 		if m.settingsNeedInit {
-			view.WriteString("No project configuration found; Mezha will initialize it first.\n")
+			view.WriteString("No Mezha configuration found; Mezha will initialize it first.\n")
 		}
 		view.WriteString("\n")
 		for index, setting := range m.settings {
@@ -557,7 +642,7 @@ func (m herdrDashboardModel) View() tea.View {
 				setting.path,
 			)
 		}
-		view.WriteString("\ndigit edit  •  ↑/↓ or j/k move  •  enter edit  •  esc close\n")
+		view.WriteString("\ndigit edit  •  ↑/↓ or j/k move  •  enter edit  •  esc back\n")
 		result := tea.NewView(view.String())
 		result.AltScreen = true
 		return result
@@ -582,7 +667,7 @@ func (m herdrDashboardModel) View() tea.View {
 			cursor = "> "
 		}
 		fmt.Fprintf(&view, "%sCustom sandbox…\n", cursor)
-		view.WriteString("\n↑/↓ or j/k move  •  enter select  •  esc close\n")
+		view.WriteString("\n↑/↓ or j/k move  •  enter select  •  esc back\n")
 		result := tea.NewView(view.String())
 		result.AltScreen = true
 		return result
@@ -592,7 +677,7 @@ func (m herdrDashboardModel) View() tea.View {
 		before := string(m.sandboxInput[:m.sandboxInputCursor])
 		after := string(m.sandboxInput[m.sandboxInputCursor:])
 		fmt.Fprintf(&view, "%s█%s\n", before, after)
-		view.WriteString("\nenter select  •  esc close\n")
+		view.WriteString("\nenter select  •  esc back\n")
 		result := tea.NewView(view.String())
 		result.AltScreen = true
 		return result
@@ -605,52 +690,75 @@ func (m herdrDashboardModel) View() tea.View {
 		if m.err != "" {
 			fmt.Fprintf(&view, "\n%s\n", m.err)
 		}
-		view.WriteString("\nenter run  •  esc close\n")
+		view.WriteString("\nenter run  •  esc back\n")
 		result := tea.NewView(view.String())
 		result.AltScreen = true
 		return result
 	}
-	sandbox := "configured default"
+	w := m.width
+	if w <= 0 {
+		w = 80
+	}
+	sandbox := "Configured default"
 	if m.sandbox != "" {
 		sandbox = m.sandbox
 	}
-	title := "Manage this workspace's sandbox"
+	section := "Sandbox"
 	if m.submenuTitle != "" {
-		title += " / " + strings.TrimSuffix(m.submenuTitle, "…")
+		section = strings.TrimSuffix(m.submenuTitle, "…")
 	}
-	fmt.Fprintf(&view, "%s\nSandbox: %s\n", title, sandbox)
+	view.WriteString(dashboardTitleStyle.Width(w).Render(section))
+	view.WriteString("\n\n")
+
+	detail := dashboardDescStyle.Render("Sandbox  ") + dashboardNameStyle.Render(sandbox)
 	if m.filterMode || len(m.filter) > 0 {
-		fmt.Fprintf(&view, "Filter: %s█\n", string(m.filter))
+		detail += "\n" + dashboardPromptStyle.Render("❯ ") + string(m.filter) + "█"
 	}
 	if m.err != "" {
-		fmt.Fprintf(&view, "Error: %s\n", m.err)
+		detail += "\n" + dashboardErrorStyle.Render(truncateDashboardText(m.err, w-6))
 	}
-	view.WriteString("\n")
+	view.WriteString(dashboardDetailStyle.Width(max(w-2, 20)).Render(detail))
+	view.WriteString("\n\n")
+
 	items := m.activeDashboardItems()
 	matches := m.filteredDashboardItems()
 	for position, index := range matches {
 		item := items[index]
-		cursor := "  "
-		if position == m.cursor {
-			cursor = "> "
+		selected := position == m.cursor
+		if selected {
+			view.WriteString(dashboardBarStyle.Render("▌ "))
+		} else {
+			view.WriteString("  ")
 		}
-		fmt.Fprintf(
-			&view,
-			"%s[%s] %-18s %s\n",
-			cursor,
-			dashboardDigitLabel(position),
-			item.title,
-			item.description,
-		)
+		nameStyle := dashboardNameStyle
+		if selected {
+			nameStyle = dashboardNameSelStyle
+		}
+		view.WriteString(nameStyle.Render("[" + dashboardDigitLabel(position) + "] "))
+		view.WriteString("   ")
+		view.WriteString(nameStyle.Render(item.title))
+		if item.description != "" {
+			view.WriteString("  ")
+			view.WriteString(dashboardDescStyle.Render(item.description))
+		}
+		view.WriteString("\n")
 	}
 	if len(matches) == 0 {
-		view.WriteString("  No matching actions\n")
+		view.WriteString(dashboardDescStyle.Render("  No matching actions."))
+		view.WriteString("\n")
 	}
+	view.WriteString("\n")
 	if m.filterMode {
-		view.WriteString("\ndigit select  •  ↑/↓ move  •  enter select  •  esc close\n")
+		view.WriteString(dashboardFooterStyle.Render("↑/↓ move · enter select · esc clear filter"))
 	} else {
+		escape := "esc close"
+		if len(m.submenu) > 0 {
+			escape = "esc back"
+		}
 		view.WriteString(
-			"\ndigit select  •  ↑/↓ or j/k move  •  / filter  •  s sandbox  •  esc close\n",
+			dashboardFooterStyle.Render(
+				"↑/↓ move · enter select · type filter · space sandbox · " + escape,
+			),
 		)
 	}
 	result := tea.NewView(view.String())
@@ -710,6 +818,10 @@ func runHerdrDashboard(ctx context.Context, _ *cli.Command) error {
 			}
 		} else {
 			actionErr = launchHerdrDashboardCommand(ctx, command)
+			// Pane operations take over the interaction.
+			if actionErr == nil && dashboardCommandUsesPane(command) {
+				return nil
+			}
 		}
 		if actionErr != nil {
 			model.err = actionErr.Error()
@@ -749,17 +861,13 @@ func herdrDashboardSettings(projectDir string) ([]herdrDashboardSetting, bool, e
 	if err != nil {
 		return nil, false, err
 	}
-	mezhaPath := filepath.Join(repoRoot, "mezha.yaml")
-	legacyMezhaPath := filepath.Join(repoRoot, "mezha.yml")
+	mezhaPath := filepath.Join(repoRoot, "mezha.toml")
 	devenvPath := filepath.Join(repoRoot, ".mezha", "devenv.nix")
 	settings := make([]herdrDashboardSetting, 0, 2)
-	for _, path := range []string{mezhaPath, legacyMezhaPath} {
-		if _, err := os.Stat(path); err == nil {
-			settings = append(settings, herdrDashboardSetting{label: "Mezha", path: path})
-			break
-		} else if !os.IsNotExist(err) {
-			return nil, false, fmt.Errorf("inspect Mezha settings: %w", err)
-		}
+	if _, configPath, err := LoadConfig(repoRoot); err != nil {
+		return nil, false, fmt.Errorf("load Mezha settings: %w", err)
+	} else if configPath != "" {
+		settings = append(settings, herdrDashboardSetting{label: "Mezha", path: configPath})
 	}
 	if _, err := os.Stat(devenvPath); err == nil {
 		settings = append(settings, herdrDashboardSetting{label: "devenv", path: devenvPath})
@@ -806,9 +914,12 @@ func herdrRepoInitialized(projectDir string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if config, _, err := LoadConfig(repoRoot); err != nil {
+		return false, fmt.Errorf("load Mezha configuration: %w", err)
+	} else if config != nil {
+		return true, nil
+	}
 	paths := []string{
-		filepath.Join(repoRoot, "mezha.yaml"),
-		filepath.Join(repoRoot, "mezha.yml"),
 		filepath.Join(repoRoot, ".mezha", "devenv.nix"),
 	}
 	for _, path := range paths {
@@ -863,17 +974,32 @@ func listHerdrDashboardSandboxes(
 	return append([]string{""}, sandboxes...), synced, nil
 }
 
+func dashboardCommandUsesPane(command []string) bool {
+	return len(command) > 0 && (command[0] == "run" ||
+		(len(command) > 1 && command[0] == "sandbox" && command[1] == "destroy"))
+}
+
 func launchHerdrDashboardCommand(ctx context.Context, command []string) error {
 	binary, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve Mezha executable: %w", err)
 	}
 	args := []string{"herdr"}
-	if command[0] == "run" || command[0] == "status" || command[0] == "destroy" {
-		args = append(args, "dispatch", command[0], "--")
-		args = append(args, command...)
+	if dashboardCommandUsesPane(command) {
+		operation := command[0]
+		paneCommand := command[1:]
+		switch operation {
+		case "run":
+			operation = "shell"
+		case "sandbox":
+			operation = "destroy"
+			paneCommand = command[2:]
+		}
+		args = append(args, "dispatch", operation, "--")
+		args = append(args, paneCommand...)
 	} else {
-		args = append(args, "execute", "--")
+		// Keep command output visible until it is acknowledged.
+		args = append(args, "execute", "--wait", "--")
 		args = append(args, command...)
 	}
 	child := exec.CommandContext(ctx, binary, args...)

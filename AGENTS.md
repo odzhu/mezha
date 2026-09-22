@@ -6,6 +6,7 @@
 - `internal/execx/` contains small command-execution utilities used for local Git operations.
 - Root files: `Makefile`, `README.md`, `go.mod`, `go.sum`.
 - Local build artifacts are written to `bin/`; temporary local build cache may appear under `.cache/`.
+- Always align CLI changes across the application and the `herdr/` plugin, including its manifest, dashboard, and documentation.
 
 ## Build, Test, and Development Commands
 - `make build` — build the CLI to `./bin/mezha`.

@@ -14,7 +14,7 @@ func UploadPath(
 	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		return uploadPathMicrosandbox(ctx, rc, params, localPath, remotePath)
 	}
-	return fmt.Errorf("microsandbox configuration missing in mezha.yaml")
+	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 }
 
 func DownloadPath(
@@ -26,7 +26,7 @@ func DownloadPath(
 	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		return downloadPathMicrosandbox(ctx, rc, params, remotePath, localPath)
 	}
-	return fmt.Errorf("microsandbox configuration missing in mezha.yaml")
+	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 }
 func resolveLocalTransferPath(cwd, p string) string                 { return p }
 func resolveRemoteTransferPath(dir, p string) (string, bool, error) { return p, false, nil }

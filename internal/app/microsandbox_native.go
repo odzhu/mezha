@@ -39,7 +39,7 @@ func openMicrosandbox(
 	if err := ensureDevenvImage(ctx, rc.RepoRoot); err != nil {
 		return nil, nil, nil, fmt.Errorf("import Microsandbox image: %w", err)
 	}
-	if err := ensureStateVolume(ctx, params.SandboxName, cfg.Microsandbox.Volumes); err != nil {
+	if err := ensureStateVolume(ctx, params.SandboxName, *cfg.Microsandbox); err != nil {
 		return nil, nil, nil, err
 	}
 	opts, err := cfg.Microsandbox.sandboxOptions(rc.RepoRoot, params.SandboxName)
@@ -61,8 +61,9 @@ func openMicrosandbox(
 func ensureStateVolume(
 	ctx context.Context,
 	sandboxName string,
-	volumes []MicrosandboxVolume,
+	spec MicrosandboxSpec,
 ) error {
+	volumes := spec.Volumes
 	volume := MicrosandboxVolume{
 		Name: "state", Target: "/nix", Mode: "ensure-exists", Kind: "disk", SizeMiB: 51200,
 	}
@@ -89,15 +90,22 @@ func ensureStateVolume(
 	mount := msb.Mount.NamedWith(name, msb.MountOptions{}, msb.NamedVolumeOptions{
 		Mode: volume.Mode, Kind: volume.Kind, SizeMiB: volume.SizeMiB, QuotaMiB: volume.QuotaMiB,
 	})
-	bootstrap, err := msb.CreateSandbox(ctx, bootstrapName,
+	runtimeOpts, err := spec.runtimeOptions()
+	if err != nil {
+		return fmt.Errorf("configure state volume bootstrap sandbox: %w", err)
+	}
+	bootstrapOpts := []msb.SandboxOption{
 		msb.WithImage(defaultDevenvImage),
 		msb.WithDetached(),
 		msb.WithUser("0"),
 		msb.WithMounts(map[string]msb.MountConfig{"/mnt/mezha": mount}),
-	)
+	}
+	bootstrapOpts = append(bootstrapOpts, runtimeOpts...)
+	bootstrap, err := msb.CreateSandbox(ctx, bootstrapName, bootstrapOpts...)
 	if err != nil {
 		return fmt.Errorf("create state volume bootstrap sandbox: %w", err)
 	}
+	pulse := progressPulse("Seeding persistent Nix state volume is still running")
 	output, err := bootstrap.Exec(ctx, "sh", []string{"-c", `set -eu
 set -o pipefail
 rm -rf /mnt/mezha/* /mnt/mezha/.[!.]* /mnt/mezha/..?*
@@ -106,6 +114,7 @@ mkdir -p /mnt/mezha/mezha/root /mnt/mezha/mezha/home /mnt/mezha/mezha/sandbox /m
 cp -a /home/. /mnt/mezha/mezha/home/
 touch /mnt/mezha/.mezha-state-v2
 sync`})
+	pulse()
 	if err != nil {
 		stopAndDestroySandbox(bootstrap)
 		return fmt.Errorf("seed state volume: %w", err)

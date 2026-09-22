@@ -24,19 +24,25 @@ herdr plugin install odzhu/mezha/herdr
 
 The `dev.mezha.dashboard` action opens a Herdr-managed overlay pane. Like
 herdr-plus, the action is only a launcher; the interactive Bubble Tea interface
-runs in the plugin pane declared by the manifest.
+runs in the plugin pane declared by the manifest. The manifest also exposes
+first-class Herdr actions for Mezha's public commands, including lifecycle,
+synchronization, remote repair, logs, and sandbox or volume listing. Actions
+that need a terminal use their corresponding plugin pane.
 
 The dashboard provides:
 
+- editing for the active Mezha configuration, including `MEZHA_HOME` project,
+  worktree, and sandbox configuration layers
 - an interactive sandbox shell in a new tab
-- provision, start, and stop operations
-- repository synchronization status in a popup
+- sandbox and persistent-volume listings
+- sandbox create, start, and stop operations
+- repository synchronization status
 - upload, download, pull, and push operations
 - sandbox destruction with confirmation
 - a command entry for every Mezha CLI command and argument
 
 Select **Command…** to enter the arguments that follow `mezha`, for example
-`run --sandbox shared-dev -- git status` or `logs --tail 200 --source sandbox`.
+`--sandbox shared-dev -- git status` or `sandbox logs --tail 200 --source sandbox`.
 Quoted arguments and escaped spaces are supported.
 
 The plugin does not install default keybindings. Invoke the action through Herdr

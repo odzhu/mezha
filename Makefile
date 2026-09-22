@@ -3,7 +3,7 @@ CMD_DIR ?= ./cmd/app
 BIN_DIR ?= ./bin
 GO ?= go
 CGO_ENABLED := 1
-PREFIX ?= /usr/local
+PREFIX ?= $(HOME)/.local
 DESTDIR ?=
 INSTALL ?= install
 

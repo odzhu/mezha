@@ -53,6 +53,15 @@ func unregisterSandboxGitRemote(ctx context.Context, repoRoot, remoteName string
 
 func confirmDestroy(sandboxName string) (bool, error) {
 	fmt.Printf("Delete Microsandbox %q? [y/N]: ", sandboxName)
+	return confirmDeletion()
+}
+
+func confirmVolumeDestroy(volumeName string) (bool, error) {
+	fmt.Printf("Delete Microsandbox volume %q? [y/N]: ", volumeName)
+	return confirmDeletion()
+}
+
+func confirmDeletion() (bool, error) {
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
 	if err != nil && line == "" {

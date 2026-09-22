@@ -14,7 +14,7 @@ func Run(ctx context.Context, rc RepoContext, params RunParams) error {
 		return fmt.Errorf("load mezha configuration: %w", err)
 	}
 	if cfg == nil || cfg.Microsandbox == nil {
-		return fmt.Errorf("microsandbox configuration missing in mezha.yaml")
+		return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 	}
 	return runMicrosandbox(ctx, rc, params, cfg)
 }
@@ -32,7 +32,7 @@ func Upload(ctx context.Context, rc RepoContext, params UploadParams) error {
 			dirty,
 		)
 	}
-	return fmt.Errorf("microsandbox configuration missing in mezha.yaml")
+	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 }
 func Download(ctx context.Context, rc RepoContext, params DownloadParams) error {
 	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
@@ -43,7 +43,7 @@ func Download(ctx context.Context, rc RepoContext, params DownloadParams) error 
 			rc.RepoRoot,
 		)
 	}
-	return fmt.Errorf("microsandbox configuration missing in mezha.yaml")
+	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 }
 func interactiveTTYEnabled(tty *bool) bool {
 	if tty != nil {

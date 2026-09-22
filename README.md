@@ -4,12 +4,12 @@ Declarative agent sandboxes powered by Microsandbox.
 
 ## Features
 
-- project configuration in `mezha.yaml`
+- project configuration in `mezha.toml`
 - create, provision, start, stop, run, rebuild, and destroy Microsandbox sandboxes
 - synchronize committed changes through a sandbox Git remote
 - upload and download dirty working-tree changes or selected files
 - use the native `ghcr.io/cachix/devenv/devenv:latest` image for sandbox tooling
-- provision Docker, k3s, and kubectl declaratively through a Mezha-managed devenv environment
+- provision Docker, k3s, kubectl, Git, Lazygit, and GitHub CLI declaratively through a Mezha-managed devenv environment
 - optionally run a single-node k3s server in the primary Microsandbox
 
 ## Requirements
@@ -29,166 +29,210 @@ make build
 ## Usage
 
 ```bash
+mezha [run-options] [-- command...]
+mezha run [run-options] [-- command...]
 mezha init [options]
-mezha run [options] [-- command...]
-mezha provision [options]
-mezha recreate [options]
-mezha start [options]
-mezha stop [options]
-mezha destroy [options]
-mezha upload [options] [local-path] [remote-path]
-mezha download [options] [remote-path] [local-path]
-mezha pull
-mezha push
-mezha status [options]
-mezha remote repair [options]
-mezha logs [options]
+mezha sandbox list
+mezha sandbox create [options]
+mezha sandbox recreate [options]
+mezha sandbox start [options]
+mezha sandbox stop [options]
+mezha sandbox destroy [options]
+mezha sandbox status [options]
+mezha sandbox logs [options]
+mezha sync status [options]
+mezha sync upload [options] [local-path] [remote-path]
+mezha sync download [options] [remote-path] [local-path]
+mezha sync pull [options]
+mezha sync push [options]
+mezha sync remote repair [options]
+mezha volume list
+mezha volume rm <name> [options]
 ```
 
 Examples:
 
 ```bash
 mezha init
-mezha run
-mezha run -- git status
-mezha run --herdr true -- git status
+mezha sandbox list
+mezha volume list
+mezha
+mezha -- git status
+# `mezha run` is an explicit alias for the default session command.
+mezha run --recreate --volumes-flush
+mezha --herdr -- git status
 # Create the sandbox and start its core services without synchronizing the repository.
-mezha provision
-mezha provision --herdr true
+mezha sandbox create
+mezha sandbox create --herdr
 # Recreate the sandbox and its persistent state, then provision it.
-mezha recreate --herdr true
+mezha sandbox recreate --herdr
 # Reuse one sandbox for this and other projects.
-mezha run --sandbox shared-dev -- git status
-mezha upload
-mezha download reports/result.json ./result.json
-mezha pull
-mezha push
+mezha --sandbox shared-dev -- git status
+mezha sync upload
+mezha sync download reports/result.json ./result.json
+mezha sync pull
+mezha sync push
 # Stop the sandbox while retaining it, then start it again later.
-mezha stop
-mezha start
-mezha destroy
+mezha sandbox stop
+mezha sandbox start
+mezha sandbox destroy
+# List all local sandboxes and volumes. Volume output includes capacity and users.
+mezha sandbox list
+mezha volume list
+# Remove an unused volume after confirmation.
+mezha volume rm shared-dev-state
 # Remove the sandbox and its retained named volumes.
-mezha destroy --volumes-flush true
+mezha sandbox destroy --volumes-flush
 ```
 
 ## Configuration
 
-Run `mezha init` in a repository to create `mezha.yaml` and
+Run `mezha init` in a repository to create `mezha.toml` and
 `.mezha/devenv.nix`. By default, Mezha generates a sandbox name for the current
-repository and Git ref. Use `--sandbox <name>` on `run`, synchronization,
-transfer, logs, and destroy commands to select a reusable sandbox instead.
-Each project is kept in its own `/sandbox/<project>` directory. A Git remote
-named after the selected sandbox is added to the host repository, so the same
-repository can synchronize with multiple sandboxes. The legacy `--name` option
-remains an alias for `--sandbox`.
+repository and Git ref. Use `--sandbox <name>` (or `-s <name>`) with the default session, `sandbox`,
+and `sync` commands to select a reusable sandbox instead. Each project is kept
+in its own `/sandbox/<project>` directory. A Git remote named after the selected
+sandbox is added to the host repository, so the same repository can synchronize
+with multiple sandboxes.
 
-Run `mezha init --home` to create a default configuration
-at `~/.mezha/mezha.yaml`. Mezha always uses
-`ghcr.io/cachix/devenv/devenv:latest` and runs it as UID 0: Docker and k3s
+Run `mezha init --home` to create a default configuration at
+`$MEZHA_HOME/mezha.toml` (`~/.mezha/mezha.toml` when `MEZHA_HOME` is unset).
+Create a scoped home configuration from a Git checkout with one of:
+
+```sh
+mezha init --home --project
+mezha init --home --worktree
+mezha init --home --sandbox
+```
+
+The scope flags are mutually exclusive. They create the project, current
+worktree, or current branch sandbox configuration, respectively.
+Mezha selects one configuration rather than merging layers. The most specific
+existing file is used; precedence increases in this order:
+
+1. `$MEZHA_HOME/mezha.toml`
+2. `$MEZHA_HOME/projects/<git-project>/mezha.toml`
+3. `$MEZHA_HOME/worktrees/<git-project>-<worktree>/mezha.toml`
+4. `$MEZHA_HOME/sandboxes/<git-project>-<git-branch>/mezha.toml`
+5. `<project-root>/mezha.toml`
+
+The project, worktree, and sandbox directory names use Mezha's safe sandbox
+name format; linked worktrees use the primary repository's name for
+`<git-project>`. Mezha always uses `ghcr.io/cachix/devenv/devenv:latest` and
+runs it as UID 0: Docker and k3s
 require it, and Microsandbox cannot resolve the native image's `1000:100` user
 declaration. Mezha uploads its managed devenv configuration during sandbox
 creation. Relative paths in `provision.add` are resolved relative to the
 configuration file.
 
-```yaml
-version: 1
+```toml
+version = 1
 
-microsandbox:
-  # Mezha always uses ghcr.io/cachix/devenv/devenv:latest as UID 0.
-  memory_mib: 4096
-  volumes:
-    # All persistent state shares this volume.
-    - name: state
-      target: /nix
-      mode: ensure-exists
-      kind: disk
-      size_mib: 51200
-  # network:
-  #   default_egress: deny
-  #   rules:
-  #     - action: allow
-  #       direction: egress
-  #       destination: public
+[microsandbox]
+# Mezha always uses ghcr.io/cachix/devenv/devenv:latest as UID 0.
+memory_mib = 4096
 
-services:
-  docker:
-    # Docker is supplied by the Mezha-managed devenv environment.
-    # Start dockerd when the sandbox is created or reused.
-    enabled: true
-  k3s:
-    # Run a k3s server alongside each Mezha session.
-    enabled: true
+# All persistent state shares this volume.
+[[microsandbox.volumes]]
+name = "state"
+target = "/nix"
+mode = "ensure-exists"
+kind = "disk"
+size_mib = 51200
 
-sandbox:
-  # Default sandbox selection; --sandbox overrides it.
-  # name: development
-  # remote_dir: /sandbox/my-project
-  # policy_advisor: true
-  # Register the sandbox with Herdr and synchronize local plugins.
-  herdr: false
+# [microsandbox.network]
+# default_egress = "deny"
+# [[microsandbox.network.rules]]
+# action = "allow"
+# direction = "egress"
+# destination = "public"
 
-provision:
-  # This devenv.nix declaratively provides Docker, k3s, and kubectl.
-  add:
-    - [.mezha/devenv.nix, /sandbox/devenv.nix]
+[services.docker]
+# Docker is supplied by the Mezha-managed devenv environment.
+# Start dockerd when the sandbox is created or reused.
+enabled = true
 
-run: []
+[services.k3s]
+# Run a k3s server alongside each Mezha session.
+enabled = true
+
+[sandbox]
+# Default sandbox selection; --sandbox overrides it.
+# name = "development"
+# remote_dir = "/sandbox/my-project"
+# policy_advisor = true
+# Register the sandbox with Herdr and synchronize local plugins.
+herdr = false
+
+# This devenv.nix declaratively provides Docker, k3s, kubectl, Git, Lazygit, and GitHub CLI.
+[[provision.add]]
+source = ".mezha/devenv.nix"
+target = "/sandbox/devenv.nix"
+
+# Commands use [[run]] tables. command may be a shell string or an exec-form array.
+# [[run]]
+# command = "apk add --no-cache git"
 ```
 
 `provision.add` and `provision.run` are applied only when a sandbox is first created.
-`mezha provision` performs this initialization and starts the configured core
+`mezha sandbox create` performs this initialization and verifies the configured core
 devenv services, but does not publish, upload, or otherwise synchronize repository
 data. Mezha seeds the complete `/nix` directory into the shared `state` volume, which
-is mounted at `/nix`. It then symlinks `/home`, `/root`, `/sandbox`,
+is mounted at `/nix`. The temporary state-volume provisioning sandbox receives
+the same `microsandbox.env`, `microsandbox.network`, and `microsandbox.secrets`
+configuration (including secret host allowlists) as the primary sandbox. It then symlinks `/home`, `/root`, `/sandbox`,
 `/var/lib/docker`, and `/var/lib/rancher/k3s` into that volume before any
 initialization command or devenv shell runs. Mezha defaults `GOPATH` to `/sandbox/go` unless it is
 explicitly configured in `microsandbox.env`. The default `provision.add` installs
 Mezha's `.mezha/devenv.nix` at
-`/sandbox/devenv.nix`. It uses devenv `packages` for Docker, k3s, and kubectl
-and `devenv:enterShell` tasks to start Docker and k3s, wait for readiness, and
-configure `kubectl`. Mezha enters that environment for every requested command
-or interactive session. Update that file and run `mezha run --recreate` to
-apply a changed managed environment.
+`/sandbox/devenv.nix`. It uses devenv `packages` for Docker, k3s, kubectl, Git,
+Lazygit, GitHub CLI, Go, Groff, Less, and `col`. It configures Groff and the
+manpage pager so captured help output is plain text rather than raw formatting
+control sequences. Mezha declares Docker and k3s as supervised `processes` in its managed devenv
+configuration. It starts the requested processes once with `devenv up -d` and
+waits for their readiness probes before opening commands or interactive
+sessions. Subsequent sessions attach to the same process manager, so concurrent
+sessions share one Docker daemon and one k3s cluster. Update that file and run
+`mezha --recreate` to apply a changed managed environment.
 
-Set `services.docker.enabled: true` to start the Docker daemon before configured
-or requested commands. Set `services.k3s.enabled: true` to run k3s alongside
-each command or interactive session and configure `kubectl` to use the local
-cluster. Set it to `false` to disable k3s. Docker images, containers,
-and volumes plus k3s cluster state are stored in the shared persistent volume.
+Set `services.docker.enabled: true` to start the shared Docker process before
+configured or requested commands. Set `services.k3s.enabled: true` to start the
+shared k3s process and configure `kubectl` to use the local cluster. Set it to
+`false` to disable k3s. Docker images, containers, and volumes plus k3s cluster
+state are stored in the shared persistent volume.
 k3s uses Docker as its container runtime, so Docker-built images are immediately
 available to Kubernetes. Named volume names are automatically prefixed with the
 sandbox name, so each sandbox receives its own volume. Volumes are retained when
 the sandbox is recreated or destroyed; this includes the Nix store, the complete
 `/sandbox` workspace, `/home`, and `/root` with their caches and configuration, avoiding
 repeated downloads and evaluation after
-`mezha
-run --recreate`. Use `--volumes-flush` with
-`mezha destroy`, or with `mezha run --recreate`, only when a clean set of
+`mezha --recreate`. Use `--volumes-flush` with
+`mezha sandbox destroy`, or with `mezha --recreate`, only when a clean set of
 persistent volumes is required. Entries in `run` execute before the requested
-command. Strings use
-shell form; YAML sequences use exec form.
+command. In TOML, `[[run]]` entries use a string `command` for shell form or
+an array `command` for exec form.
 
 ## Herdr integration
 
 When the local `herdr` command is installed, register the sandbox as a saved
-Herdr SSH machine while provisioning or running it with:
+Herdr SSH machine while creating a sandbox or opening a session with:
 
 ```bash
-mezha provision --herdr true
-# Or provision, synchronize the repository, and open a session.
-mezha run --herdr true
+mezha sandbox create --herdr
+# Or create, synchronize the repository, and open a session.
+mezha --herdr
 ```
 
-To enable this by default for the project, set it in `mezha.yaml` (Mezha does
+To enable this by default for the project, set it in `mezha.toml` (Mezha does
 not currently use a `mezha.nix` configuration file):
 
-```yaml
-sandbox:
-  herdr: true
+```toml
+[sandbox]
+herdr = true
 ```
 
-The default is `false`; an explicit `--herdr true` or `--herdr false` on
-`provision` or `run` overrides the configured value for that invocation.
+The default is `false`; `--herdr` or `--no-herdr` on `sandbox create` or the
+default session overrides the configured value for that invocation.
 
 The registration is idempotent and uses Mezha's sandbox SSH proxy. Mezha
 installs the matching Linux Herdr release in the sandbox before registration,
@@ -198,7 +242,7 @@ Mezha also natively installs GitHub-managed local Herdr plugins in the sandbox,
 preserves their enabled state, and copies each plugin's local configuration
 directory. Plugin installation and build commands run through Mezha's managed
 `devenv` environment. The generated `.mezha/devenv.nix` includes Go for native
-plugin builds; add other plugin-specific build tools there. `mezha destroy`
+plugin builds; add other plugin-specific build tools there. `mezha sandbox destroy`
 removes the corresponding saved Herdr machine profile. Herdr
 is optional: if its command is not on `PATH`, Mezha skips both operations.
 
@@ -206,9 +250,8 @@ is optional: if its command is not on `PATH`, Mezha skips both operations.
 
 The plugin in `herdr` exposes a `dev.mezha.dashboard` action that opens an
 interactive terminal interface in a Herdr-managed overlay pane. The dashboard
-provides shortcuts for `run`, `provision`, `recreate`, `start`, `stop`, `status`,
-`upload`, `download`, `pull`, `push`, and `destroy`, plus a command entry that accepts any
-Mezha CLI command and arguments. It does not install keybindings.
+provides shortcuts for the default shell, sandbox lifecycle, and repository
+synchronization commands, plus a command entry that accepts any Mezha CLI command and arguments. It does not install keybindings.
 
 Install it from GitHub:
 
@@ -217,9 +260,9 @@ herdr plugin install odzhu/mezha/herdr
 ```
 
 The `mezha` executable must be available on the environment inherited by Herdr.
-The dashboard follows the herdr-plus launcher-and-pane architecture. Run opens
-the interactive sandbox shell in a new tab, while status and destroy use
-popups. See `herdr/README.md` for local development instructions.
+The dashboard follows the herdr-plus launcher-and-pane architecture. The default
+session opens the interactive sandbox shell in a new tab, while destruction uses
+a popup. See `herdr/README.md` for local development instructions.
 
 ## Environment variables
 

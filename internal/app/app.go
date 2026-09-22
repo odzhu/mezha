@@ -6,103 +6,51 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	cli "github.com/urfave/cli/v3"
 )
 
 const rootUsageText = `Usage:
+  mezha [run-options] [-- command...]
+  mezha run [run-options] [-- command...]
   mezha init [options]
-  mezha run [options] [-- command...]
-  mezha provision [options]
-  mezha recreate [options]
-  mezha start [options]
-  mezha stop [options]
-  mezha destroy [options]
-  mezha upload [options] [local-path] [remote-path]
-  mezha download [options] [remote-path] [local-path]
-  mezha pull
-  mezha push
-  mezha status [options]
-  mezha remote repair [options]
-  mezha logs [options]
-  mezha help
+  mezha sandbox <list|create|recreate|start|stop|destroy|status|logs> [options]
+  mezha sync <status|push|pull|upload|download|remote> [options]
+  mezha volume <list|rm> [options]
 
-Creates or reuses a sandbox for the current git repo and opens a shell.
-Repository contents are synchronized through the sandbox Git remote.
-Use "mezha upload" and "mezha download" without paths to synchronize uncommitted tracked changes and untracked files.
-Pass paths to transfer an individual file or folder. Use "mezha pull" and "mezha push" to synchronize committed changes.
-
-Use the run command to pass options and, optionally, a command after --
-to run it in the repo directory instead of opening an interactive shell.
-
-Mezha uses ghcr.io/cachix/devenv/devenv:latest and provisions Docker and k3s
-through its managed devenv environment.
+Without a subcommand, Mezha creates or reuses the current repository's sandbox
+and opens a shell. Pass a command after -- to run it in the sandbox repository.
 
 Examples:
-  mezha init
-  mezha init --home
-  mezha run
-  mezha run --recreate
-  mezha provision
-  mezha provision --herdr true
-  mezha provision --sandbox shared-dev
-  mezha recreate --herdr true
-  mezha run --sandbox shared-dev
-  mezha run --tty
-  mezha run -- ls -la
-  mezha run -- bash -lc 'git status && pwd'
-  mezha stop
-  mezha start
-  mezha destroy
-  mezha destroy --force
-  mezha upload # synchronize local dirty changes and untracked files
-  mezha download # synchronize sandbox dirty changes and untracked files
-  mezha upload ./notes.txt notes.txt
-  mezha upload ./assets /tmp/assets
-  mezha download results/report.json ./report.json
-  mezha download /tmp/assets ./assets
-  mezha pull
-  mezha push
-  mezha status
-  mezha remote repair
-  mezha logs
-  mezha logs -f
-  mezha logs --tail 200 --source sandbox
-
-Environment variables:
-  SANDBOX_NAME                Override the generated sandbox name
-  MICROSANDBOX_REMOTE_REPO_DIR   Destination directory in the sandbox
-                              (default: /sandbox/<repo-name>)
-  MICROSANDBOX_POLICY_ADVISOR    Enable or disable the Microsandbox policy advisor (default: true)`
+  mezha
+  mezha -- git status
+  mezha --sandbox shared-dev -- bash -lc 'git status && pwd'
+  mezha sandbox create --herdr
+  mezha sandbox recreate
+  mezha sandbox logs --follow
+  mezha sync upload
+  mezha sync download results/report.json ./report.json
+  mezha sync push
+  mezha volume rm shared-dev-state --force`
 
 func New() *cli.Command {
+	run := newRunCommand()
 	return &cli.Command{
 		Name:      "mezha",
 		Usage:     "Microsandbox sandbox helper for the current Git repository",
 		UsageText: rootUsageText,
+		Flags:     run.Flags,
 		Commands: []*cli.Command{
-			newInitCommand(),
 			newRunCommand(),
-			newProvisionCommand(),
-			newRecreateCommand(),
-			newStartCommand(),
-			newStopCommand(),
-			newDestroyCommand(),
-			newUploadCommand(),
-			newDownloadCommand(),
-			newPullCommand(),
-			newPushCommand(),
-			newStatusCommand(),
-			newRemoteCommand(),
-			newLogsCommand(),
+			newInitCommand(),
+			newSandboxCommand(),
+			newSyncCommand(),
+			newVolumeCommand(),
 			newSSHProxyCommand(),
 			newHerdrPluginCommand(),
 		},
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			return cli.ShowRootCommandHelp(cmd)
-		},
+		Action: run.Action,
 	}
 }
 
@@ -112,10 +60,40 @@ func newSSHProxyCommand() *cli.Command {
 		Usage:  "Relay an SSH client connection to a Microsandbox",
 		Hidden: true,
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "name", Usage: "Sandbox name", Required: true},
+			&cli.StringFlag{Name: "sandbox", Usage: "Sandbox name", Required: true},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			return SSHProxy(ctx, cmd.String("name"))
+			return SSHProxy(ctx, cmd.String("sandbox"))
+		},
+	}
+}
+
+func newVolumeCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "volume",
+		Usage: "Manage Microsandbox volumes",
+		Commands: []*cli.Command{
+			{
+				Name:   "list",
+				Usage:  "List all Microsandbox volumes",
+				Action: func(ctx context.Context, _ *cli.Command) error { return ListVolumes(ctx) },
+			},
+			{
+				Name:      "rm",
+				Usage:     "Destroy a Microsandbox volume",
+				ArgsUsage: "<name>",
+				Flags: []cli.Flag{&cli.BoolFlag{
+					Name:    "force",
+					Aliases: []string{"f"},
+					Usage:   "Destroy without prompting for confirmation",
+				}},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					if cmd.NArg() != 1 {
+						return errors.New("volume rm requires a volume name")
+					}
+					return DestroyVolume(ctx, cmd.Args().First(), cmd.Bool("force"))
+				},
+			},
 		},
 	}
 }
@@ -152,15 +130,14 @@ func newRunCommand() *cli.Command {
 			Name:  "no-login-shell",
 			Usage: "Skip shell login/profile startup files when running the command or session",
 		},
-		&cli.StringFlag{
+		&cli.BoolFlag{
 			Name:  "herdr",
-			Value: "false",
-			Usage: "Register the sandbox as a Herdr machine when Herdr is installed (true or false)",
+			Usage: "Register the sandbox as a Herdr machine when Herdr is installed",
 		},
-		&cli.StringFlag{
+		&cli.BoolFlag{Name: "no-herdr", Usage: "Do not register the sandbox as a Herdr machine"},
+		&cli.BoolFlag{
 			Name:  "volumes-flush",
-			Value: "false",
-			Usage: "Delete persistent sandbox volumes when recreating (true or false)",
+			Usage: "Delete persistent sandbox volumes when recreating",
 		},
 	}
 	return &cli.Command{
@@ -182,17 +159,8 @@ func newRunCommand() *cli.Command {
 			}
 
 			remoteArgs := commandArgs(cmd)
-			herdr := cfg.Sandbox.Herdr
-			if cmd.IsSet("herdr") {
-				herdr, err = strconv.ParseBool(cmd.String("herdr"))
-				if err != nil {
-					return fmt.Errorf("parse --herdr: %w", err)
-				}
-			}
-			volumesFlush, err := strconv.ParseBool(cmd.String("volumes-flush"))
-			if err != nil {
-				return fmt.Errorf("parse --volumes-flush: %w", err)
-			}
+			herdr := resolveHerdrParam(cmd, cfg.Sandbox.Herdr)
+			volumesFlush := cmd.Bool("volumes-flush")
 			if cmd.Bool("tty") && cmd.Bool("no-tty") {
 				return errors.New("--tty cannot be used together with --no-tty")
 			}
@@ -249,24 +217,26 @@ func newRunCommand() *cli.Command {
 
 func newProvisionCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "provision",
+		Name:  "create",
 		Usage: "Create and provision a sandbox without synchronizing repository data",
 		Flags: []cli.Flag{
 			sandboxFlag(),
 			&cli.StringFlag{Name: "remote-dir", Usage: "Destination directory in the sandbox"},
-			&cli.StringFlag{
+			&cli.BoolFlag{
 				Name:  "herdr",
-				Value: "false",
-				Usage: "Register the sandbox as a Herdr machine when Herdr is installed (true or false)",
+				Usage: "Register the sandbox as a Herdr machine when Herdr is installed",
+			},
+			&cli.BoolFlag{
+				Name:  "no-herdr",
+				Usage: "Do not register the sandbox as a Herdr machine",
 			},
 			&cli.BoolFlag{
 				Name:  "recreate",
 				Usage: "Delete and recreate the sandbox if it already exists",
 			},
-			&cli.StringFlag{
+			&cli.BoolFlag{
 				Name:  "volumes-flush",
-				Value: "false",
-				Usage: "Delete persistent sandbox volumes when recreating (true or false)",
+				Usage: "Delete persistent sandbox volumes when recreating",
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -281,17 +251,8 @@ func newProvisionCommand() *cli.Command {
 			if cfg == nil {
 				cfg = &MezhaConfig{}
 			}
-			herdr := cfg.Sandbox.Herdr
-			if cmd.IsSet("herdr") {
-				herdr, err = strconv.ParseBool(cmd.String("herdr"))
-				if err != nil {
-					return fmt.Errorf("parse --herdr: %w", err)
-				}
-			}
-			volumesFlush, err := strconv.ParseBool(cmd.String("volumes-flush"))
-			if err != nil {
-				return fmt.Errorf("parse --volumes-flush: %w", err)
-			}
+			herdr := resolveHerdrParam(cmd, cfg.Sandbox.Herdr)
+			volumesFlush := cmd.Bool("volumes-flush")
 			recreate := resolveBoolParam(cmd, "recreate", cfg.Sandbox.Recreate)
 			if volumesFlush && !recreate {
 				return errors.New("--volumes-flush requires --recreate")
@@ -322,10 +283,13 @@ func newRecreateCommand() *cli.Command {
 		Flags: []cli.Flag{
 			sandboxFlag(),
 			&cli.StringFlag{Name: "remote-dir", Usage: "Destination directory in the sandbox"},
-			&cli.StringFlag{
+			&cli.BoolFlag{
 				Name:  "herdr",
-				Value: "false",
-				Usage: "Register the sandbox as a Herdr machine when Herdr is installed (true or false)",
+				Usage: "Register the sandbox as a Herdr machine when Herdr is installed",
+			},
+			&cli.BoolFlag{
+				Name:  "no-herdr",
+				Usage: "Do not register the sandbox as a Herdr machine",
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -340,13 +304,7 @@ func newRecreateCommand() *cli.Command {
 			if cfg == nil {
 				cfg = &MezhaConfig{}
 			}
-			herdr := cfg.Sandbox.Herdr
-			if cmd.IsSet("herdr") {
-				herdr, err = strconv.ParseBool(cmd.String("herdr"))
-				if err != nil {
-					return fmt.Errorf("parse --herdr: %w", err)
-				}
-			}
+			herdr := resolveHerdrParam(cmd, cfg.Sandbox.Herdr)
 			return Provision(ctx, rc, ProvisionParams{
 				SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
 				RemoteRepoDir: resolveParam(
@@ -400,6 +358,42 @@ func newLifecycleCommand(
 	}
 }
 
+func newSandboxCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "sandbox",
+		Usage: "Manage sandboxes",
+		Commands: []*cli.Command{
+			{
+				Name:   "list",
+				Usage:  "List all local Microsandboxes",
+				Action: func(ctx context.Context, _ *cli.Command) error { return ListSandboxes(ctx) },
+			},
+			newProvisionCommand(),
+			newRecreateCommand(),
+			newStartCommand(),
+			newStopCommand(),
+			newDestroyCommand(),
+			newStatusCommand(),
+			newLogsCommand(),
+		},
+	}
+}
+
+func newSyncCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "sync",
+		Usage: "Synchronize repository changes with a sandbox",
+		Commands: []*cli.Command{
+			newStatusCommand(),
+			newPushCommand(),
+			newPullCommand(),
+			newUploadCommand(),
+			newDownloadCommand(),
+			newRemoteCommand(),
+		},
+	}
+}
+
 func newDestroyCommand() *cli.Command {
 	flags := []cli.Flag{
 		sandboxFlag(),
@@ -408,11 +402,7 @@ func newDestroyCommand() *cli.Command {
 			Aliases: []string{"f"},
 			Usage:   "Delete without prompting for confirmation",
 		},
-		&cli.StringFlag{
-			Name:  "volumes-flush",
-			Value: "false",
-			Usage: "Delete persistent sandbox volumes (true or false)",
-		},
+		&cli.BoolFlag{Name: "volumes-flush", Usage: "Delete persistent sandbox volumes"},
 	}
 	return &cli.Command{
 		Name:  "destroy",
@@ -430,14 +420,10 @@ func newDestroyCommand() *cli.Command {
 			if cfg == nil {
 				cfg = &MezhaConfig{}
 			}
-			volumesFlush, err := strconv.ParseBool(cmd.String("volumes-flush"))
-			if err != nil {
-				return fmt.Errorf("parse --volumes-flush: %w", err)
-			}
 			params := DestroyParams{
 				SandboxName:  resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
 				Force:        cmd.Bool("force"),
-				VolumesFlush: volumesFlush,
+				VolumesFlush: cmd.Bool("volumes-flush"),
 			}
 			return Destroy(ctx, rc, params)
 		},
@@ -741,13 +727,14 @@ func firstNonEmpty(values ...string) string {
 func sandboxFlag() cli.Flag {
 	return &cli.StringFlag{
 		Name:    "sandbox",
-		Aliases: []string{"name"},
+		Aliases: []string{"s"},
 		Usage:   "Select a sandbox instead of the generated project sandbox",
 	}
 }
 
 func resolveSandboxParam(cmd *cli.Command, cfgVal, defaultVal string) string {
-	return slugify(resolveParam(cmd, "sandbox", os.Getenv("SANDBOX_NAME"), cfgVal, defaultVal))
+	// Preserve persistent Microsandbox identifiers, including names from older Mezha versions.
+	return resolveParam(cmd, "sandbox", os.Getenv("SANDBOX_NAME"), cfgVal, defaultVal)
 }
 
 func resolveParam(
@@ -775,6 +762,16 @@ func resolveParam(
 func resolveBoolParam(cmd *cli.Command, flagName string, cfgVal bool) bool {
 	if cmd != nil && cmd.IsSet(flagName) {
 		return cmd.Bool(flagName)
+	}
+	return cfgVal
+}
+
+func resolveHerdrParam(cmd *cli.Command, cfgVal bool) bool {
+	if cmd != nil && cmd.Bool("herdr") {
+		return true
+	}
+	if cmd != nil && cmd.Bool("no-herdr") {
+		return false
 	}
 	return cfgVal
 }

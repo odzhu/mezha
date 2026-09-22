@@ -15,7 +15,10 @@ func startMicrosandbox(ctx context.Context, name string) error {
 	}
 	handle, err := msb.GetSandbox(ctx, name)
 	if msb.IsKind(err, msb.ErrSandboxNotFound) {
-		return fmt.Errorf("microsandbox %q does not exist; create it with mezha run", name)
+		return fmt.Errorf(
+			"microsandbox %q does not exist; create it with mezha sandbox create",
+			name,
+		)
 	}
 	if err != nil {
 		return fmt.Errorf("find Microsandbox %q: %w", name, err)

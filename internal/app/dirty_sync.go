@@ -14,6 +14,10 @@ import (
 
 const syncedUntrackedPathsFile = ".mezha/dirty-sync-untracked.json"
 
+func ignoredSyncPath(relativePath string) bool {
+	return relativePath == "devenv.lock"
+}
+
 type dirtyPaths struct {
 	copy   []string
 	delete []string
@@ -49,12 +53,16 @@ func loadSyncedUntrackedPaths(repoRoot string) ([]string, error) {
 	if err := json.Unmarshal(contents, &paths); err != nil {
 		return nil, fmt.Errorf("parse synced untracked paths: %w", err)
 	}
+	filtered := paths[:0]
 	for _, relativePath := range paths {
 		if !validRepoRelativePath(relativePath) {
 			return nil, fmt.Errorf("invalid synced untracked path %q", relativePath)
 		}
+		if !ignoredSyncPath(relativePath) {
+			filtered = append(filtered, relativePath)
+		}
 	}
-	return paths, nil
+	return filtered, nil
 }
 
 func localUntrackedPaths(ctx context.Context, repoRoot string) ([]string, error) {
@@ -71,7 +79,9 @@ func localUntrackedPaths(ctx context.Context, repoRoot string) ([]string, error)
 		if !validRepoRelativePath(relativePath) {
 			return nil, fmt.Errorf("invalid untracked path %q", relativePath)
 		}
-		paths = append(paths, relativePath)
+		if !ignoredSyncPath(relativePath) {
+			paths = append(paths, relativePath)
+		}
 	}
 	return paths, nil
 }
@@ -113,7 +123,9 @@ func parseDirtyPaths(output []byte) (dirtyPaths, error) {
 
 		switch status[0] {
 		case 'D':
-			dirty.delete = append(dirty.delete, oldPath)
+			if !ignoredSyncPath(oldPath) {
+				dirty.delete = append(dirty.delete, oldPath)
+			}
 		case 'R', 'C':
 			if len(items) == 0 {
 				return dirtyPaths{}, fmt.Errorf("missing destination path for status %q", status)
@@ -123,12 +135,16 @@ func parseDirtyPaths(output []byte) (dirtyPaths, error) {
 			if !validRepoRelativePath(newPath) {
 				return dirtyPaths{}, fmt.Errorf("invalid path %q", newPath)
 			}
-			if status[0] == 'R' {
+			if status[0] == 'R' && !ignoredSyncPath(oldPath) {
 				dirty.delete = append(dirty.delete, oldPath)
 			}
-			dirty.copy = append(dirty.copy, newPath)
+			if !ignoredSyncPath(newPath) {
+				dirty.copy = append(dirty.copy, newPath)
+			}
 		default:
-			dirty.copy = append(dirty.copy, oldPath)
+			if !ignoredSyncPath(oldPath) {
+				dirty.copy = append(dirty.copy, oldPath)
+			}
 		}
 	}
 	return dirty, nil
