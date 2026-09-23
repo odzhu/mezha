@@ -61,7 +61,7 @@ func provisionMicrosandbox(
 	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
 		return err
 	}
-	if err := ensureSandboxProjectDir(ctx, sandbox, params.RemoteRepoDir); err != nil {
+	if err := ensureSandboxProjectDir(ctx, sandbox, params.RemoteRepoDir, rc.RepoRoot); err != nil {
 		return err
 	}
 	if !sandboxExisted {
@@ -98,8 +98,27 @@ func provisionMicrosandbox(
 	return nil
 }
 
-func ensureSandboxProjectDir(ctx context.Context, sandbox *msb.Sandbox, dir string) error {
-	output, err := sandbox.Exec(ctx, "mkdir", []string{"-p", dir})
+// ensureSandboxProjectDir creates the project directory and exposes it at its
+// host path so tools invoked in the sandbox can use host-relative paths.
+func ensureSandboxProjectDir(
+	ctx context.Context,
+	sandbox *msb.Sandbox,
+	dir, hostRepoRoot string,
+) error {
+	output, err := sandbox.Exec(ctx, "sh", []string{"-eu", "-c", `
+target="$1"
+link="$2"
+mkdir -p "$target"
+if [ "$target" = "$link" ]; then
+  exit 0
+fi
+mkdir -p "$(dirname "$link")"
+if [ -e "$link" ] && [ ! -L "$link" ]; then
+  echo "sandbox host-path project link already exists and is not a symlink: $link" >&2
+  exit 1
+fi
+ln -sfn "$target" "$link"
+`, "mezha-project-link", dir, hostRepoRoot})
 	if err != nil {
 		return fmt.Errorf("create sandbox project directory: %w", err)
 	}

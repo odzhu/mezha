@@ -28,6 +28,9 @@ func uploadPathMicrosandbox(
 		return err
 	}
 	defer closeSandbox()
+	if err := ensureSandboxProjectDir(ctx, sandbox, params.RemoteRepoDir, rc.RepoRoot); err != nil {
+		return err
+	}
 	_, targetDir, err := resolveRemoteTransferPath(params.RemoteRepoDir, remotePath)
 	if err != nil {
 		return err
@@ -60,6 +63,9 @@ func downloadPathMicrosandbox(
 		return err
 	}
 	defer closeSandbox()
+	if err := ensureSandboxProjectDir(ctx, sandbox, params.RemoteRepoDir, rc.RepoRoot); err != nil {
+		return err
+	}
 	remote, targetDir, err := resolveRemoteTransferPath(params.RemoteRepoDir, remotePath)
 	if err != nil {
 		return err

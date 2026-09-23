@@ -18,6 +18,9 @@ func publishBranchToMicrosandbox(
 	name, remoteDir string,
 	replace bool,
 ) error {
+	if err := ensureSandboxProjectDir(ctx, sandbox, remoteDir, rc.RepoRoot); err != nil {
+		return err
+	}
 	branch, err := currentBranch(ctx, rc.RepoRoot)
 	if err != nil {
 		return err

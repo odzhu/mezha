@@ -98,7 +98,9 @@ and `sync` commands to select a reusable sandbox instead. Each project is kept
 in its own `/root/<project>` directory, where `<project>` exactly matches the
 host repository folder name. `sandbox.remote_dir`, `MICROSANDBOX_REMOTE_REPO_DIR`,
 and `--remote-dir` may choose the sandbox location but must end in that same
-folder name; Mezha rejects a mismatched path. A Git remote named after the selected
+folder name; Mezha rejects a mismatched path. Mezha also creates a sandbox
+symlink at the repository's absolute host path that points to this project
+directory, allowing sandbox tools to resolve host-style project paths. A Git remote named after the selected
 sandbox is added to the host repository, so the same repository can synchronize
 with multiple sandboxes.
 

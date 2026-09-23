@@ -43,7 +43,7 @@ func uploadDirtyRepoToMicrosandbox(
 		return err
 	}
 	defer func() { _ = sandbox.Detach(context.Background()) }()
-	if err := ensureSandboxProjectDir(ctx, sandbox, remoteRepoDir); err != nil {
+	if err := ensureSandboxProjectDir(ctx, sandbox, remoteRepoDir, repoRoot); err != nil {
 		return err
 	}
 	createdDirs := make(map[string]struct{})
@@ -104,6 +104,9 @@ func downloadDirtyRepoFromMicrosandbox(
 		return err
 	}
 	defer func() { _ = sandbox.Detach(context.Background()) }()
+	if err := ensureSandboxProjectDir(ctx, sandbox, remoteRepoDir, repoRoot); err != nil {
+		return err
+	}
 	out, err := sandbox.Exec(
 		ctx,
 		"git",

@@ -60,6 +60,9 @@ func runMicrosandbox(
 	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
 		return err
 	}
+	if err := ensureSandboxProjectDir(ctx, sandbox, params.RemoteRepoDir, rc.RepoRoot); err != nil {
+		return err
+	}
 	if !sandboxExisted {
 		if err := applyProvisionConfig(ctx, sandbox, cfg.Provision); err != nil {
 			return err
