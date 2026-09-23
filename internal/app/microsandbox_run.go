@@ -84,7 +84,6 @@ func runMicrosandbox(
 		return err
 	}
 	sessionWorkdir := "/root"
-	herdrWorkdir := "/root"
 	herdrEnabled := reregisterHerdr && herdrCommandAvailable()
 	useDevenv := cfg.Services.Docker.Enabled || params.Kubernetes
 	if err := ensureManagedDevenvConfig(ctx, sandbox, cfg.Provision); err != nil {
@@ -96,12 +95,7 @@ func runMicrosandbox(
 		}
 	}
 	if herdrEnabled {
-		if err := ensureSandboxHerdr(
-			ctx,
-			sandbox,
-			herdrWorkdir,
-			useDevenv,
-		); err != nil {
+		if err := ensureSandboxHerdr(ctx, sandbox, useDevenv); err != nil {
 			if !sandboxExisted {
 				stopAndDestroySandbox(sandbox)
 			}

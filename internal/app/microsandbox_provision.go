@@ -83,8 +83,7 @@ func provisionMicrosandbox(
 		}
 	}
 	if herdrEnabled {
-		workdir := "/root"
-		if err := ensureSandboxHerdr(ctx, sandbox, workdir, useDevenv); err != nil {
+		if err := ensureSandboxHerdr(ctx, sandbox, useDevenv); err != nil {
 			return err
 		}
 		if err := registerHerdrMachine(ctx, params.SandboxName, !sandboxExisted); err != nil {

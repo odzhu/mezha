@@ -21,12 +21,7 @@ var herdrVersion = regexp.MustCompile(`^herdr (\d+\.\d+\.\d+)$`)
 
 // ensureSandboxHerdr installs the matching Linux release without relying on
 // SSH stdin streaming, which Microsandbox's SSH proxy does not support here.
-func ensureSandboxHerdr(
-	ctx context.Context,
-	sandbox *msb.Sandbox,
-	workdir string,
-	useDevenv bool,
-) error {
+func ensureSandboxHerdr(ctx context.Context, sandbox *msb.Sandbox, useDevenv bool) error {
 	versionOutput, err := execx.Output(ctx, "herdr", "--version")
 	if err != nil {
 		return fmt.Errorf("get Herdr version: %w", err)
@@ -124,7 +119,7 @@ chmod 755 "$launcher"
 	if code != 0 {
 		return fmt.Errorf("install herdr in sandbox exited with code %d", code)
 	}
-	if err := syncSandboxHerdrConfig(ctx, sandbox, workdir); err != nil {
+	if err := syncSandboxHerdrConfig(ctx, sandbox); err != nil {
 		return err
 	}
 	return nil
@@ -132,7 +127,7 @@ chmod 755 "$launcher"
 
 // syncSandboxHerdrConfig copies local keybindings so remote Herdr servers can
 // invoke synchronized plugin actions, while retaining Mezha's terminal setup.
-func syncSandboxHerdrConfig(ctx context.Context, sandbox *msb.Sandbox, workdir string) error {
+func syncSandboxHerdrConfig(ctx context.Context, sandbox *msb.Sandbox) error {
 	config := map[string]any{}
 	configPath, err := localHerdrConfigPath()
 	if err != nil {
@@ -154,7 +149,7 @@ func syncSandboxHerdrConfig(ctx context.Context, sandbox *msb.Sandbox, workdir s
 	config["terminal"] = map[string]string{
 		"default_shell": "bash",
 		"shell_mode":    "non_login",
-		"new_cwd":       workdir,
+		"new_cwd":       "follow",
 	}
 
 	var encoded bytes.Buffer
