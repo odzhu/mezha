@@ -24,6 +24,10 @@ func publishBranchToMicrosandbox(
 	if err != nil {
 		return err
 	}
+	primaryBranch, err := sandboxPrimaryBranch(ctx, rc, branch)
+	if err != nil {
+		return err
+	}
 	paths := canonicalSandboxProjectPaths(rc)
 	primaryRepoDir := paths.primary
 	script := `set -eu
@@ -39,14 +43,20 @@ else
   git -C "$repo" config receive.denyCurrentBranch updateInstead
   rm -f "$repo/.git/hooks/push-to-checkout"
 fi
-# git init selects its configured default (commonly "master"). Point an unborn
-# repository at the branch being published so its primary branch agrees with
-# the host, including when this repository backs a linked worktree.
-if ! git -C "$repo" rev-parse --verify HEAD >/dev/null 2>&1; then git -C "$repo" symbolic-ref HEAD "refs/heads/$branch"; fi`
+# A linked worktree must not make its branch the primary checkout's branch.
+# For a normal repository, only replace Git's unborn default (commonly master).
+if [ "$linked_worktree" = true ] || ! git -C "$repo" rev-parse --verify HEAD >/dev/null 2>&1; then git -C "$repo" symbolic-ref HEAD "refs/heads/$branch"; fi`
 	out, err := sandbox.Exec(
 		ctx,
 		"sh",
-		[]string{"-lc", script, "_", primaryRepoDir, branch, fmt.Sprint(rc.IsLinkedWorktree)},
+		[]string{
+			"-lc",
+			script,
+			"_",
+			primaryRepoDir,
+			primaryBranch,
+			fmt.Sprint(rc.IsLinkedWorktree),
+		},
 	)
 	if err != nil {
 		return fmt.Errorf("initialize Microsandbox git repository: %w", err)
@@ -85,25 +95,61 @@ if ! git -C "$repo" rev-parse --verify HEAD >/dev/null 2>&1; then git -C "$repo"
 	return nil
 }
 
-// repairSandboxPrimaryBranch updates a stale unborn default left by git init
-// without replacing an existing primary branch.
+// sandboxPrimaryBranch returns the branch checked out by the primary host worktree.
+func sandboxPrimaryBranch(ctx context.Context, rc RepoContext, branch string) (string, error) {
+	if !rc.IsLinkedWorktree {
+		return branch, nil
+	}
+	primaryBranch, err := currentBranch(ctx, rc.PrimaryRepoRoot)
+	if err != nil {
+		return "", fmt.Errorf("read primary worktree branch: %w", err)
+	}
+	return primaryBranch, nil
+}
+
+// repairSandboxPrimaryBranch updates a stale default left by git init. Linked
+// worktrees always use the primary host worktree's branch.
 func repairSandboxPrimaryBranch(
 	ctx context.Context,
 	sandbox *msb.Sandbox,
 	repoDir, branch string,
+	replace bool,
 ) error {
 	output, err := sandbox.Exec(ctx, "sh", []string{"-eu", "-c", `
-repo="$1" branch="$2"
-if ! git -C "$repo" rev-parse --verify HEAD >/dev/null 2>&1; then
+repo="$1" branch="$2" replace="$3"
+if [ "$replace" = true ] || ! git -C "$repo" rev-parse --verify HEAD >/dev/null 2>&1; then
   git -C "$repo" symbolic-ref HEAD "refs/heads/$branch"
 fi
-`, "mezha-repair-primary-branch", repoDir, branch})
+`, "mezha-repair-primary-branch", repoDir, branch, fmt.Sprint(replace)})
 	if err != nil {
 		return fmt.Errorf("repair Microsandbox primary branch: %w", err)
 	}
 	if !output.Success() {
 		return fmt.Errorf(
 			"repair Microsandbox primary branch: %s",
+			strings.TrimSpace(output.Stderr()),
+		)
+	}
+	return nil
+}
+
+func attachSandboxLinkedWorktreeBranch(
+	ctx context.Context,
+	sandbox *msb.Sandbox,
+	worktreeDir, branch string,
+) error {
+	output, err := sandbox.Exec(ctx, "sh", []string{"-eu", "-c", `
+worktree="$1" branch="$2"
+if [ "$(git -C "$worktree" symbolic-ref -q --short HEAD || :)" != "$branch" ]; then
+  git -C "$worktree" checkout "$branch"
+fi
+`, "mezha-attach-linked-worktree", worktreeDir, branch})
+	if err != nil {
+		return fmt.Errorf("attach Microsandbox linked worktree branch: %w", err)
+	}
+	if !output.Success() {
+		return fmt.Errorf(
+			"attach Microsandbox linked worktree branch: %s",
 			strings.TrimSpace(output.Stderr()),
 		)
 	}
@@ -123,13 +169,14 @@ if [ -e "$worktree" ]; then
   git -C "$primary" worktree remove --force "$worktree" || rm -rf "$worktree"
 fi
 mkdir -p "$(dirname "$worktree")"
-git -C "$primary" worktree add --force --detach "$worktree" "refs/heads/$branch"
+git -C "$primary" worktree add --force "$worktree" "refs/heads/$branch"
 hook="$primary/.git/hooks/post-receive"
 cat >"$hook" <<EOF
 #!/bin/sh
 unset GIT_DIR GIT_WORK_TREE
 while read -r old new ref; do
-  git -C "$worktree" checkout --detach --force "\$new" >/dev/null 2>&1 || exit 1
+  [ "\$ref" = "refs/heads/$branch" ] || continue
+  git -C "$worktree" reset --hard "\$new" >/dev/null 2>&1 || exit 1
 done
 EOF
 chmod +x "$hook"

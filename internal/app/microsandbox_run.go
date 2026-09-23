@@ -139,11 +139,14 @@ func runMicrosandbox(
 		); err != nil {
 			return err
 		}
+	} else if primaryBranch, err := sandboxPrimaryBranch(ctx, rc, branch); err != nil {
+		return err
 	} else if err := repairSandboxPrimaryBranch(
 		ctx,
 		sandbox,
 		canonicalSandboxProjectPaths(rc).primary,
-		branch,
+		primaryBranch,
+		rc.IsLinkedWorktree,
 	); err != nil {
 		return err
 	} else if err := syncSandboxGitIdentity(ctx, sandbox, rc.RepoRoot, repoDir); err != nil {
@@ -155,6 +158,16 @@ func runMicrosandbox(
 		params.ReplaceSandboxRemote,
 	); err != nil {
 		return err
+	}
+	if rc.IsLinkedWorktree {
+		if err := attachSandboxLinkedWorktreeBranch(
+			ctx,
+			sandbox,
+			canonicalSandboxProjectPaths(rc).worktree,
+			branch,
+		); err != nil {
+			return err
+		}
 	}
 
 	for i, directive := range cfg.Run {
