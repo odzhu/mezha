@@ -61,6 +61,9 @@ func provisionMicrosandbox(
 	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
 		return err
 	}
+	if err := ensureSandboxProjectDir(ctx, sandbox, params.RemoteRepoDir); err != nil {
+		return err
+	}
 	if !sandboxExisted {
 		if err := applyProvisionConfig(ctx, sandbox, cfg.Provision); err != nil {
 			return err
@@ -92,5 +95,16 @@ func provisionMicrosandbox(
 		}
 	}
 	fmt.Printf("Provisioned Microsandbox: %s\n", params.SandboxName)
+	return nil
+}
+
+func ensureSandboxProjectDir(ctx context.Context, sandbox *msb.Sandbox, dir string) error {
+	output, err := sandbox.Exec(ctx, "mkdir", []string{"-p", dir})
+	if err != nil {
+		return fmt.Errorf("create sandbox project directory: %w", err)
+	}
+	if !output.Success() {
+		return fmt.Errorf("create sandbox project directory: %s", output.Stderr())
+	}
 	return nil
 }

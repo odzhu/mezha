@@ -51,6 +51,11 @@ func RepairSandboxGitRemote(
 	params GitParams,
 	replace bool,
 ) error {
+	remoteRepoDir, err := sandboxProjectDir(rc, params.RemoteRepoDir)
+	if err != nil {
+		return err
+	}
+	params.RemoteRepoDir = remoteRepoDir
 	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		return repairMicrosandboxGitRemote(ctx, rc, params, replace)
 	}

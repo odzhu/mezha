@@ -7,6 +7,11 @@ import (
 
 // Provision creates and initializes a sandbox without synchronizing repository data.
 func Provision(ctx context.Context, rc RepoContext, params ProvisionParams) error {
+	remoteRepoDir, err := sandboxProjectDir(rc, params.RemoteRepoDir)
+	if err != nil {
+		return err
+	}
+	params.RemoteRepoDir = remoteRepoDir
 	cfg, _, err := LoadConfig(rc.RepoRoot)
 	if err != nil {
 		return fmt.Errorf("load mezha configuration: %w", err)

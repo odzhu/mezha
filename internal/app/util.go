@@ -159,6 +159,26 @@ func assertLocalPathIsSafe(root, target string) error {
 	return nil
 }
 
+// sandboxProjectDir returns the sandbox project directory. Its final component is
+// always the host repository directory name so all synchronization targets agree.
+func sandboxProjectDir(rc RepoContext, remoteDir string) (string, error) {
+	if remoteDir == "" {
+		remoteDir = filepath.Join("/root", rc.RepoName)
+	}
+	remoteDir = filepath.ToSlash(filepath.Clean(remoteDir))
+	if !filepath.IsAbs(remoteDir) {
+		return "", fmt.Errorf("sandbox project directory must be absolute: %s", remoteDir)
+	}
+	if filepath.Base(remoteDir) != rc.RepoName {
+		return "", fmt.Errorf(
+			"sandbox project directory %q must end with the host project folder name %q",
+			remoteDir,
+			rc.RepoName,
+		)
+	}
+	return remoteDir, nil
+}
+
 func resolveRemoteWorkdir(repoRoot, remoteRepoDir, invocationCWD string) (string, error) {
 	if invocationCWD == repoRoot {
 		return filepath.ToSlash(remoteRepoDir), nil

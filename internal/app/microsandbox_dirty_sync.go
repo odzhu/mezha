@@ -43,6 +43,9 @@ func uploadDirtyRepoToMicrosandbox(
 		return err
 	}
 	defer func() { _ = sandbox.Detach(context.Background()) }()
+	if err := ensureSandboxProjectDir(ctx, sandbox, remoteRepoDir); err != nil {
+		return err
+	}
 	createdDirs := make(map[string]struct{})
 	for _, relativePath := range dirty.copy {
 		local := filepath.Join(repoRoot, filepath.FromSlash(relativePath))

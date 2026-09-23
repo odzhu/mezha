@@ -95,7 +95,10 @@ Run `mezha init` in a repository to create `mezha.toml` and
 `.mezha/devenv.nix`. By default, Mezha generates a sandbox name for the current
 repository and Git ref. Use `--sandbox <name>` (or `-s <name>`) with the default session, `sandbox`,
 and `sync` commands to select a reusable sandbox instead. Each project is kept
-in its own `/root/<project>` directory. A Git remote named after the selected
+in its own `/root/<project>` directory, where `<project>` exactly matches the
+host repository folder name. `sandbox.remote_dir`, `MICROSANDBOX_REMOTE_REPO_DIR`,
+and `--remote-dir` may choose the sandbox location but must end in that same
+folder name; Mezha rejects a mismatched path. A Git remote named after the selected
 sandbox is added to the host repository, so the same repository can synchronize
 with multiple sandboxes.
 
