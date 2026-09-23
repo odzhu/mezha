@@ -122,6 +122,52 @@ chmod 755 "$launcher"
 	if err := syncSandboxHerdrConfig(ctx, sandbox); err != nil {
 		return err
 	}
+	if err := ensureSandboxHerdrServer(ctx, sandbox); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ensureSandboxHerdrServer starts one persistent server for the sandbox.
+func ensureSandboxHerdrServer(ctx context.Context, sandbox *msb.Sandbox) error {
+	output, err := sandbox.Exec(ctx, "sh", []string{"-eu", "-c", `
+launcher="$HOME/.local/bin/herdr"
+binary="/nix/mezha/services/herdr/bin/herdr"
+socket="$HOME/.config/herdr/herdr.sock"
+export HERDR_CONFIG_PATH="/root/.config/mezha/services/herdr/config.toml"
+
+# reload-config succeeds only when a server owns the socket.
+if "$binary" server reload-config >/dev/null 2>&1; then
+  exit 0
+fi
+
+# A server that exited uncleanly can leave its socket behind.
+rm -f "$socket"
+mkdir -p "$(dirname "$socket")"
+nohup "$launcher" server >>"$HOME/.config/herdr/herdr-server.log" 2>&1 </dev/null &
+pid=$!
+for _ in $(seq 1 40); do
+  if "$binary" server reload-config >/dev/null 2>&1; then
+    exit 0
+  fi
+  if ! kill -0 "$pid" 2>/dev/null; then
+    wait "$pid" || true
+    echo "Herdr server exited during startup" >&2
+    exit 1
+  fi
+  sleep 0.25
+done
+kill "$pid" 2>/dev/null || true
+wait "$pid" 2>/dev/null || true
+echo "Herdr server did not become ready" >&2
+exit 1
+`})
+	if err != nil {
+		return fmt.Errorf("start Herdr server in sandbox: %w", err)
+	}
+	if !output.Success() {
+		return fmt.Errorf("start Herdr server in sandbox: %s", strings.TrimSpace(output.Stderr()))
+	}
 	return nil
 }
 
