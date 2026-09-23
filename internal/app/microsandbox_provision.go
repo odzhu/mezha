@@ -165,8 +165,10 @@ link_path() {
 
 link_path /nix/mezha/projects /projects
 link_path /nix/mezha/worktrees /worktrees
-link_path /nix/mezha/projects /root/projects
-link_path /nix/mezha/worktrees /root/worktrees
+# These aliases were used by an earlier layout. Remove only links so an
+# unrelated real directory under /root is never deleted.
+if [ -L /root/projects ]; then rm -f /root/projects; fi
+if [ -L /root/worktrees ]; then rm -f /root/worktrees; fi
 link_path /nix/mezha/worktrees /root/.herdr/worktrees
 link_path "$project" "$remote"
 link_path "$project" "$host_project"
