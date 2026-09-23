@@ -101,9 +101,9 @@ chmod 755 "$launcher"
 `, version)
 	fmt.Println("Provisioning Herdr through devenv...")
 	args := []string{"shell", "--from", "path:" + herdrDevenvPath, "--", "sh", "-c", script}
-	var code int
+	var output *msb.ExecOutput
 	for attempt := 0; attempt < 20; attempt++ {
-		code, err = sandbox.AttachWith(ctx, nativeDevenvPath, args)
+		output, err = sandbox.Exec(ctx, nativeDevenvPath, args)
 		if err == nil || !strings.Contains(err.Error(), "No such file or directory") {
 			break
 		}
@@ -116,8 +116,8 @@ chmod 755 "$launcher"
 	if err != nil {
 		return fmt.Errorf("install Herdr in sandbox: %w", err)
 	}
-	if code != 0 {
-		return fmt.Errorf("install herdr in sandbox exited with code %d", code)
+	if !output.Success() {
+		return fmt.Errorf("install Herdr in sandbox: %s", strings.TrimSpace(output.Stderr()))
 	}
 	if err := syncSandboxHerdrConfig(ctx, sandbox); err != nil {
 		return err

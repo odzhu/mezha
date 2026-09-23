@@ -37,6 +37,9 @@ func provisionMicrosandbox(
 		if err := handle.Destroy(ctx, msb.WithDestroyForce()); err != nil {
 			return fmt.Errorf("recreate sandbox %q: %w", params.SandboxName, err)
 		}
+		if err := clearHerdrSSHControlSockets(); err != nil {
+			return err
+		}
 		sandboxExisted = false
 	}
 	if params.VolumesFlush {

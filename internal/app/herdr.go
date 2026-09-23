@@ -17,6 +17,28 @@ func herdrCommandAvailable() bool {
 	return err == nil
 }
 
+// clearHerdrSSHControlSockets prevents a recreated sandbox from reusing a
+// ControlMaster connection that still targets the replaced sandbox.
+func clearHerdrSSHControlSockets() error {
+	dir := filepath.Join("/tmp", fmt.Sprintf("hssh-%d", os.Getuid()))
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read Herdr SSH control socket directory: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.Type()&os.ModeSocket == 0 {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove Herdr SSH control socket: %w", err)
+		}
+	}
+	return nil
+}
+
 type herdrMachine struct {
 	ID     string `json:"id"`
 	Label  string `json:"label"`

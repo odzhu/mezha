@@ -34,6 +34,9 @@ func runMicrosandbox(
 			if err := handle.Destroy(ctx, msb.WithDestroyForce()); err != nil {
 				return fmt.Errorf("recreate sandbox %q: %w", params.SandboxName, err)
 			}
+			if err := clearHerdrSSHControlSockets(); err != nil {
+				return err
+			}
 		}
 		if params.VolumesFlush {
 			if err := flushMicrosandboxVolumes(ctx, params.SandboxName); err != nil {
