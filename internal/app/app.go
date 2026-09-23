@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	cli "github.com/urfave/cli/v3"
@@ -451,7 +450,7 @@ func resolveSandboxProjectDir(cmd *cli.Command, cfg *MezhaConfig, rc RepoContext
 		"remote-dir",
 		os.Getenv("MICROSANDBOX_REMOTE_REPO_DIR"),
 		cfg.Sandbox.RemoteDir,
-		filepath.ToSlash(filepath.Join("/root", rc.RepoName)),
+		canonicalSandboxProjectPaths(rc).worktree,
 	))
 }
 
