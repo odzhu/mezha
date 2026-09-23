@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/odzhu/mezha/internal/execx"
 )
@@ -23,7 +24,7 @@ type herdrMachine struct {
 }
 
 // registerHerdrMachine saves the sandbox SSH endpoint when Herdr is installed.
-func registerHerdrMachine(ctx context.Context, sandboxName string, resetHostKey bool) error {
+func registerHerdrMachine(ctx context.Context, sandboxName string) error {
 	if !herdrCommandAvailable() {
 		return nil
 	}
@@ -31,7 +32,7 @@ func registerHerdrMachine(ctx context.Context, sandboxName string, resetHostKey 
 	if err != nil {
 		return fmt.Errorf("configure sandbox SSH for Herdr: %w", err)
 	}
-	if err := trustSandboxSSHHost(ctx, target, resetHostKey); err != nil {
+	if err := trustSandboxSSHHost(ctx, target); err != nil {
 		return err
 	}
 	machines, err := listHerdrMachines(ctx)
@@ -81,24 +82,26 @@ func unregisterHerdrMachine(ctx context.Context, sandboxName string) (bool, erro
 	return removed, nil
 }
 
-func trustSandboxSSHHost(ctx context.Context, target string, reset bool) error {
+func trustSandboxSSHHost(ctx context.Context, target string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("resolve home directory for sandbox SSH host key: %w", err)
 	}
 	knownHosts := filepath.Join(home, ".ssh", "known_hosts")
-	if reset {
-		_, _, err := execx.Run(
-			ctx,
-			"ssh-keygen",
-			[]string{"-R", target, "-f", knownHosts},
-			execx.RunOptions{IgnoreExitCode: true},
-		)
-		if err != nil {
-			return fmt.Errorf("remove previous sandbox SSH host key: %w", err)
-		}
+
+	// A sandbox with a reused name has a new SSH server identity. The alias is
+	// local to Mezha's proxy, so replace its old identity before recording it.
+	_, _, err = execx.Run(
+		ctx,
+		"ssh-keygen",
+		[]string{"-R", target, "-f", knownHosts},
+		execx.RunOptions{IgnoreExitCode: true},
+	)
+	if err != nil {
+		return fmt.Errorf("remove previous sandbox SSH host key: %w", err)
 	}
-	_, _, err = execx.Run(ctx, "ssh", []string{
+
+	_, stderr, err := execx.Run(ctx, "ssh", []string{
 		"-o", "UserKnownHostsFile=" + knownHosts,
 		"-o", "GlobalKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=accept-new",
@@ -106,6 +109,9 @@ func trustSandboxSSHHost(ctx context.Context, target string, reset bool) error {
 		"true",
 	}, execx.RunOptions{CaptureStdout: true, CaptureStderr: true})
 	if err != nil {
+		if message := strings.TrimSpace(string(stderr)); message != "" {
+			return fmt.Errorf("trust sandbox SSH host key: %w: %s", err, message)
+		}
 		return fmt.Errorf("trust sandbox SSH host key: %w", err)
 	}
 	return nil

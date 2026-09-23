@@ -86,7 +86,7 @@ func provisionMicrosandbox(
 		if err := ensureSandboxHerdr(ctx, sandbox, useDevenv); err != nil {
 			return err
 		}
-		if err := registerHerdrMachine(ctx, params.SandboxName, !sandboxExisted); err != nil {
+		if err := registerHerdrMachine(ctx, params.SandboxName); err != nil {
 			return err
 		}
 		if err := syncHerdrPlugins(ctx, sandbox); err != nil {
