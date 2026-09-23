@@ -35,6 +35,9 @@ func uploadPathMicrosandbox(
 	remote := remotePath
 	if remote == "" {
 		remote = params.RemoteRepoDir
+		if !info.IsDir() {
+			remote = filepath.Join(remote, filepath.Base(filepath.Clean(localPath)))
+		}
 	}
 	if !filepath.IsAbs(remote) {
 		remote = filepath.Join(params.RemoteRepoDir, remote)

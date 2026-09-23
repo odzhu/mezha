@@ -29,15 +29,20 @@ func openMicrosandbox(
 	if _, err := msb.EnsureRuntime(ctx, msb.RuntimeConfig{}, msb.InstallOptions{}); err != nil {
 		return nil, nil, nil, fmt.Errorf("install Microsandbox runtime: %w", err)
 	}
-	if recreate {
-		if h, e := msb.GetSandbox(ctx, params.SandboxName); e == nil {
-			if e = h.Destroy(ctx, msb.WithDestroyForce()); e != nil {
-				return nil, nil, nil, e
+	sandboxExists := false
+	if handle, err := msb.GetSandbox(ctx, params.SandboxName); err == nil {
+		if recreate {
+			if err := handle.Destroy(ctx, msb.WithDestroyForce()); err != nil {
+				return nil, nil, nil, fmt.Errorf("recreate sandbox %q: %w", params.SandboxName, err)
 			}
+		} else {
+			sandboxExists = true
 		}
 	}
-	if err := ensureStateVolume(ctx, params.SandboxName, *cfg.Microsandbox); err != nil {
-		return nil, nil, nil, err
+	if !sandboxExists {
+		if err := ensureStateVolume(ctx, params.SandboxName, *cfg.Microsandbox); err != nil {
+			return nil, nil, nil, err
+		}
 	}
 	opts, err := cfg.Microsandbox.sandboxOptions(rc.RepoRoot, params.SandboxName)
 	if err != nil {
@@ -71,7 +76,7 @@ func ensureStateVolume(
 		}
 	}
 	name := sandboxName + "-" + volume.Name
-	if ready, err := stateVolumeReady(ctx, name, ".mezha-state-v3"); err != nil {
+	if ready, err := stateVolumeReady(ctx, name, ".mezha-state-v3", volume); err != nil {
 		return err
 	} else if ready {
 		return nil
@@ -129,7 +134,11 @@ sync`}, msb.WithExecEnv(map[string]string{"PATH": "/home/devenv/.nix-profile/bin
 }
 
 // stateVolumeReady checks a disk-backed volume from inside a sandbox.
-func stateVolumeReady(ctx context.Context, name, marker string) (bool, error) {
+func stateVolumeReady(
+	ctx context.Context,
+	name, marker string,
+	volume MicrosandboxVolume,
+) (bool, error) {
 	if _, err := msb.GetVolume(ctx, name); err != nil {
 		return false, nil
 	}
@@ -148,7 +157,21 @@ func stateVolumeReady(ctx context.Context, name, marker string) (bool, error) {
 		msb.WithUser("0"),
 		msb.WithReplace(),
 		msb.WithMounts(map[string]msb.MountConfig{
-			"/mnt/mezha": msb.Mount.Named(name, msb.MountOptions{}),
+			"/mnt/mezha": msb.Mount.NamedWith(
+				name,
+				msb.MountOptions{
+					Readonly: volume.ReadOnly,
+					Noexec:   volume.NoExec,
+					Nosuid:   volume.NoSUID,
+					Nodev:    volume.NoDev,
+				},
+				msb.NamedVolumeOptions{
+					Mode:     volume.Mode,
+					Kind:     volume.Kind,
+					SizeMiB:  volume.SizeMiB,
+					QuotaMiB: volume.QuotaMiB,
+				},
+			),
 		}),
 	)
 	if err != nil {
