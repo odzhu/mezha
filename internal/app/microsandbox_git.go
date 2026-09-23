@@ -38,8 +38,11 @@ if [ "$linked_worktree" = true ]; then
 else
   git -C "$repo" config receive.denyCurrentBranch updateInstead
   rm -f "$repo/.git/hooks/push-to-checkout"
-  if ! git -C "$repo" rev-parse --verify HEAD >/dev/null 2>&1; then git -C "$repo" symbolic-ref HEAD "refs/heads/$branch"; fi
-fi`
+fi
+# git init selects its configured default (commonly "master"). Point an unborn
+# repository at the branch being published so its primary branch agrees with
+# the host, including when this repository backs a linked worktree.
+if ! git -C "$repo" rev-parse --verify HEAD >/dev/null 2>&1; then git -C "$repo" symbolic-ref HEAD "refs/heads/$branch"; fi`
 	out, err := sandbox.Exec(
 		ctx,
 		"sh",
@@ -78,6 +81,31 @@ fi`
 		); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// repairSandboxPrimaryBranch updates a stale unborn default left by git init
+// without replacing an existing primary branch.
+func repairSandboxPrimaryBranch(
+	ctx context.Context,
+	sandbox *msb.Sandbox,
+	repoDir, branch string,
+) error {
+	output, err := sandbox.Exec(ctx, "sh", []string{"-eu", "-c", `
+repo="$1" branch="$2"
+if ! git -C "$repo" rev-parse --verify HEAD >/dev/null 2>&1; then
+  git -C "$repo" symbolic-ref HEAD "refs/heads/$branch"
+fi
+`, "mezha-repair-primary-branch", repoDir, branch})
+	if err != nil {
+		return fmt.Errorf("repair Microsandbox primary branch: %w", err)
+	}
+	if !output.Success() {
+		return fmt.Errorf(
+			"repair Microsandbox primary branch: %s",
+			strings.TrimSpace(output.Stderr()),
+		)
 	}
 	return nil
 }

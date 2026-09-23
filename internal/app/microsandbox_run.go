@@ -109,12 +109,12 @@ func runMicrosandbox(
 		}
 	}
 
+	branch, err := currentBranch(ctx, rc.RepoRoot)
+	if err != nil {
+		return err
+	}
 	needsPublish := !sandboxExisted
 	if sandboxExisted {
-		branch, err := currentBranch(ctx, rc.RepoRoot)
-		if err != nil {
-			return err
-		}
 		hasBranch, err := microsandboxBranchExists(ctx, sandbox, repoDir, branch)
 		if err != nil {
 			return err
@@ -139,6 +139,13 @@ func runMicrosandbox(
 		); err != nil {
 			return err
 		}
+	} else if err := repairSandboxPrimaryBranch(
+		ctx,
+		sandbox,
+		canonicalSandboxProjectPaths(rc).primary,
+		branch,
+	); err != nil {
+		return err
 	} else if err := syncSandboxGitIdentity(ctx, sandbox, rc.RepoRoot, repoDir); err != nil {
 		return err
 	} else if err := repairMicrosandboxGitRemote(
