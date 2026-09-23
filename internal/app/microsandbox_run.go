@@ -120,6 +120,13 @@ func runMicrosandbox(
 			return err
 		}
 		needsPublish = !hasBranch
+		if rc.IsLinkedWorktree && !needsPublish {
+			linkedWorktreeExists, err := microsandboxLinkedWorktreeExists(ctx, sandbox, repoDir)
+			if err != nil {
+				return err
+			}
+			needsPublish = !linkedWorktreeExists
+		}
 	}
 	if needsPublish {
 		if err := publishBranchToMicrosandbox(
@@ -404,7 +411,7 @@ func microsandboxBranchExists(
 		"sh",
 		[]string{
 			"-c",
-			`test -d "$1/.git" && git -C "$1" rev-parse --verify --quiet "$2"`,
+			`test -e "$1/.git" && git -C "$1" rev-parse --verify --quiet "$2"`,
 			"mezha-check-repo",
 			repoDir,
 			"refs/heads/" + branch,
@@ -412,6 +419,23 @@ func microsandboxBranchExists(
 	)
 	if err != nil {
 		return false, fmt.Errorf("check Microsandbox repository branch: %w", err)
+	}
+	return output.Success(), nil
+}
+
+func microsandboxLinkedWorktreeExists(
+	ctx context.Context,
+	sandbox *msb.Sandbox,
+	repoDir string,
+) (bool, error) {
+	output, err := sandbox.Exec(ctx, "sh", []string{
+		"-c",
+		`test -f "$1/.git" && grep -q '^gitdir: ' "$1/.git"`,
+		"mezha-check-linked-worktree",
+		repoDir,
+	})
+	if err != nil {
+		return false, fmt.Errorf("check Microsandbox linked worktree: %w", err)
 	}
 	return output.Success(), nil
 }

@@ -41,9 +41,15 @@ func ResolveRepoContext(_ context.Context) (RepoContext, error) {
 	if err != nil {
 		return RepoContext{}, err
 	}
+	primaryRepoRoot, isLinkedWorktree, err := linkedWorktreePrimaryRepoRoot(repoRoot)
+	if err != nil {
+		return RepoContext{}, err
+	}
 
 	return RepoContext{
 		RepoRoot:           repoRoot,
+		PrimaryRepoRoot:    primaryRepoRoot,
+		IsLinkedWorktree:   isLinkedWorktree,
 		RepoName:           filepath.Base(repoRoot),
 		GitRef:             gitRef,
 		DefaultSandboxName: slugify(filepath.Base(repoRoot) + "-" + gitRef),
@@ -65,6 +71,37 @@ func findRepoRoot(path string) (string, error) {
 		}
 		path = parent
 	}
+}
+
+// linkedWorktreePrimaryRepoRoot identifies linked worktrees from their .git
+// indirection file. A primary worktree has a .git directory and returns itself.
+func linkedWorktreePrimaryRepoRoot(repoRoot string) (string, bool, error) {
+	gitPath := filepath.Join(repoRoot, ".git")
+	info, err := os.Stat(gitPath)
+	if err != nil {
+		return "", false, fmt.Errorf("inspect git metadata: %w", err)
+	}
+	if info.IsDir() {
+		return repoRoot, false, nil
+	}
+
+	data, err := os.ReadFile(gitPath)
+	if err != nil {
+		return "", false, fmt.Errorf("read git worktree metadata: %w", err)
+	}
+	line := strings.TrimSpace(string(data))
+	gitDir := strings.TrimSpace(strings.TrimPrefix(line, "gitdir:"))
+	if gitDir == "" || gitDir == line {
+		return "", false, fmt.Errorf("parse git worktree metadata: %s", gitPath)
+	}
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(repoRoot, gitDir)
+	}
+	gitDir = filepath.Clean(gitDir)
+	if filepath.Base(filepath.Dir(gitDir)) != "worktrees" {
+		return repoRoot, false, nil
+	}
+	return filepath.Dir(filepath.Dir(filepath.Dir(gitDir))), true, nil
 }
 
 func currentGitRef(repo *git.Repository) (string, error) {
@@ -177,6 +214,38 @@ func sandboxProjectDir(rc RepoContext, remoteDir string) (string, error) {
 		)
 	}
 	return remoteDir, nil
+}
+
+type sandboxProjectPaths struct {
+	primary  string
+	worktree string
+}
+
+func canonicalSandboxProjectPaths(rc RepoContext) sandboxProjectPaths {
+	primary := filepath.Join("/nix/mezha/projects", filepath.Base(rc.PrimaryRepoRoot))
+	worktree := primary
+	if rc.IsLinkedWorktree {
+		worktree = filepath.Join(
+			"/nix/mezha/worktrees",
+			filepath.Base(rc.PrimaryRepoRoot),
+			rc.RepoName,
+		)
+	}
+	return sandboxProjectPaths{
+		primary:  filepath.ToSlash(primary),
+		worktree: filepath.ToSlash(worktree),
+	}
+}
+
+// sandboxGitURL points at the shared Git directory for linked worktrees. Git
+// remotes cannot use a worktree's .git indirection file as a receive target.
+func sandboxGitURL(host string, rc RepoContext, remoteDir string) string {
+	gitRepoDir := canonicalSandboxProjectPaths(rc).primary
+	return fmt.Sprintf(
+		"ssh://root@%s//%s/.git",
+		host,
+		strings.TrimPrefix(filepath.ToSlash(gitRepoDir), "/"),
+	)
 }
 
 func resolveRemoteWorkdir(repoRoot, remoteRepoDir, invocationCWD string) (string, error) {
