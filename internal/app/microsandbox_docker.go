@@ -76,13 +76,31 @@ func devenvCommand(devenvPath, command string, args []string) (string, []string)
 	}
 }
 
-// devenvInteractiveShellCommand keeps managed tools on PATH without activating
-// the managed environment as the shell's project.
-func devenvInteractiveShellCommand() (string, []string) {
-	return "devenv", []string{
-		"shell", "--reload", "--from", "path:" + managedDevenvPath,
-		"--", "sh", "-c", "unset DEVENV_ROOT _DEVENV_HOOK_DIR; exec bash -i",
+// devenvDirectCommand keeps managed tools on PATH without activating the
+// managed environment as the command's project.
+func devenvDirectCommand(command string, commandArgs []string) (string, []string) {
+	args := []string{
+		"shell",
+		"--reload",
+		"--from",
+		"path:" + managedDevenvPath,
+		"--",
+		"sh",
+		"-c",
+		"export HOME=/root; unset DEVENV_ROOT _DEVENV_HOOK_DIR; exec \"$@\"",
+		"mezha-direct",
+		command,
 	}
+	return "devenv", append(args, commandArgs...)
+}
+
+// devenvBashCommand starts Bash with the shared direct-session environment.
+func devenvBashCommand(bashArgs []string) (string, []string) {
+	return devenvDirectCommand("bash", bashArgs)
+}
+
+func devenvInteractiveShellCommand() (string, []string) {
+	return devenvBashCommand([]string{"-il"})
 }
 
 // dockerCommand runs a command in the managed devenv environment.
@@ -194,7 +212,7 @@ func ensureManagedDevenvConfig(
 // ensureDevenvBashHook enables directory-based devenv activation for Bash.
 func ensureDevenvBashHook(ctx context.Context, sandbox *msb.Sandbox) error {
 	output, err := sandbox.Exec(ctx, persistentRuntimeBin+"/sh", []string{"-c", `set -eu
-bashrc="$HOME/.bashrc"
+bashrc="/root/.bashrc"
 touch "$bashrc"
 sed -i '/^# mezha devenv hook$/,/^eval "$(devenv hook bash)"$/d' "$bashrc"
 cat >> "$bashrc" <<'EOF'
@@ -210,6 +228,31 @@ EOF
 	}
 	if !output.Success() {
 		return fmt.Errorf("install devenv Bash hook: %s", strings.TrimSpace(output.Stderr()))
+	}
+	return nil
+}
+
+// ensureDevenvBashProfile makes direct login shells enter the project and load its hook.
+func ensureDevenvBashProfile(ctx context.Context, sandbox *msb.Sandbox, workdir string) error {
+	output, err := sandbox.Exec(ctx, persistentRuntimeBin+"/sh", []string{"-c", `set -eu
+profile="/root/.bash_profile"
+touch "$profile"
+sed -i '/^# mezha project shell$/,/^# mezha project shell end$/d' "$profile"
+cat >> "$profile" <<EOF
+# mezha project shell
+sed -i '/^# mezha project shell$/,/^# mezha project shell end$/d' "$profile"
+cd "$1"
+if [ -f "/root/.bashrc" ]; then
+  . "/root/.bashrc"
+fi
+# mezha project shell end
+EOF
+`, "mezha-bash-profile", workdir}, persistentRuntimeExecEnv())
+	if err != nil {
+		return fmt.Errorf("install devenv Bash profile: %w", err)
+	}
+	if !output.Success() {
+		return fmt.Errorf("install devenv Bash profile: %s", strings.TrimSpace(output.Stderr()))
 	}
 	return nil
 }

@@ -77,6 +77,9 @@ func runMicrosandbox(
 	if workdir == "" {
 		workdir = repoDir
 	}
+	if err := ensureDevenvBashProfile(ctx, sandbox, workdir); err != nil {
+		return err
+	}
 	sessionWorkdir := "/root"
 	herdrWorkdir := "/root"
 	herdrEnabled := reregisterHerdr && herdrCommandAvailable()
@@ -181,22 +184,11 @@ func runMicrosandbox(
 		}
 	}
 	if len(params.RemoteCommand) != 0 {
-		command, args := remoteCommand(params.RemoteCommand, params.NoLoginShell)
-		if cfg.Services.Docker.Enabled || params.Kubernetes {
-			command, args = devenvCommand(managedDevenvPath, command, args)
-		} else {
-			devenv, err := sandboxCommandPath(ctx, sandbox, workdir, "devenv")
-			if err != nil {
-				return err
-			}
-			if devenv != "" {
-				devenvArgs := []string{
-					"shell", "--reload", "--from", "path:" + managedDevenvPath, "--", command,
-				}
-				command, args = devenv, append(devenvArgs, args...)
-			}
-		}
-		if interactiveTTYEnabled(params.TTY) {
+		interactive := interactiveTTYEnabled(params.TTY)
+		command, args := devenvBashCommand(
+			remoteCommand(params.RemoteCommand, params.NoLoginShell, interactive),
+		)
+		if interactive {
 			code, err := sandbox.AttachWith(
 				ctx,
 				command,
@@ -321,19 +313,26 @@ func shellBootstrap() string {
 	)
 }
 
-// remoteCommand runs direct Mezha commands through Bash. The fixed script
-// preserves every command argument without shell interpolation.
-func remoteCommand(command []string, noLoginShell bool) (string, []string) {
+// remoteCommand returns Bash arguments for a direct Mezha command. The fixed
+// script preserves every command argument without shell interpolation.
+func remoteCommand(command []string, noLoginShell, interactive bool) []string {
 	mode := "-lc"
 	bootstrap := shellBootstrap() + "; "
+	if interactive {
+		mode = "-ilc"
+	}
 	if noLoginShell {
 		mode = "-c"
 		bootstrap = ""
 	}
 	args := make([]string, 0, len(command)+4)
-	args = append(args, mode, bootstrap+`exec "$@"`, "mezha-run")
+	script := bootstrap + `exec devenv shell --no-tui --quiet -- "$@"`
+	if noLoginShell {
+		script = `exec "$@"`
+	}
+	args = append(args, mode, script, "mezha-run")
 	args = append(args, command...)
-	return "bash", args
+	return args
 }
 
 // applyProvisionConfig applies declarative initialization only after a sandbox
