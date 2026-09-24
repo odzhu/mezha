@@ -81,6 +81,15 @@ if [ "$linked_worktree" = true ] || ! git -C "$repo" rev-parse --verify HEAD >/d
 	if err := pushSandboxBranchInternal(ctx, rc, name, branch, false); err != nil {
 		return err
 	}
+	if err := repairSandboxPrimaryBranch(
+		ctx,
+		sandbox,
+		primaryRepoDir,
+		primaryBranch,
+		rc.IsLinkedWorktree,
+	); err != nil {
+		return err
+	}
 	if rc.IsLinkedWorktree {
 		if err := setupSandboxLinkedWorktree(
 			ctx,
@@ -119,6 +128,8 @@ func repairSandboxPrimaryBranch(
 repo="$1" branch="$2" replace="$3"
 if [ "$replace" = true ] || ! git -C "$repo" rev-parse --verify HEAD >/dev/null 2>&1; then
   git -C "$repo" symbolic-ref HEAD "refs/heads/$branch"
+elif [ "$(git -C "$repo" symbolic-ref -q --short HEAD || :)" != "$branch" ]; then
+  git -C "$repo" checkout "$branch"
 fi
 `, "mezha-repair-primary-branch", repoDir, branch, fmt.Sprint(replace)})
 	if err != nil {
