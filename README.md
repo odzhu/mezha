@@ -177,10 +177,6 @@ herdr = false
 [[provision.add]]
 source = ".mezha/devenv.nix"
 target = "/root/.config/mezha/services/devenv/user-devenv.nix"
-
-# Commands use [[run]] tables. command may be a shell string or an exec-form array.
-# [[run]]
-# command = "apk add --no-cache git"
 ```
 
 `provision.add` and `provision.run` are applied only when a sandbox is first created.
@@ -216,9 +212,7 @@ the sandbox is recreated or destroyed; this includes the Nix store and `/root` w
 workspaces, caches, and configuration, avoiding repeated downloads and evaluation after
 `mezha --recreate`. Use `--volumes-flush` with
 `mezha sandbox destroy`, or with `mezha --recreate`, only when a clean set of
-persistent volumes is required. Entries in `run` execute before the requested
-command. In TOML, `[[run]]` entries use a string `command` for shell form or
-an array `command` for exec form.
+persistent volumes is required.
 
 ## SecretSpec integration
 

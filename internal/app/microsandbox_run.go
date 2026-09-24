@@ -71,7 +71,7 @@ func runMicrosandbox(
 			return err
 		}
 	}
-	// Run directives use the repository by default; direct Mezha sessions start in /root.
+	// Commands use the repository by default; direct Mezha sessions start in /root.
 	repoDir := params.RemoteRepoDir
 	if repoDir == "" {
 		repoDir = cfg.Microsandbox.Workdir
@@ -173,43 +173,6 @@ func runMicrosandbox(
 		}
 	}
 
-	for i, directive := range cfg.Run {
-		var output *msb.ExecOutput
-		if cfg.Services.Docker.Enabled || params.Kubernetes {
-			if directive.Shell {
-				command, args := dockerCommand(
-					"sh",
-					[]string{"-c", directive.Command[0]},
-					params.Kubernetes,
-				)
-				output, err = sandbox.Exec(ctx, command, args, msb.WithExecCwd(workdir))
-			} else {
-				command, args := dockerCommand(
-					directive.Command[0],
-					directive.Command[1:],
-					params.Kubernetes,
-				)
-				output, err = sandbox.Exec(ctx, command, args, msb.WithExecCwd(workdir))
-			}
-		} else if directive.Shell {
-			output, err = sandbox.Shell(ctx, directive.Command[0], msb.WithExecCwd(workdir))
-		} else {
-			output, err = sandbox.Exec(
-				ctx,
-				directive.Command[0],
-				directive.Command[1:],
-				msb.WithExecCwd(workdir),
-			)
-		}
-		if err != nil {
-			return fmt.Errorf("run directive %d: %w", i, err)
-		}
-		fmt.Print(output.Stdout())
-		fmt.Fprint(os.Stderr, output.Stderr())
-		if !output.Success() {
-			return fmt.Errorf("run directive %d exited with code %d", i, output.ExitCode())
-		}
-	}
 	if len(params.RemoteCommand) != 0 {
 		interactive := interactiveTTYEnabled(params.TTY)
 		command, args := devenvBashCommand(

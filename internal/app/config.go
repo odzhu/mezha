@@ -21,7 +21,6 @@ type MezhaConfig struct {
 	Files        FilesConfig       `toml:"files,omitempty"`
 	Provision    ProvisionConfig   `toml:"provision,omitempty"`
 	SecretSpec   SecretSpecConfig  `toml:"secretspec,omitempty"`
-	Run          []RunDirective    `toml:"run,omitempty"`
 }
 
 // ServicesConfig controls services available inside the sandbox.
@@ -372,12 +371,6 @@ herdr = false
 [[provision.add]]
 source = ".mezha/devenv.nix"
 target = "/root/.config/mezha/services/devenv/user-devenv.nix"
-
-# Commands use tables: command may be a shell string or an exec-form array.
-# [[run]]
-# command = "apk add --no-cache git"
-# [[run]]
-# command = ["git", "config", "--global", "init.defaultBranch", "main"]
 `
 }
 

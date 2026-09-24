@@ -62,20 +62,6 @@ base // {
 }
 `
 
-// devenvCommand runs a command in the specified devenv configuration.
-func devenvCommand(devenvPath, command string, args []string) (string, []string) {
-	commandLine := shellQuote(command)
-	for _, arg := range args {
-		commandLine += " " + shellQuote(arg)
-	}
-	return "devenv", []string{
-		"shell",
-		"--from", "path:" + devenvPath,
-		"--",
-		"sh", "-c", commandLine,
-	}
-}
-
 // devenvDirectCommand keeps managed tools on PATH without activating the
 // managed environment as the command's project.
 func devenvDirectCommand(command string, commandArgs []string) (string, []string) {
@@ -101,11 +87,6 @@ func devenvBashCommand(bashArgs []string) (string, []string) {
 
 func devenvInteractiveShellCommand() (string, []string) {
 	return devenvBashCommand([]string{"-il"})
-}
-
-// dockerCommand runs a command in the managed devenv environment.
-func dockerCommand(command string, args []string, _ bool) (string, []string) {
-	return devenvCommand(managedDevenvPath, command, args)
 }
 
 // ensureDevenvServices starts the singleton devenv process manager and waits
