@@ -52,7 +52,7 @@ func ResolveRepoContext(_ context.Context) (RepoContext, error) {
 		IsLinkedWorktree:   isLinkedWorktree,
 		RepoName:           filepath.Base(repoRoot),
 		GitRef:             gitRef,
-		DefaultSandboxName: slugify(filepath.Base(repoRoot) + "-" + gitRef),
+		DefaultSandboxName: slugify(filepath.Base(primaryRepoRoot)),
 		InvocationCWD:      cwd,
 	}, nil
 }
@@ -141,7 +141,7 @@ func currentGitRef(repo *git.Repository) (string, error) {
 }
 
 // slugify returns a Microsandbox-compatible sandbox name. Long names retain a
-// readable prefix and a stable hash suffix so distinct repository/branch pairs
+// readable prefix and a stable hash suffix so distinct repositories
 // do not collapse to the same truncated name.
 func slugify(value string) string {
 	value = strings.ToLower(value)
