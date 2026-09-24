@@ -206,7 +206,7 @@ func (s MicrosandboxSpec) networkConfig() (*msb.NetworkConfig, error) {
 		len(s.Network.Rules) == 0 {
 		return nil, nil
 	}
-	n := &msb.NetworkConfig{Strict: s.Network.Strict}
+	n := &msb.NetworkConfig{DisableStrict: !s.Network.Strict}
 	var err error
 	if n.DefaultEgress, err = microsandboxAction(s.Network.DefaultEgress); err != nil {
 		return nil, fmt.Errorf("sandbox.network.default_egress: %w", err)
