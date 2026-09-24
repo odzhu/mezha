@@ -224,6 +224,9 @@ func validateSandboxGitRemoteName(remoteName string) error {
 }
 
 func ensureSandboxSSHConfig(_, _, sandboxName string) (string, error) {
+	if err := ensureMicrosandboxSSHAuthorizedKeys(context.Background()); err != nil {
+		return "", fmt.Errorf("ensure Microsandbox SSH authorized keys: %w", err)
+	}
 	hostAlias := sandboxSSHHostAlias(sandboxName)
 
 	home, err := os.UserHomeDir()
