@@ -14,15 +14,14 @@ import (
 // follows Microsandbox's resource model. Relative bind paths are resolved
 // from the declaring mezha.toml.
 type MicrosandboxSpec struct {
-	CPUs        uint8                `toml:"cpus,omitempty"`
-	MemoryMiB   uint32               `toml:"memory_mib,omitempty"`
-	Workdir     string               `toml:"workdir,omitempty"`
-	Environment map[string]string    `toml:"env,omitempty"`
-	Mounts      []MicrosandboxMount  `toml:"mounts,omitempty"`
-	Volumes     []MicrosandboxVolume `toml:"volumes,omitempty"`
-	Network     MicrosandboxNetwork  `toml:"network,omitempty"`
-	Secrets     []MicrosandboxSecret `toml:"secrets,omitempty"`
-	Scripts     map[string]string    `toml:"scripts,omitempty"`
+	CPUs      uint8                `toml:"cpus,omitempty"`
+	MemoryMiB uint32               `toml:"memory_mib,omitempty"`
+	Workdir   string               `toml:"workdir,omitempty"`
+	Mounts    []MicrosandboxMount  `toml:"mounts,omitempty"`
+	Volumes   []MicrosandboxVolume `toml:"volumes,omitempty"`
+	Network   MicrosandboxNetwork  `toml:"network,omitempty"`
+	Secrets   []MicrosandboxSecret `toml:"secrets,omitempty"`
+	Scripts   map[string]string    `toml:"scripts,omitempty"`
 }
 
 type MicrosandboxMount struct {
@@ -164,17 +163,7 @@ func (s MicrosandboxSpec) sandboxOptions(
 // runtimeOptions returns configuration that must be present in every sandbox
 // that can execute provisioning commands, including the state-volume bootstrap.
 func (s MicrosandboxSpec) runtimeOptions() ([]msb.SandboxOption, error) {
-	environment := make(map[string]string, len(s.Environment)+1)
-	for name, value := range s.Environment {
-		environment[name] = value
-	}
-	if _, exists := environment["GOPATH"]; !exists {
-		environment["GOPATH"] = "/root/go"
-	}
-	if _, exists := environment["PATH"]; !exists {
-		environment["PATH"] = "/nix/mezha/root/.mezha/runtime-bin"
-	}
-	opts := []msb.SandboxOption{msb.WithEnv(environment)}
+	var opts []msb.SandboxOption
 	if len(s.Scripts) != 0 {
 		opts = append(opts, msb.WithScripts(s.Scripts))
 	}

@@ -297,7 +297,7 @@ func sandboxAttachOptions(workdir string) []msb.AttachOption {
 func shellBootstrap() string {
 	cols, rows := terminalSize(int(os.Stdout.Fd()))
 	return fmt.Sprintf(
-		`if [ -t 0 ]; then stty rows %d cols %d 2>/dev/null || :; fi; if [ -d "$HOME/.nix-profile/bin" ]; then PATH="$HOME/.nix-profile/bin:$PATH"; export PATH; fi`,
+		`if [ -t 0 ]; then stty rows %d cols %d 2>/dev/null || :; fi; if [ -d "/nix/mezha/root/.mezha/runtime-bin" ]; then PATH="/nix/mezha/root/.mezha/runtime-bin:$PATH"; export PATH; fi; if [ -d "$HOME/.nix-profile/bin" ]; then PATH="$HOME/.nix-profile/bin:$PATH"; export PATH; fi`,
 		rows,
 		cols,
 	)

@@ -77,7 +77,7 @@ func devenvDirectCommand(command string, commandArgs []string) (string, []string
 		"mezha-direct",
 		command,
 	}
-	return "devenv", append(args, commandArgs...)
+	return nativeDevenvPath, append(args, commandArgs...)
 }
 
 // devenvBashCommand starts Bash with the shared direct-session environment.
@@ -99,7 +99,12 @@ func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox, kubernetes 
 	args := []string{"up", "--detach", "--from", "path:" + managedDevenvPath}
 	args = append(args, processes...)
 	fmt.Println("Starting devenv services...")
-	code, err := sandbox.AttachWith(ctx, "devenv", args, msb.WithAttachCwd(managedDevenvPath))
+	code, err := sandbox.AttachWith(
+		ctx,
+		nativeDevenvPath,
+		args,
+		msb.WithAttachCwd(managedDevenvPath),
+	)
 	if err != nil {
 		return fmt.Errorf("start devenv services: %w", err)
 	}
@@ -109,7 +114,7 @@ func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox, kubernetes 
 	}
 
 	fmt.Println("Waiting for devenv services to become ready...")
-	code, err = sandbox.AttachWith(ctx, "devenv", []string{
+	code, err = sandbox.AttachWith(ctx, nativeDevenvPath, []string{
 		"processes", "wait", "--from", "path:" + managedDevenvPath, "--timeout", "120",
 	}, msb.WithAttachCwd(managedDevenvPath))
 	if err != nil {

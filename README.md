@@ -184,11 +184,10 @@ target = "/root/.config/mezha/services/devenv/user-devenv.nix"
 devenv services, but does not publish, upload, or otherwise synchronize repository
 data. Mezha seeds the complete `/nix` directory into the shared `state` volume, which
 is mounted at `/nix`. The temporary state-volume provisioning sandbox receives
-the same `microsandbox.env`, `microsandbox.network`, and `microsandbox.secrets`
+the same `microsandbox.network` and `microsandbox.secrets`
 configuration (including secret host allowlists) as the primary sandbox. It then symlinks `/root`,
 `/var/lib/docker`, and `/var/lib/rancher/k3s` into that volume before any initialization command
-or devenv shell runs; `/home` remains empty. Mezha defaults `GOPATH` to `/root/go` unless it is
-explicitly configured in `microsandbox.env`. The default `provision.add` installs
+or devenv shell runs; `/home` remains empty. The default `provision.add` installs
 Mezha's `.mezha/devenv.nix` at
 `/root/.config/mezha/services/devenv/user-devenv.nix`. It uses devenv `packages` for Docker, k3s, kubectl, Git,
 Lazygit, GitHub CLI, Go, Groff, Less, and `col`. It configures Groff and the

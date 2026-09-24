@@ -313,10 +313,6 @@ memory_mib = 4096
 # cpus = 2
 # workdir = "/workspace"
 
-# GOPATH defaults to /root/go when it is not explicitly configured.
-[microsandbox.env]
-MODE = "development"
-
 # Secrets are sourced from the local environment and restricted to an allowlist.
 # [[microsandbox.secrets]]
 # env = "GITHUB_TOKEN"

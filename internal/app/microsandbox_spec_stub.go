@@ -5,15 +5,14 @@ package app
 // These declarations keep configuration parsing available in non-CGO builds.
 // Creating a local Microsandbox requires CGO and uses microsandbox_spec.go.
 type MicrosandboxSpec struct {
-	CPUs        uint8                `toml:"cpus,omitempty"`
-	MemoryMiB   uint32               `toml:"memory_mib,omitempty"`
-	Workdir     string               `toml:"workdir,omitempty"`
-	Environment map[string]string    `toml:"env,omitempty"`
-	Mounts      []MicrosandboxMount  `toml:"mounts,omitempty"`
-	Volumes     []MicrosandboxVolume `toml:"volumes,omitempty"`
-	Network     MicrosandboxNetwork  `toml:"network,omitempty"`
-	Secrets     []MicrosandboxSecret `toml:"secrets,omitempty"`
-	Scripts     map[string]string    `toml:"scripts,omitempty"`
+	CPUs      uint8                `toml:"cpus,omitempty"`
+	MemoryMiB uint32               `toml:"memory_mib,omitempty"`
+	Workdir   string               `toml:"workdir,omitempty"`
+	Mounts    []MicrosandboxMount  `toml:"mounts,omitempty"`
+	Volumes   []MicrosandboxVolume `toml:"volumes,omitempty"`
+	Network   MicrosandboxNetwork  `toml:"network,omitempty"`
+	Secrets   []MicrosandboxSecret `toml:"secrets,omitempty"`
+	Scripts   map[string]string    `toml:"scripts,omitempty"`
 }
 type MicrosandboxMount struct {
 	Source   string `toml:"source"`
