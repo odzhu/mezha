@@ -125,6 +125,15 @@ type SandboxConfig struct {
 // HomeConfigDir returns MEZHA_HOME or the default mezha home directory (~/.mezha).
 func HomeConfigDir() (string, error) {
 	if dir := os.Getenv("MEZHA_HOME"); dir != "" {
+		if dir == "~" {
+			if home, err := os.UserHomeDir(); err == nil {
+				return home, nil
+			}
+		} else if strings.HasPrefix(dir, "~/") || strings.HasPrefix(dir, `~\`) {
+			if home, err := os.UserHomeDir(); err == nil {
+				return filepath.Join(home, dir[2:]), nil
+			}
+		}
 		return filepath.Clean(dir), nil
 	}
 	home, err := os.UserHomeDir()
@@ -283,24 +292,44 @@ func resolveConfigPaths(config *MezhaConfig, baseDir string) {
 			adds[i].Source = resolveConfigPath(baseDir, adds[i].Source)
 		}
 	}
-	if config.Microsandbox != nil && config.Microsandbox.Network.TLS != nil {
-		tls := config.Microsandbox.Network.TLS
-		tls.CACert = resolveConfigPath(baseDir, tls.CACert)
-		tls.CAKey = resolveConfigPath(baseDir, tls.CAKey)
-		for i := range tls.UpstreamCACerts {
-			tls.UpstreamCACerts[i] = resolveConfigPath(baseDir, tls.UpstreamCACerts[i])
-		}
-		for i := range tls.ScopedUpstreamCACerts {
-			tls.ScopedUpstreamCACerts[i].Path = resolveConfigPath(
+	if config.Microsandbox != nil {
+		for i := range config.Microsandbox.Mounts {
+			config.Microsandbox.Mounts[i].Source = resolveConfigPath(
 				baseDir,
-				tls.ScopedUpstreamCACerts[i].Path,
+				config.Microsandbox.Mounts[i].Source,
 			)
+		}
+		if config.Microsandbox.Network.TLS != nil {
+			tls := config.Microsandbox.Network.TLS
+			tls.CACert = resolveConfigPath(baseDir, tls.CACert)
+			tls.CAKey = resolveConfigPath(baseDir, tls.CAKey)
+			for i := range tls.UpstreamCACerts {
+				tls.UpstreamCACerts[i] = resolveConfigPath(baseDir, tls.UpstreamCACerts[i])
+			}
+			for i := range tls.ScopedUpstreamCACerts {
+				tls.ScopedUpstreamCACerts[i].Path = resolveConfigPath(
+					baseDir,
+					tls.ScopedUpstreamCACerts[i].Path,
+				)
+			}
 		}
 	}
 }
 
 func resolveConfigPath(baseDir, value string) string {
-	if value == "" || filepath.IsAbs(value) {
+	if value == "" {
+		return value
+	}
+	if value == "~" {
+		if home, err := os.UserHomeDir(); err == nil {
+			return home
+		}
+	} else if strings.HasPrefix(value, "~/") || strings.HasPrefix(value, `~\`) {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, value[2:])
+		}
+	}
+	if filepath.IsAbs(value) {
 		return value
 	}
 	return filepath.Join(baseDir, value)

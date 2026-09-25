@@ -5,6 +5,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -559,5 +560,111 @@ func TestPortBindingStringFormat(t *testing.T) {
 	if pb2.Bind != "0.0.0.0" || pb2.HostPort != 8080 || pb2.GuestPort != 80 ||
 		pb2.Protocol != "udp" {
 		t.Errorf("pb2: %+v", pb2)
+	}
+}
+
+func TestResolveConfigPath(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir() error = %v", err)
+	}
+	baseDir := "/workspace/project"
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{name: "empty", input: "", expected: ""},
+		{name: "tilde only", input: "~", expected: home},
+		{name: "tilde slash", input: "~/projects/rd", expected: filepath.Join(home, "projects/rd")},
+		{name: "absolute path", input: "/opt/data", expected: "/opt/data"},
+		{
+			name:     "relative path",
+			input:    "subdir/file.txt",
+			expected: filepath.Join(baseDir, "subdir/file.txt"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveConfigPath(baseDir, tt.input)
+			if got != tt.expected {
+				t.Errorf("resolveConfigPath(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestMicrosandboxMounts_ResolutionAndValidation(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir() error = %v", err)
+	}
+
+	tomlData := `
+[[microsandbox.mounts]]
+source = "~/projects/rd"
+target = "/workspace"
+
+[[microsandbox.mounts]]
+source = "local-dir"
+target = "/mnt/local"
+`
+	var cfg MezhaConfig
+	if _, err := toml.Decode(tomlData, &cfg); err != nil {
+		t.Fatalf("decode toml error = %v", err)
+	}
+	if cfg.Microsandbox == nil {
+		t.Fatal("cfg.Microsandbox is nil")
+	}
+
+	resolveConfigPaths(&cfg, tempDir)
+
+	if cfg.Microsandbox.Mounts[0].Source != filepath.Join(home, "projects/rd") {
+		t.Errorf(
+			"mount[0] source = %q, want %q",
+			cfg.Microsandbox.Mounts[0].Source,
+			filepath.Join(home, "projects/rd"),
+		)
+	}
+	if cfg.Microsandbox.Mounts[1].Source != filepath.Join(tempDir, "local-dir") {
+		t.Errorf(
+			"mount[1] source = %q, want %q",
+			cfg.Microsandbox.Mounts[1].Source,
+			filepath.Join(tempDir, "local-dir"),
+		)
+	}
+
+	spec := MicrosandboxSpec{
+		Mounts: []MicrosandboxMount{
+			{Source: "/path/that/does/not/exist/xyz123", Target: "/workspace"},
+		},
+	}
+	_, err = spec.sandboxOptions(tempDir, "test-sb")
+	if err == nil {
+		t.Fatal("expected error for non-existent mount source, got nil")
+	}
+	if !strings.Contains(err.Error(), "sandbox mount source does not exist") {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	specValid := MicrosandboxSpec{
+		Mounts: []MicrosandboxMount{
+			{Source: sourceDir, Target: "/workspace"},
+		},
+	}
+	opts, err := specValid.sandboxOptions(tempDir, "test-sb")
+	if err != nil {
+		t.Fatalf("sandboxOptions() error = %v", err)
+	}
+	if len(opts) == 0 {
+		t.Error("expected non-empty sandbox options")
 	}
 }

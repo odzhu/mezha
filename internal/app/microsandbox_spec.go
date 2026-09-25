@@ -349,8 +349,15 @@ func (s MicrosandboxSpec) sandboxOptions(
 		if mount.Source == "" || mount.Target == "" {
 			return nil, fmt.Errorf("sandbox.mounts require source and target")
 		}
-		if !filepath.IsAbs(mount.Source) {
-			mount.Source = filepath.Join(configDir, mount.Source)
+		mount.Source = resolveConfigPath(configDir, mount.Source)
+		if _, err := os.Stat(mount.Source); err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("sandbox mount source does not exist: %s", mount.Source)
+			}
+			return nil, fmt.Errorf("sandbox mount source %s: %w", mount.Source, err)
+		}
+		if _, exists := mounts[mount.Target]; exists {
+			return nil, fmt.Errorf("duplicate sandbox mount target %q", mount.Target)
 		}
 		mounts[mount.Target] = msb.Mount.Bind(
 			mount.Source,
