@@ -283,6 +283,20 @@ func resolveConfigPaths(config *MezhaConfig, baseDir string) {
 			adds[i].Source = resolveConfigPath(baseDir, adds[i].Source)
 		}
 	}
+	if config.Microsandbox != nil && config.Microsandbox.Network.TLS != nil {
+		tls := config.Microsandbox.Network.TLS
+		tls.CACert = resolveConfigPath(baseDir, tls.CACert)
+		tls.CAKey = resolveConfigPath(baseDir, tls.CAKey)
+		for i := range tls.UpstreamCACerts {
+			tls.UpstreamCACerts[i] = resolveConfigPath(baseDir, tls.UpstreamCACerts[i])
+		}
+		for i := range tls.ScopedUpstreamCACerts {
+			tls.ScopedUpstreamCACerts[i].Path = resolveConfigPath(
+				baseDir,
+				tls.ScopedUpstreamCACerts[i].Path,
+			)
+		}
+	}
 }
 
 func resolveConfigPath(baseDir, value string) string {
@@ -319,6 +333,12 @@ memory_mib = 4096
 # value_from_env = "GITHUB_TOKEN"
 # allow_hosts = ["api.github.com"]
 # require_tls = true
+# passthrough = ["api.internal.corp"]
+# violation_action = "block-and-log"
+# [microsandbox.secrets.substitution]
+# headers = true
+# query = false
+# body = false
 
 # Bind mounts use [[microsandbox.mounts]] tables.
 # [[microsandbox.mounts]]
@@ -336,10 +356,14 @@ size_mib = 51200
 
 # [microsandbox.network]
 # default_egress = "deny"
+# default_ingress = "allow"
+# strict = true
+# dns_rebind_protection = true
 # [[microsandbox.network.rules]]
 # action = "allow"
 # direction = "egress"
 # destination = "public"
+# ports = ["80", "443"]
 
 # Resolve secrets with the SecretSpec SDK before Mezha starts the sandbox. The
 # values are exported to Mezha and can be passed into the sandbox with

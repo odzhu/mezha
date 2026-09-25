@@ -250,7 +250,19 @@ env = "GITHUB_TOKEN"
 value_from_env = "GITHUB_TOKEN"
 allow_hosts = ["api.github.com"]
 require_tls = true
+# Optional secret parameters:
+# passthrough = ["api.internal.corp"]
+# placeholder = "$MSB_TOKEN"
+# violation_action = "block-and-log" # "block", "block-and-log", "block-and-terminate"
+# [microsandbox.secrets.substitution]
+# headers = true
+# query = false
+# body = false
 ```
+
+Mezha supports all Microsandbox secret and network parameters:
+- **Secrets**: `env` / `env_var`, `value` / `value_from_env`, `allow` / `allow_hosts`, `passthrough`, `placeholder`, `require_tls` / `require_tls_identity`, `substitution` (`headers`, `query`, `body`), and `violation_action`.
+- **Network**: `default_egress`, `default_ingress`, `strict` / `disable_strict`, `policy` (`"none"` or `"allow-all"`), `profiles` (`"public"`, `"private"`, `"host"`), custom firewall `rules`, `deny_domains`, `deny_domain_suffixes`, in-VM `dns` proxy and `dns_rebind_protection`, transparent `tls` proxy (intercepted ports, bypass, custom CA and scoped certificates), connection caps (`max_tcp_connections`, `max_udp_connections`), `rate_limiter` (egress and ingress bandwidth / ops token buckets), `ports`, `ports_udp`, `port_bindings`, `ipv4_pool`, `ipv6_pool`, `secret_violation_action`, and `trust_host_cas`.
 
 Mezha statically links `libsecretspec` into its binary. `make build`, `make run`,
 and `make test` download the SecretSpec source release matching the pinned Go
