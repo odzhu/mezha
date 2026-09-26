@@ -102,6 +102,12 @@ contexts = ["workspace"]
 command = ["mezha", "herdr", "execute", "--", "sync", "remote", "repair"]
 
 [[actions]]
+id = "remote-deregister"
+title = "Deregister Mezha remote"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "sync", "remote", "deregister"]
+
+[[actions]]
 id = "logs"
 title = "Show Mezha logs"
 contexts = ["workspace"]

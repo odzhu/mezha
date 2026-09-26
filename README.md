@@ -47,6 +47,8 @@ mezha sync upload [options] [local-path] [remote-path]
 mezha sync download [options] [remote-path] [local-path]
 mezha sync pull [options]
 mezha sync push [options]
+mezha sync remote add [options]
+mezha sync remote deregister [options]
 mezha sync remote repair [options]
 mezha volume list
 mezha volume rm <name> [options]

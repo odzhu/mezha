@@ -33,6 +33,11 @@ func Destroy(ctx context.Context, rc RepoContext, params DestroyParams) error {
 	return nil
 }
 
+// UnregisterSandboxGitRemote removes the sandbox Git remote from the local repository.
+func UnregisterSandboxGitRemote(ctx context.Context, rc RepoContext, params GitParams) error {
+	return unregisterSandboxGitRemote(ctx, rc.RepoRoot, params.SandboxName)
+}
+
 func unregisterSandboxGitRemote(ctx context.Context, repoRoot, remoteName string) error {
 	remotes, err := execx.Output(ctx, "git", "-C", repoRoot, "remote")
 	if err != nil {

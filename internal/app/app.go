@@ -647,6 +647,50 @@ func newRemoteCommand() *cli.Command {
 		Usage: "Manage the sandbox Git remote",
 		Commands: []*cli.Command{
 			{
+				Name:  "add",
+				Usage: "Register or refresh the sandbox Git remote",
+				Flags: append(
+					gitCommandFlags(),
+					&cli.BoolFlag{
+						Name:  "replace-sandbox-remote",
+						Usage: "Replace an existing non-Mezha sandbox Git remote",
+					},
+				),
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					rc, err := ResolveRepoContext(ctx)
+					if err != nil {
+						return err
+					}
+					params, err := loadGitParams(cmd, rc)
+					if err != nil {
+						return err
+					}
+					return RepairSandboxGitRemote(
+						ctx,
+						rc,
+						params,
+						cmd.Bool("replace-sandbox-remote"),
+					)
+				},
+			},
+			{
+				Name:    "deregister",
+				Aliases: []string{"remove", "rm"},
+				Usage:   "Remove the sandbox Git remote from the local repository",
+				Flags:   gitCommandFlags(),
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					rc, err := ResolveRepoContext(ctx)
+					if err != nil {
+						return err
+					}
+					params, err := loadGitParams(cmd, rc)
+					if err != nil {
+						return err
+					}
+					return UnregisterSandboxGitRemote(ctx, rc, params)
+				},
+			},
+			{
 				Name:  "repair",
 				Usage: "Refresh the sandbox remote SSH configuration",
 				Flags: append(

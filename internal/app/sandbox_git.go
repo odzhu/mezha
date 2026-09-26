@@ -151,10 +151,7 @@ func pushSandboxBranchInternal(
 	if err := requireSandboxGitRemote(ctx, rc.RepoRoot, remoteName); err != nil {
 		return err
 	}
-	// Record the selected sandbox as this branch's upstream. Branch settings are
-	// stored in the host repository's shared Git config, so linked worktrees use
-	// the same sandbox tracking relationship.
-	args := []string{"push", "--set-upstream"}
+	args := []string{"push"}
 	if forceWithLease {
 		args = append(args, "--force-with-lease")
 	}
