@@ -209,8 +209,11 @@ persist_link() {
   target="$1"
   source="$2"
   mkdir -p "$source" "$(dirname "$target")"
-  if [ -L "$target" ] && [ "$(readlink "$target")" = "$source" ]; then
-    return
+  if [ -L "$target" ]; then
+    target_link=$(readlink "$target")
+    if [ "$target_link" = "$source" ] || { [ "$target" = "/root" ] && [ "$target_link" = "/nix/root" ]; }; then
+      return
+    fi
   fi
   if [ "$target" = "/root" ] && [ -d "/root" ] && [ ! -L "/root" ]; then
     cp -a /root/. "$source/" 2>/dev/null || true
@@ -221,6 +224,9 @@ persist_link() {
 persist_link /var/lib/docker /nix/mezha/services/docker
 persist_link /var/lib/rancher/k3s /nix/mezha/services/k3s
 persist_link /root /nix/mezha/root
+if [ ! -e /nix/root ]; then
+  ln -s /nix/mezha/root /nix/root
+fi
 PATH=/nix/mezha/root/.mezha/runtime-bin
 rm -rf /home
 mkdir -p /home/devenv`},

@@ -60,6 +60,10 @@ func runMicrosandbox(
 	}
 	defer func() { _ = sandbox.Detach(context.Background()) }()
 
+	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
+		return err
+	}
+
 	// Commands use the repository by default; direct Mezha sessions start in /root.
 	repoDir := params.RemoteRepoDir
 	if repoDir == "" {

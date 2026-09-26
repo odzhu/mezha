@@ -5,29 +5,7 @@
     exec = ''
       set -eu
 
-      # 1. Persistent Links
-      if [ ! -f /nix/.mezha-state-v3 ]; then
-        echo "shared persistent /nix volume is not mounted; recreate the sandbox" >&2
-        exit 1
-      fi
-      persist_link() {
-        target="$1"
-        source="$2"
-        mkdir -p "$source" "$(dirname "$target")"
-        if [ -L "$target" ] && [ "$(readlink "$target")" = "$source" ]; then
-          return
-        fi
-        if [ "$target" = "/root" ] && [ -d "/root" ] && [ ! -L "/root" ]; then
-          cp -a /root/. "$source/" 2>/dev/null || true
-        fi
-        rm -rf "$target"
-        ln -s "$source" "$target"
-      }
-      persist_link /var/lib/docker /nix/mezha/services/docker
-      persist_link /var/lib/rancher/k3s /nix/mezha/services/k3s
-      persist_link /root /nix/mezha/root
-
-      # 2. Project Directory Links
+      # 1. Project Directory Links
       if [ -n "''${MSB_PROJECT:-}" ]; then
         project="$MSB_PROJECT"
         primary="$MSB_PRIMARY"
@@ -70,7 +48,7 @@
         if [ -n "$home_primary" ]; then link_path "$primary" "$HOME/$home_primary"; fi
       fi
 
-      # 3. Bash Hook
+      # 2. Bash Hook
       bashrc="/root/.bashrc"
       touch "$bashrc"
       sed -i '/^# mezha devenv hook$/,/^eval "$(devenv hook bash)"$/d' "$bashrc"
@@ -82,7 +60,7 @@ fi
 eval "$(devenv hook bash)"
 EOF
 
-      # 4. Bash Profile
+      # 3. Bash Profile
       if [ -n "''${MSB_WORKDIR:-}" ]; then
         profile="/root/.bash_profile"
         touch "$profile"
@@ -97,7 +75,7 @@ fi
 EOF
       fi
 
-      # 5. Herdr Installation
+      # 4. Herdr Installation
       if [ -n "''${MSB_HERDR_VERSION:-}" ]; then
         binary="/nix/mezha/services/herdr/bin/herdr"
         launcher="/root/.local/bin/herdr"

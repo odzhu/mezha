@@ -44,6 +44,9 @@ func uploadDirtyRepoToMicrosandbox(
 		return err
 	}
 	defer func() { _ = sandbox.Detach(context.Background()) }()
+	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
+		return err
+	}
 	if err := ensureManagedDevenvConfig(ctx, sandbox, rc.RepoRoot); err != nil {
 		return err
 	}
@@ -109,6 +112,9 @@ func downloadDirtyRepoFromMicrosandbox(
 		return err
 	}
 	defer func() { _ = sandbox.Detach(context.Background()) }()
+	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
+		return err
+	}
 	if err := ensureManagedDevenvConfig(ctx, sandbox, rc.RepoRoot); err != nil {
 		return err
 	}

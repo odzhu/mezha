@@ -65,6 +65,10 @@ func provisionMicrosandbox(
 	defer func() { _ = sandbox.Detach(context.Background()) }()
 	fmt.Printf("Connected to Microsandbox: %s\n", params.SandboxName)
 
+	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
+		return err
+	}
+
 	herdrEnabled := params.Herdr && herdrCommandAvailable()
 
 	if err := ensureManagedDevenvConfig(ctx, sandbox, rc.RepoRoot); err != nil {
