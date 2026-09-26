@@ -216,6 +216,13 @@ func decodeConfig(config map[string]any, path string) (*MezhaConfig, string, err
 			"services configuration is no longer supported; manage provisioning parameters in devenv.nix",
 		)
 	}
+	if msb, ok := config["microsandbox"].(map[string]any); ok {
+		if _, ok := msb["workdir"]; ok {
+			return nil, "", fmt.Errorf(
+				"microsandbox.workdir is no longer supported",
+			)
+		}
+	}
 	var data bytes.Buffer
 	if err := toml.NewEncoder(&data).Encode(config); err != nil {
 		return nil, "", fmt.Errorf("encode configuration: %w", err)
@@ -347,7 +354,6 @@ version = 1
 # Nixpkgs evaluation needs more than Microsandbox's 512 MiB default.
 memory_mib = 4096
 # cpus = 2
-# workdir = "/workspace"
 
 # Secrets are sourced from the local environment and restricted to an allowlist.
 # [[microsandbox.secrets]]

@@ -74,16 +74,9 @@ func runMicrosandbox(
 	// Commands use the repository by default; direct Mezha sessions start in /root.
 	repoDir := params.RemoteRepoDir
 	if repoDir == "" {
-		repoDir = cfg.Microsandbox.Workdir
-	}
-	if repoDir == "" {
 		repoDir = "/workspace"
 	}
-	workdir := cfg.Microsandbox.Workdir
-	if workdir == "" {
-		workdir = repoDir
-	}
-	if err := ensureDevenvBashProfile(ctx, sandbox, workdir); err != nil {
+	if err := ensureDevenvBashProfile(ctx, sandbox, repoDir); err != nil {
 		return err
 	}
 	sessionWorkdir := "/root"

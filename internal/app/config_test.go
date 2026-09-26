@@ -35,6 +35,35 @@ enabled = false
 	}
 }
 
+func TestDecodeConfigRejectsWorkdir(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "mezha.toml")
+	content := `
+[microsandbox]
+workdir = "/workspace"
+`
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write test config: %v", err)
+	}
+
+	configMap, found, err := loadConfigMap(configPath)
+	if err != nil {
+		t.Fatalf("load config map: %v", err)
+	}
+	if !found {
+		t.Fatal("expected config to be found")
+	}
+
+	_, _, err = decodeConfig(configMap, configPath)
+	if err == nil {
+		t.Fatal("expected error decoding config with microsandbox.workdir, got nil")
+	}
+	expected := "microsandbox.workdir is no longer supported"
+	if err.Error() != expected {
+		t.Fatalf("expected error %q, got %q", expected, err.Error())
+	}
+}
+
 func TestDefaultConfigTemplateValid(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "mezha.toml")

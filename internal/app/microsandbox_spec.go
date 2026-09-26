@@ -19,7 +19,6 @@ import (
 type MicrosandboxSpec struct {
 	CPUs         uint8                     `toml:"cpus,omitempty"`
 	MemoryMiB    uint32                    `toml:"memory_mib,omitempty"`
-	Workdir      string                    `toml:"workdir,omitempty"`
 	Mounts       []MicrosandboxMount       `toml:"mounts,omitempty"`
 	Volumes      []MicrosandboxVolume      `toml:"volumes,omitempty"`
 	Network      MicrosandboxNetwork       `toml:"network,omitempty"`
@@ -330,9 +329,6 @@ func (s MicrosandboxSpec) sandboxOptions(
 	}
 	if s.MemoryMiB != 0 {
 		opts = append(opts, msb.WithMemory(s.MemoryMiB))
-	}
-	if s.Workdir != "" {
-		opts = append(opts, msb.WithWorkdir(s.Workdir))
 	}
 	// The native devenv image declares its user as "1000:100", which the
 	// Microsandbox guest-user resolver cannot resolve. Docker and k3s also

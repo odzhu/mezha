@@ -13,7 +13,6 @@ import (
 type MicrosandboxSpec struct {
 	CPUs         uint8                     `toml:"cpus,omitempty"`
 	MemoryMiB    uint32                    `toml:"memory_mib,omitempty"`
-	Workdir      string                    `toml:"workdir,omitempty"`
 	Mounts       []MicrosandboxMount       `toml:"mounts,omitempty"`
 	Volumes      []MicrosandboxVolume      `toml:"volumes,omitempty"`
 	Network      MicrosandboxNetwork       `toml:"network,omitempty"`
