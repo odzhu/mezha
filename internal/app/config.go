@@ -17,7 +17,6 @@ type MezhaConfig struct {
 	Microsandbox *MicrosandboxSpec `toml:"microsandbox,omitempty"`
 	Sandbox      SandboxConfig     `toml:"sandbox,omitempty"`
 	Files        FilesConfig       `toml:"files,omitempty"`
-	Provision    ProvisionConfig   `toml:"provision,omitempty"`
 	SecretSpec   SecretSpecConfig  `toml:"secretspec,omitempty"`
 }
 
@@ -39,56 +38,12 @@ type FilesConfig struct {
 	Add []FileAdd `toml:"add,omitempty"`
 }
 
-// ProvisionConfig describes initialization applied only to a new Microsandbox.
-type ProvisionConfig struct {
-	Add []FileAdd      `toml:"add,omitempty"`
-	Run []RunDirective `toml:"run,omitempty"`
-}
-
 // FileAdd is equivalent to Dockerfile ADD for local files and directories.
 // A file target ending in / is treated as a directory; directory sources copy
 // their contents into the target directory.
 type FileAdd struct {
 	Source string `toml:"source"`
 	Target string `toml:"target"`
-}
-
-// RunDirective is a command executed in the sandbox during a Mezha session.
-// TOML uses an inline table with command and shell fields.
-type RunDirective struct {
-	Command []string `toml:"command"`
-	Shell   bool     `toml:"shell"`
-}
-
-// UnmarshalTOML accepts explicit command tables. A string command uses shell
-// form; an argument array uses exec form.
-func (r *RunDirective) UnmarshalTOML(value any) error {
-	entry, ok := value.(map[string]any)
-	if !ok {
-		return fmt.Errorf("run directive must be a table with a command")
-	}
-	switch command := entry["command"].(type) {
-	case string:
-		if strings.TrimSpace(command) == "" {
-			return fmt.Errorf("run directive must not be empty")
-		}
-		r.Command = []string{command}
-		r.Shell = true
-	case []any:
-		r.Command = make([]string, len(command))
-		for i, arg := range command {
-			var ok bool
-			if r.Command[i], ok = arg.(string); !ok {
-				return fmt.Errorf("run directive arguments must be strings")
-			}
-		}
-		if len(r.Command) == 0 {
-			return fmt.Errorf("run directive must not be empty")
-		}
-	default:
-		return fmt.Errorf("run directive command must be a string or an argument list")
-	}
-	return nil
 }
 
 type SandboxConfig struct {
@@ -257,10 +212,8 @@ func expandConfigEnvValues(value any) {
 
 func resolveConfigPaths(config *MezhaConfig, baseDir string) {
 	config.SecretSpec.Path = resolveConfigPath(baseDir, config.SecretSpec.Path)
-	for _, adds := range [][]FileAdd{config.Files.Add, config.Provision.Add} {
-		for i := range adds {
-			adds[i].Source = resolveConfigPath(baseDir, adds[i].Source)
-		}
+	for i := range config.Files.Add {
+		config.Files.Add[i].Source = resolveConfigPath(baseDir, config.Files.Add[i].Source)
 	}
 	if config.Microsandbox != nil {
 		for i := range config.Microsandbox.Mounts {

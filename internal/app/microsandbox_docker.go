@@ -47,8 +47,8 @@ func devenvInteractiveShellCommand() (string, []string) {
 
 // ensureDevenvServices starts the singleton devenv process manager and waits
 // until its requested services pass their configured readiness probes.
-func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox) error {
-	hasProcesses, err := devenvHasEnabledProcesses(ctx, sandbox)
+func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox, herdrEnabled bool) error {
+	hasProcesses, err := devenvHasEnabledProcesses(ctx, sandbox, herdrEnabled)
 	if err != nil {
 		return err
 	}
@@ -56,6 +56,9 @@ func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox) error {
 		return nil
 	}
 	args := []string{"up", "--detach", "--from", "path:" + managedDevenvPath}
+	if herdrEnabled {
+		args = append(args, "--option", "processes.mezha-herdr.start.enable:bool", "true")
+	}
 	fmt.Println("Starting devenv services...")
 	code, err := sandbox.AttachWith(
 		ctx,
@@ -72,9 +75,23 @@ func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox) error {
 	}
 
 	fmt.Println("Waiting for devenv services to become ready...")
-	code, err = sandbox.AttachWith(ctx, nativeDevenvPath, []string{
-		"processes", "wait", "--from", "path:" + managedDevenvPath, "--timeout", "120",
-	}, msb.WithAttachCwd(managedDevenvPath))
+	waitArgs := []string{
+		"processes",
+		"wait",
+		"--from",
+		"path:" + managedDevenvPath,
+		"--timeout",
+		"120",
+	}
+	if herdrEnabled {
+		waitArgs = append(waitArgs, "--option", "processes.mezha-herdr.start.enable:bool", "true")
+	}
+	code, err = sandbox.AttachWith(
+		ctx,
+		nativeDevenvPath,
+		waitArgs,
+		msb.WithAttachCwd(managedDevenvPath),
+	)
 	if err != nil {
 		return fmt.Errorf("wait for devenv services: %w", err)
 	}
@@ -85,7 +102,14 @@ func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox) error {
 	return nil
 }
 
-func devenvHasEnabledProcesses(ctx context.Context, sandbox *msb.Sandbox) (bool, error) {
+func devenvHasEnabledProcesses(
+	ctx context.Context,
+	sandbox *msb.Sandbox,
+	herdrEnabled bool,
+) (bool, error) {
+	if herdrEnabled {
+		return true, nil
+	}
 	output, err := sandbox.Exec(
 		ctx,
 		nativeDevenvPath,
@@ -203,7 +227,7 @@ func ensureManagedDevenvConfig(
 		}
 	}
 
-	return ensureDevenvBashHook(ctx, sandbox)
+	return nil
 }
 
 // syncProvisionDir uploads the provision directory excluding lock files.
@@ -232,52 +256,4 @@ func syncProvisionDir(ctx context.Context, sandbox *msb.Sandbox, local, remote s
 		}
 		return sandbox.FS().CopyFromHost(ctx, path, guestPath)
 	})
-}
-
-// ensureDevenvBashHook enables directory-based devenv activation for Bash.
-func ensureDevenvBashHook(ctx context.Context, sandbox *msb.Sandbox) error {
-	output, err := sandbox.Exec(ctx, persistentRuntimeBin+"/sh", []string{"-c", `set -eu
-bashrc="/root/.bashrc"
-touch "$bashrc"
-sed -i '/^# mezha devenv hook$/,/^eval "$(devenv hook bash)"$/d' "$bashrc"
-cat >> "$bashrc" <<'EOF'
-# mezha devenv hook
-if [ "${MEZHA_HERDR_PANE:-}" = 1 ]; then
-  unset DEVENV_ROOT MEZHA_HERDR_PANE
-fi
-eval "$(devenv hook bash)"
-EOF
-`}, persistentRuntimeExecEnv())
-	if err != nil {
-		return fmt.Errorf("install devenv Bash hook: %w", err)
-	}
-	if !output.Success() {
-		return fmt.Errorf("install devenv Bash hook: %s", strings.TrimSpace(output.Stderr()))
-	}
-	return nil
-}
-
-// ensureDevenvBashProfile makes direct login shells enter the project and load its hook.
-func ensureDevenvBashProfile(ctx context.Context, sandbox *msb.Sandbox, workdir string) error {
-	output, err := sandbox.Exec(ctx, persistentRuntimeBin+"/sh", []string{"-c", `set -eu
-profile="/root/.bash_profile"
-touch "$profile"
-sed -i '/^# mezha project shell$/,/^# mezha project shell end$/d' "$profile"
-cat >> "$profile" <<EOF
-# mezha project shell
-sed -i '/^# mezha project shell$/,/^# mezha project shell end$/d' "$profile"
-cd "$1"
-if [ -f "/root/.bashrc" ]; then
-  . "/root/.bashrc"
-fi
-# mezha project shell end
-EOF
-`, "mezha-bash-profile", workdir}, persistentRuntimeExecEnv())
-	if err != nil {
-		return fmt.Errorf("install devenv Bash profile: %w", err)
-	}
-	if !output.Success() {
-		return fmt.Errorf("install devenv Bash profile: %s", strings.TrimSpace(output.Stderr()))
-	}
-	return nil
 }

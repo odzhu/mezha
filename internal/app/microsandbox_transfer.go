@@ -28,7 +28,10 @@ func uploadPathMicrosandbox(
 		return err
 	}
 	defer closeSandbox()
-	if err := ensureSandboxProjectDir(ctx, sandbox, params.RemoteRepoDir, rc.RepoRoot); err != nil {
+	if err := ensureManagedDevenvConfig(ctx, sandbox, rc.RepoRoot); err != nil {
+		return err
+	}
+	if err := runMezhaInitSandboxTask(ctx, sandbox, rc, params.RemoteRepoDir, false); err != nil {
 		return err
 	}
 	_, targetDir, err := resolveRemoteTransferPath(params.RemoteRepoDir, remotePath)
@@ -63,7 +66,10 @@ func downloadPathMicrosandbox(
 		return err
 	}
 	defer closeSandbox()
-	if err := ensureSandboxProjectDir(ctx, sandbox, params.RemoteRepoDir, rc.RepoRoot); err != nil {
+	if err := ensureManagedDevenvConfig(ctx, sandbox, rc.RepoRoot); err != nil {
+		return err
+	}
+	if err := runMezhaInitSandboxTask(ctx, sandbox, rc, params.RemoteRepoDir, false); err != nil {
 		return err
 	}
 	remote, targetDir, err := resolveRemoteTransferPath(params.RemoteRepoDir, remotePath)

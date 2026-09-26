@@ -60,40 +60,25 @@ func runMicrosandbox(
 	}
 	defer func() { _ = sandbox.Detach(context.Background()) }()
 
-	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
-		return err
-	}
-	if err := ensureSandboxProjectDir(ctx, sandbox, params.RemoteRepoDir, rc.RepoRoot); err != nil {
-		return err
-	}
-	if !sandboxExisted {
-		if err := applyProvisionConfig(ctx, sandbox, cfg.Provision); err != nil {
-			return err
-		}
-	}
 	// Commands use the repository by default; direct Mezha sessions start in /root.
 	repoDir := params.RemoteRepoDir
 	if repoDir == "" {
 		repoDir = "/workspace"
 	}
-	if err := ensureDevenvBashProfile(ctx, sandbox, repoDir); err != nil {
-		return err
-	}
 	sessionWorkdir := "/root"
 	herdrEnabled := reregisterHerdr && herdrCommandAvailable()
+
 	if err := ensureManagedDevenvConfig(ctx, sandbox, rc.RepoRoot); err != nil {
 		return err
 	}
-	if err := ensureDevenvServices(ctx, sandbox); err != nil {
+	if err := runMezhaInitSandboxTask(ctx, sandbox, rc, repoDir, herdrEnabled); err != nil {
 		return err
 	}
+	if err := ensureDevenvServices(ctx, sandbox, herdrEnabled); err != nil {
+		return err
+	}
+
 	if herdrEnabled {
-		if err := ensureSandboxHerdr(ctx, sandbox); err != nil {
-			if !sandboxExisted {
-				stopAndDestroySandbox(sandbox)
-			}
-			return err
-		}
 		if err := registerHerdrMachine(ctx, params.SandboxName); err != nil {
 			return err
 		}
@@ -313,66 +298,6 @@ func remoteCommand(command []string, noLoginShell, interactive bool) []string {
 	args = append(args, mode, script, "mezha-run")
 	args = append(args, command...)
 	return args
-}
-
-// applyProvisionConfig applies declarative initialization only after a sandbox
-// has been created. It is deliberately not repeated for existing sandboxes.
-func applyProvisionConfig(
-	ctx context.Context,
-	sandbox *msb.Sandbox,
-	provision ProvisionConfig,
-) error {
-	for i, add := range provision.Add {
-		if add.Source == "" || add.Target == "" {
-			return fmt.Errorf("provision.add entry %d requires source and target", i)
-		}
-		target := add.Target
-		info, err := os.Stat(add.Source)
-		if err != nil {
-			return fmt.Errorf("provision.add entry %d: %w", i, err)
-		}
-		if !info.IsDir() && strings.HasSuffix(target, "/") {
-			target = filepath.ToSlash(filepath.Join(target, filepath.Base(add.Source)))
-		}
-		fmt.Printf("Provisioning file %d/%d: %s...\n", i+1, len(provision.Add), add.Source)
-		pulse := progressPulse(
-			fmt.Sprintf("Provisioning file %d/%d is still running", i+1, len(provision.Add)),
-		)
-		err = nativeUpload(ctx, sandbox, add.Source, target)
-		pulse()
-		if err != nil {
-			return fmt.Errorf("provision.add entry %d: %w", i, err)
-		}
-	}
-	for i, directive := range provision.Run {
-		fmt.Printf("Running provision command %d/%d...\n", i+1, len(provision.Run))
-		var (
-			output *msb.ExecOutput
-			err    error
-		)
-		pulse := progressPulse(
-			fmt.Sprintf("Provision command %d/%d is still running", i+1, len(provision.Run)),
-		)
-		if directive.Shell {
-			output, err = sandbox.Shell(ctx, directive.Command[0])
-		} else {
-			output, err = sandbox.Exec(ctx, directive.Command[0], directive.Command[1:])
-		}
-		pulse()
-		if err != nil {
-			return fmt.Errorf("provision.run directive %d: %w", i, err)
-		}
-		fmt.Print(output.Stdout())
-		fmt.Fprint(os.Stderr, output.Stderr())
-		if !output.Success() {
-			return fmt.Errorf(
-				"provision.run directive %d exited with code %d",
-				i,
-				output.ExitCode(),
-			)
-		}
-	}
-	return nil
 }
 
 // microsandboxBranchExists identifies sandboxes that were created before a

@@ -52,10 +52,6 @@ func openMicrosandbox(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("start Microsandbox %q: %w", params.SandboxName, err)
 	}
-	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
-		_ = sandbox.Detach(context.Background())
-		return nil, nil, nil, err
-	}
 	return sandbox, cfg.Microsandbox, func() { _ = sandbox.Detach(context.Background()) }, nil
 }
 
@@ -196,44 +192,6 @@ func stateVolumeReady(
 // persistentRuntimeExecEnv makes the seeded Nix profile available to exec sessions.
 func persistentRuntimeExecEnv() msb.ExecOption {
 	return msb.WithExecEnv(map[string]string{"PATH": "/nix/mezha/root/.mezha/runtime-bin"})
-}
-
-// ensurePersistentLinks runs before any devenv shell or initialization command.
-func ensurePersistentLinks(ctx context.Context, sandbox *msb.Sandbox) error {
-	output, err := sandbox.Exec(ctx, persistentRuntimeBin+"/sh", []string{"-c", `set -eu
-if [ ! -f /nix/.mezha-state-v3 ]; then
-  echo "shared persistent /nix volume is not mounted; recreate the sandbox" >&2
-  exit 1
-fi
-persist_link() {
-  target="$1"
-  source="$2"
-  mkdir -p "$source" "$(dirname "$target")"
-  if [ -L "$target" ] && [ "$(readlink "$target")" = "$source" ]; then
-    return
-  fi
-  rm -rf "$target"
-  ln -s "$source" "$target"
-}
-persist_link /var/lib/docker /nix/mezha/services/docker
-persist_link /var/lib/rancher/k3s /nix/mezha/services/k3s
-persist_link /root /nix/mezha/root
-PATH=/nix/mezha/root/.mezha/runtime-bin
-rm -rf /home
-mkdir -p /home/devenv`},
-		msb.WithExecCwd("/"),
-		persistentRuntimeExecEnv(),
-	)
-	if err != nil {
-		return fmt.Errorf("create persistent state symlinks: %w", err)
-	}
-	if !output.Success() {
-		return fmt.Errorf(
-			"create persistent state symlinks: %s",
-			strings.TrimSpace(output.Stderr()),
-		)
-	}
-	return nil
 }
 
 // stopAndDestroySandbox gracefully stops a sandbox so the guest can unmount

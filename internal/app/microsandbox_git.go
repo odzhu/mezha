@@ -17,9 +17,6 @@ func publishBranchToMicrosandbox(
 	name, remoteDir string,
 	replace bool,
 ) error {
-	if err := ensureSandboxProjectDir(ctx, sandbox, remoteDir, rc.RepoRoot); err != nil {
-		return err
-	}
 	branch, err := currentBranch(ctx, rc.RepoRoot)
 	if err != nil {
 		return err
@@ -175,7 +172,7 @@ func setupSandboxLinkedWorktree(
 	output, err := sandbox.Exec(ctx, "sh", []string{"-eu", "-c", `
 primary="$1"; worktree="$2"; branch="$3"
 # The actual checkout is under /nix/mezha/worktrees. Host-style and configured
-# remote paths are aliases created by ensureSandboxProjectDir.
+# remote paths are aliases created by mezha:init-sandbox task.
 if [ -e "$worktree" ]; then
   git -C "$primary" worktree remove --force "$worktree" || rm -rf "$worktree"
 fi

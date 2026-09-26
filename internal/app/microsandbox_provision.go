@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/odzhu/mezha/internal/execx"
 	msb "github.com/superradcompany/microsandbox/sdk/go"
 )
 
@@ -64,28 +65,22 @@ func provisionMicrosandbox(
 	defer func() { _ = sandbox.Detach(context.Background()) }()
 	fmt.Printf("Connected to Microsandbox: %s\n", params.SandboxName)
 
-	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
-		return err
-	}
-	if err := ensureSandboxProjectDir(ctx, sandbox, params.RemoteRepoDir, rc.RepoRoot); err != nil {
-		return err
-	}
-	if !sandboxExisted {
-		if err := applyProvisionConfig(ctx, sandbox, cfg.Provision); err != nil {
-			return err
-		}
-	}
+	herdrEnabled := params.Herdr && herdrCommandAvailable()
+
 	if err := ensureManagedDevenvConfig(ctx, sandbox, rc.RepoRoot); err != nil {
 		return err
 	}
-	if err := ensureDevenvServices(ctx, sandbox); err != nil {
+	repoDir := params.RemoteRepoDir
+	if repoDir == "" {
+		repoDir = "/workspace"
+	}
+	if err := runMezhaInitSandboxTask(ctx, sandbox, rc, repoDir, herdrEnabled); err != nil {
 		return err
 	}
-	herdrEnabled := params.Herdr && herdrCommandAvailable()
+	if err := ensureDevenvServices(ctx, sandbox, herdrEnabled); err != nil {
+		return err
+	}
 	if herdrEnabled {
-		if err := ensureSandboxHerdr(ctx, sandbox); err != nil {
-			return err
-		}
 		if err := registerHerdrMachine(ctx, params.SandboxName); err != nil {
 			return err
 		}
@@ -97,20 +92,24 @@ func provisionMicrosandbox(
 	return nil
 }
 
-// ensureSandboxProjectDir creates the canonical project hierarchy and links every
-// host-style path to it. Directory hard links are not supported by Unix, so
-// symbolic links provide the required path aliases.
-func ensureSandboxProjectDir(
+func runMezhaInitSandboxTask(
 	ctx context.Context,
 	sandbox *msb.Sandbox,
-	dir, hostRepoRoot string,
+	rc RepoContext,
+	repoDir string,
+	herdrEnabled bool,
 ) error {
-	primaryRoot, linkedWorktree, err := linkedWorktreePrimaryRepoRoot(hostRepoRoot)
+	env := map[string]string{
+		"MSB_WORKDIR": repoDir,
+		"PATH":        "/nix/mezha/root/.mezha/runtime-bin",
+	}
+
+	primaryRoot, linkedWorktree, err := linkedWorktreePrimaryRepoRoot(rc.RepoRoot)
 	if err != nil {
 		return err
 	}
 	primaryName := filepath.Base(primaryRoot)
-	worktreeName := filepath.Base(hostRepoRoot)
+	worktreeName := filepath.Base(rc.RepoRoot)
 	primaryDir := filepath.ToSlash(filepath.Join("/nix/mezha/projects", primaryName))
 	projectDir := primaryDir
 	if linkedWorktree {
@@ -132,53 +131,48 @@ func ensureSandboxProjectDir(
 		return filepath.ToSlash(rel)
 	}
 
-	output, err := sandbox.Exec(ctx, "sh", []string{"-eu", "-c", `
-project="$1"; primary="$2"; remote="$3"; host_project="$4"; host_primary="$5"
-home_project="$6"; home_primary="$7"
-mkdir -p /nix/mezha/projects /nix/mezha/worktrees /root/.herdr
-# Canonical project paths are always directories. Remove stale links left by
-# earlier layouts before recreating them.
-for path in "$primary" "$project"; do
-  if [ -L "$path" ]; then rm -f "$path"; fi
-done
-mkdir -p "$primary" "$project"
+	env["MSB_PROJECT"] = projectDir
+	env["MSB_PRIMARY"] = primaryDir
+	env["MSB_REMOTE"] = repoDir
+	env["MSB_HOST_PROJECT"] = rc.RepoRoot
+	env["MSB_HOST_PRIMARY"] = primaryRoot
+	env["MSB_HOME_PROJECT"] = homeRelative(rc.RepoRoot)
+	env["MSB_HOME_PRIMARY"] = homeRelative(primaryRoot)
 
-link_path() {
-  target="$1" link="$2"
-  [ "$target" = "$link" ] && return
-  if [ -d "$link" ]; then
-    target_physical=$(CDPATH= cd "$target" && pwd -P)
-    link_physical=$(CDPATH= cd "$link" && pwd -P)
-    # A parent alias can already make this host or home path resolve to the
-    # canonical directory. Creating another link here would create a loop.
-    [ "$target_physical" = "$link_physical" ] && return
-  fi
-  mkdir -p "$(dirname "$link")"
-  if [ -e "$link" ] && [ ! -L "$link" ]; then
-    rm -rf "$link"
-  fi
-  ln -sfn "$target" "$link"
-}
-
-link_path /nix/mezha/projects /projects
-link_path /nix/mezha/worktrees /worktrees
-# These aliases were used by an earlier layout. Remove only links so an
-# unrelated real directory under /root is never deleted.
-if [ -L /root/projects ]; then rm -f /root/projects; fi
-if [ -L /root/worktrees ]; then rm -f /root/worktrees; fi
-link_path /nix/mezha/worktrees /root/.herdr/worktrees
-link_path "$project" "$remote"
-link_path "$project" "$host_project"
-link_path "$primary" "$host_primary"
-if [ -n "$home_project" ]; then link_path "$project" "$HOME/$home_project"; fi
-if [ -n "$home_primary" ]; then link_path "$primary" "$HOME/$home_primary"; fi
-`, "mezha-project-links", projectDir, primaryDir, dir, hostRepoRoot, primaryRoot,
-		homeRelative(hostRepoRoot), homeRelative(primaryRoot)})
-	if err != nil {
-		return fmt.Errorf("create sandbox project directory: %w", err)
+	if herdrEnabled {
+		versionOutput, err := execx.Output(ctx, "herdr", "--version")
+		if err != nil {
+			return fmt.Errorf("get Herdr version: %w", err)
+		}
+		matches := herdrVersion.FindStringSubmatch(strings.TrimSpace(string(versionOutput)))
+		if matches == nil {
+			return fmt.Errorf(
+				"unrecognized Herdr version %q",
+				strings.TrimSpace(string(versionOutput)),
+			)
+		}
+		env["MSB_HERDR_VERSION"] = matches[1]
 	}
-	if !output.Success() {
-		return fmt.Errorf("create sandbox project directory: %s", output.Stderr())
+
+	fmt.Printf("Running mezha:init-sandbox task...\n")
+	code, err := sandbox.AttachWith(ctx, nativeDevenvPath, []string{
+		"tasks",
+		"run",
+		"mezha:init-sandbox",
+		"--show-output",
+		"--from",
+		"path:" + managedDevenvPath,
+	}, msb.WithAttachEnv(env))
+	if err != nil {
+		return fmt.Errorf("run mezha:init-sandbox task: %w", err)
+	}
+	if code != 0 {
+		return fmt.Errorf("run mezha:init-sandbox task exited with code %d", code)
+	}
+	if herdrEnabled {
+		if err := syncSandboxHerdrConfig(ctx, sandbox); err != nil {
+			return err
+		}
 	}
 	return nil
 }

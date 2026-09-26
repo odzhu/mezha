@@ -43,7 +43,7 @@ func Upload(ctx context.Context, rc RepoContext, params UploadParams) error {
 			ctx,
 			params.SandboxName,
 			params.RemoteRepoDir,
-			rc.RepoRoot,
+			rc,
 			dirty,
 		)
 	}
@@ -60,7 +60,7 @@ func Download(ctx context.Context, rc RepoContext, params DownloadParams) error 
 			ctx,
 			params.SandboxName,
 			params.RemoteRepoDir,
-			rc.RepoRoot,
+			rc,
 		)
 	}
 	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
