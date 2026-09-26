@@ -20,7 +20,7 @@ type MezhaConfig struct {
 	Services     ServicesConfig    `toml:"services,omitempty"`
 	Files        FilesConfig       `toml:"files,omitempty"`
 	Provision    ProvisionConfig   `toml:"provision,omitempty"`
-	Run          []RunDirective    `toml:"run,omitempty"`
+	SecretSpec   SecretSpecConfig  `toml:"secretspec,omitempty"`
 }
 
 // ServicesConfig controls services available inside the sandbox.
@@ -32,6 +32,16 @@ type ServicesConfig struct {
 // ServiceConfig controls an individual sandbox service.
 type ServiceConfig struct {
 	Enabled bool `toml:"enabled,omitempty"`
+}
+
+// SecretSpecConfig configures host-side SecretSpec resolution for Mezha sessions.
+type SecretSpecConfig struct {
+	Enabled  bool   `toml:"enabled,omitempty"`
+	Path     string `toml:"path,omitempty"`
+	Provider string `toml:"provider,omitempty"`
+	Profile  string `toml:"profile,omitempty"`
+	Scope    string `toml:"scope,omitempty"`
+	Reason   string `toml:"reason,omitempty"`
 }
 
 // FilesConfig describes local paths to add to the sandbox during a Mezha session.
@@ -115,6 +125,15 @@ type SandboxConfig struct {
 // HomeConfigDir returns MEZHA_HOME or the default mezha home directory (~/.mezha).
 func HomeConfigDir() (string, error) {
 	if dir := os.Getenv("MEZHA_HOME"); dir != "" {
+		if dir == "~" {
+			if home, err := os.UserHomeDir(); err == nil {
+				return home, nil
+			}
+		} else if strings.HasPrefix(dir, "~/") || strings.HasPrefix(dir, `~\`) {
+			if home, err := os.UserHomeDir(); err == nil {
+				return filepath.Join(home, dir[2:]), nil
+			}
+		}
 		return filepath.Clean(dir), nil
 	}
 	home, err := os.UserHomeDir()
@@ -267,15 +286,50 @@ func expandConfigEnvValues(value any) {
 }
 
 func resolveConfigPaths(config *MezhaConfig, baseDir string) {
+	config.SecretSpec.Path = resolveConfigPath(baseDir, config.SecretSpec.Path)
 	for _, adds := range [][]FileAdd{config.Files.Add, config.Provision.Add} {
 		for i := range adds {
 			adds[i].Source = resolveConfigPath(baseDir, adds[i].Source)
 		}
 	}
+	if config.Microsandbox != nil {
+		for i := range config.Microsandbox.Mounts {
+			config.Microsandbox.Mounts[i].Source = resolveConfigPath(
+				baseDir,
+				config.Microsandbox.Mounts[i].Source,
+			)
+		}
+		if config.Microsandbox.Network.TLS != nil {
+			tls := config.Microsandbox.Network.TLS
+			tls.CACert = resolveConfigPath(baseDir, tls.CACert)
+			tls.CAKey = resolveConfigPath(baseDir, tls.CAKey)
+			for i := range tls.UpstreamCACerts {
+				tls.UpstreamCACerts[i] = resolveConfigPath(baseDir, tls.UpstreamCACerts[i])
+			}
+			for i := range tls.ScopedUpstreamCACerts {
+				tls.ScopedUpstreamCACerts[i].Path = resolveConfigPath(
+					baseDir,
+					tls.ScopedUpstreamCACerts[i].Path,
+				)
+			}
+		}
+	}
 }
 
 func resolveConfigPath(baseDir, value string) string {
-	if value == "" || filepath.IsAbs(value) {
+	if value == "" {
+		return value
+	}
+	if value == "~" {
+		if home, err := os.UserHomeDir(); err == nil {
+			return home
+		}
+	} else if strings.HasPrefix(value, "~/") || strings.HasPrefix(value, `~\`) {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, value[2:])
+		}
+	}
+	if filepath.IsAbs(value) {
 		return value
 	}
 	return filepath.Join(baseDir, value)
@@ -302,9 +356,18 @@ memory_mib = 4096
 # cpus = 2
 # workdir = "/workspace"
 
-# GOPATH defaults to /sandbox/go when it is not explicitly configured.
-[microsandbox.env]
-MODE = "development"
+# Secrets are sourced from the local environment and restricted to an allowlist.
+# [[microsandbox.secrets]]
+# env = "GITHUB_TOKEN"
+# value_from_env = "GITHUB_TOKEN"
+# allow_hosts = ["api.github.com"]
+# require_tls = true
+# passthrough = ["api.internal.corp"]
+# violation_action = "block-and-log"
+# [microsandbox.secrets.substitution]
+# headers = true
+# query = false
+# body = false
 
 # Bind mounts use [[microsandbox.mounts]] tables.
 # [[microsandbox.mounts]]
@@ -322,10 +385,25 @@ size_mib = 51200
 
 # [microsandbox.network]
 # default_egress = "deny"
+# default_ingress = "allow"
+# strict = true
+# dns_rebind_protection = true
 # [[microsandbox.network.rules]]
 # action = "allow"
 # direction = "egress"
 # destination = "public"
+# ports = ["80", "443"]
+
+# Resolve secrets with the SecretSpec SDK before Mezha starts the sandbox. The
+# values are exported to Mezha and can be passed into the sandbox with
+# [[microsandbox.secrets]] entries above.
+# [secretspec]
+# enabled = true
+# provider = "keyring"
+# profile = "devtools"
+# path = "secretspec.toml"
+# scope = "sandbox"
+# reason = "start development sandbox"
 
 # Docker, k3s, Git, Lazygit, and GitHub CLI are provided by .mezha/devenv.nix.
 [services.docker]
@@ -341,13 +419,7 @@ herdr = false
 # Initialization applied only when a new sandbox is provisioned.
 [[provision.add]]
 source = ".mezha/devenv.nix"
-target = "/sandbox/devenv.nix"
-
-# Commands use tables: command may be a shell string or an exec-form array.
-# [[run]]
-# command = "apk add --no-cache git"
-# [[run]]
-# command = ["git", "config", "--global", "init.defaultBranch", "main"]
+target = "/root/.config/mezha/services/devenv/user-devenv.nix"
 `
 }
 

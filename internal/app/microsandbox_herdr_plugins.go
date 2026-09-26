@@ -168,13 +168,13 @@ func runSandboxHerdr(ctx context.Context, sandbox *msb.Sandbox, args ...string) 
 }
 
 func runSandboxHerdrInDevenv(ctx context.Context, sandbox *msb.Sandbox, args ...string) error {
-	const pluginDevenvPath = "/root/.mezha/herdr-plugin-devenv"
+	const pluginDevenvPath = "/tmp/mezha-herdr-plugin"
 	setup, err := sandbox.Exec(ctx, "sh", []string{"-c", `set -eu
 mkdir -p "$1"
 cat >"$1/devenv.nix" <<'EOF'
 { pkgs, ... }:
 {
-  imports = [ /sandbox/devenv.nix ];
+  imports = [ /root/.config/mezha/services/devenv/devenv.nix ];
   packages = [ pkgs.go ];
   scripts.mezha-herdr.exec = ''
     export PATH=${pkgs.go}/bin:$PATH
@@ -192,6 +192,8 @@ EOF
 			strings.TrimSpace(setup.Stderr()),
 		)
 	}
+	// This devenv project is only needed while installing a plugin.
+	defer func() { _ = removeSandboxPath(context.Background(), sandbox, pluginDevenvPath) }()
 	command := append(
 		[]string{"shell", "--from", "path:" + pluginDevenvPath, "--", "mezha-herdr"},
 		args...,

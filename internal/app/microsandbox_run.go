@@ -18,7 +18,7 @@ func runMicrosandbox(
 	params RunParams,
 	cfg *MezhaConfig,
 ) error {
-	if err := msb.EnsureInstalled(ctx); err != nil {
+	if _, err := msb.EnsureRuntime(ctx, msb.RuntimeConfig{}, msb.InstallOptions{}); err != nil {
 		return fmt.Errorf("install Microsandbox runtime: %w", err)
 	}
 	_, lookupErr := msb.GetSandbox(ctx, params.SandboxName)
@@ -34,6 +34,9 @@ func runMicrosandbox(
 			if err := handle.Destroy(ctx, msb.WithDestroyForce()); err != nil {
 				return fmt.Errorf("recreate sandbox %q: %w", params.SandboxName, err)
 			}
+			if err := clearHerdrSSHControlSockets(); err != nil {
+				return err
+			}
 		}
 		if params.VolumesFlush {
 			if err := flushMicrosandboxVolumes(ctx, params.SandboxName); err != nil {
@@ -43,9 +46,6 @@ func runMicrosandbox(
 		sandboxExisted = false
 	}
 	if !sandboxExisted {
-		if err := ensureDevenvImage(ctx, rc.RepoRoot); err != nil {
-			return fmt.Errorf("import Microsandbox image: %w", err)
-		}
 		if err := ensureStateVolume(ctx, params.SandboxName, *cfg.Microsandbox); err != nil {
 			return err
 		}
@@ -63,13 +63,15 @@ func runMicrosandbox(
 	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
 		return err
 	}
+	if err := ensureSandboxProjectDir(ctx, sandbox, params.RemoteRepoDir, rc.RepoRoot); err != nil {
+		return err
+	}
 	if !sandboxExisted {
 		if err := applyProvisionConfig(ctx, sandbox, cfg.Provision); err != nil {
 			return err
 		}
 	}
-	// The repository is the default working directory. A microsandbox.workdir
-	// explicitly overrides it for commands that intentionally run elsewhere.
+	// Commands use the repository by default; direct Mezha sessions start in /root.
 	repoDir := params.RemoteRepoDir
 	if repoDir == "" {
 		repoDir = cfg.Microsandbox.Workdir
@@ -81,16 +83,14 @@ func runMicrosandbox(
 	if workdir == "" {
 		workdir = repoDir
 	}
-	herdrWorkdir := cfg.Microsandbox.Workdir
-	if herdrWorkdir == "" {
-		herdrWorkdir = "/sandbox"
+	if err := ensureDevenvBashProfile(ctx, sandbox, workdir); err != nil {
+		return err
 	}
+	sessionWorkdir := "/root"
 	herdrEnabled := reregisterHerdr && herdrCommandAvailable()
 	useDevenv := cfg.Services.Docker.Enabled || params.Kubernetes
-	if useDevenv || herdrEnabled {
-		if err := ensureManagedDevenvConfig(ctx, sandbox, cfg.Provision); err != nil {
-			return err
-		}
+	if err := ensureManagedDevenvConfig(ctx, sandbox, cfg.Provision); err != nil {
+		return err
 	}
 	if useDevenv {
 		if err := ensureDevenvServices(ctx, sandbox, params.Kubernetes); err != nil {
@@ -98,18 +98,13 @@ func runMicrosandbox(
 		}
 	}
 	if herdrEnabled {
-		if err := ensureSandboxHerdr(
-			ctx,
-			sandbox,
-			herdrWorkdir,
-			useDevenv,
-		); err != nil {
+		if err := ensureSandboxHerdr(ctx, sandbox, useDevenv); err != nil {
 			if !sandboxExisted {
 				stopAndDestroySandbox(sandbox)
 			}
 			return err
 		}
-		if err := registerHerdrMachine(ctx, params.SandboxName, !sandboxExisted); err != nil {
+		if err := registerHerdrMachine(ctx, params.SandboxName); err != nil {
 			return err
 		}
 		if err := syncHerdrPlugins(ctx, sandbox); err != nil {
@@ -117,17 +112,24 @@ func runMicrosandbox(
 		}
 	}
 
+	branch, err := currentBranch(ctx, rc.RepoRoot)
+	if err != nil {
+		return err
+	}
 	needsPublish := !sandboxExisted
 	if sandboxExisted {
-		branch, err := currentBranch(ctx, rc.RepoRoot)
-		if err != nil {
-			return err
-		}
 		hasBranch, err := microsandboxBranchExists(ctx, sandbox, repoDir, branch)
 		if err != nil {
 			return err
 		}
 		needsPublish = !hasBranch
+		if rc.IsLinkedWorktree && !needsPublish {
+			linkedWorktreeExists, err := microsandboxLinkedWorktreeExists(ctx, sandbox, repoDir)
+			if err != nil {
+				return err
+			}
+			needsPublish = !linkedWorktreeExists
+		}
 	}
 	if needsPublish {
 		if err := publishBranchToMicrosandbox(
@@ -140,6 +142,16 @@ func runMicrosandbox(
 		); err != nil {
 			return err
 		}
+	} else if primaryBranch, err := sandboxPrimaryBranch(ctx, rc, branch); err != nil {
+		return err
+	} else if err := repairSandboxPrimaryBranch(
+		ctx,
+		sandbox,
+		canonicalSandboxProjectPaths(rc).primary,
+		primaryBranch,
+		rc.IsLinkedWorktree,
+	); err != nil {
+		return err
 	} else if err := syncSandboxGitIdentity(ctx, sandbox, rc.RepoRoot, repoDir); err != nil {
 		return err
 	} else if err := repairMicrosandboxGitRemote(
@@ -150,51 +162,28 @@ func runMicrosandbox(
 	); err != nil {
 		return err
 	}
-
-	for i, directive := range cfg.Run {
-		var output *msb.ExecOutput
-		if cfg.Services.Docker.Enabled || params.Kubernetes {
-			if directive.Shell {
-				command, args := dockerCommand(
-					"sh",
-					[]string{"-c", directive.Command[0]},
-					params.Kubernetes,
-				)
-				output, err = sandbox.Exec(ctx, command, args, msb.WithExecCwd(workdir))
-			} else {
-				command, args := dockerCommand(
-					directive.Command[0],
-					directive.Command[1:],
-					params.Kubernetes,
-				)
-				output, err = sandbox.Exec(ctx, command, args, msb.WithExecCwd(workdir))
-			}
-		} else if directive.Shell {
-			output, err = sandbox.Shell(ctx, directive.Command[0], msb.WithExecCwd(workdir))
-		} else {
-			output, err = sandbox.Exec(
-				ctx,
-				directive.Command[0],
-				directive.Command[1:],
-				msb.WithExecCwd(workdir),
-			)
-		}
-		if err != nil {
-			return fmt.Errorf("run directive %d: %w", i, err)
-		}
-		fmt.Print(output.Stdout())
-		fmt.Fprint(os.Stderr, output.Stderr())
-		if !output.Success() {
-			return fmt.Errorf("run directive %d exited with code %d", i, output.ExitCode())
+	if rc.IsLinkedWorktree {
+		if err := attachSandboxLinkedWorktreeBranch(
+			ctx,
+			sandbox,
+			canonicalSandboxProjectPaths(rc).worktree,
+			branch,
+		); err != nil {
+			return err
 		}
 	}
+
 	if len(params.RemoteCommand) != 0 {
-		command, args := remoteCommand(params.RemoteCommand, params.NoLoginShell)
-		if cfg.Services.Docker.Enabled || params.Kubernetes {
-			command, args = dockerCommand(command, args, params.Kubernetes)
-		}
-		if interactiveTTYEnabled(params.TTY) {
-			code, err := sandbox.AttachWith(ctx, command, args, sandboxAttachOptions(workdir)...)
+		interactive := interactiveTTYEnabled(params.TTY)
+		command, args := devenvBashCommand(
+			remoteCommand(params.RemoteCommand, params.NoLoginShell, interactive),
+		)
+		if interactive {
+			code, err := sandbox.AttachWith(
+				ctx,
+				command,
+				args,
+				sandboxAttachOptions(sessionWorkdir)...)
 			if err != nil {
 				return err
 			}
@@ -204,7 +193,7 @@ func runMicrosandbox(
 			return nil
 		}
 
-		output, err := sandbox.Exec(ctx, command, args, msb.WithExecCwd(workdir))
+		output, err := sandbox.Exec(ctx, command, args, msb.WithExecCwd(sessionWorkdir))
 		if err != nil {
 			return err
 		}
@@ -218,36 +207,36 @@ func runMicrosandbox(
 	if !interactiveTTYEnabled(params.TTY) {
 		return fmt.Errorf("interactive shell requires a terminal; pass a command after --")
 	}
-	devenv, err := sandboxCommandPath(ctx, sandbox, workdir, "devenv")
+	devenv, err := sandboxCommandPath(ctx, sandbox, sessionWorkdir, "devenv")
 	if err != nil {
 		return err
 	}
 	if devenv != "" {
-		command, args := devenv, []string{"shell", "--no-reload"}
-		if cfg.Services.Docker.Enabled || params.Kubernetes {
-			// dockerCommand already starts the managed devenv shell. Wrapping a
-			// second `devenv shell` here runs its enterShell tasks twice.
-			command, args = dockerCommand("bash", nil, params.Kubernetes)
+		command, args := devenvInteractiveShellCommand()
+		code, attachErr := sandbox.AttachWith(
+			ctx,
+			command,
+			args,
+			sandboxAttachOptions(sessionWorkdir)...)
+		if attachErr == nil && code == 0 {
+			return nil
 		}
-		code, err := sandbox.AttachWith(ctx, command, args, sandboxAttachOptions(workdir)...)
-		if err != nil {
-			return err
+		if attachErr != nil {
+			fmt.Fprintf(os.Stderr, "devenv shell failed (%v); falling back to bash\n", attachErr)
+		} else {
+			fmt.Fprintf(os.Stderr, "devenv shell exited with code %d; falling back to bash\n", code)
 		}
-		if code != 0 {
-			return fmt.Errorf("devenv shell exited with code %d", code)
-		}
-		return nil
 	}
 
 	// AttachShell cannot accept a working-directory override. Use AttachWith
-	// so an interactive shell starts in the repository. Prefer bash and use sh
-	// only when bash is unavailable.
-	shell, err := sandboxCommandPath(ctx, sandbox, workdir, "bash")
+	// so an interactive shell starts in /root. Prefer bash and use sh only when
+	// bash is unavailable. Do not wrap this fallback in devenv.
+	shell, err := sandboxCommandPath(ctx, sandbox, sessionWorkdir, "bash")
 	if err != nil {
 		return err
 	}
 	if shell == "" {
-		shell, err = sandboxCommandPath(ctx, sandbox, workdir, "sh")
+		shell, err = sandboxCommandPath(ctx, sandbox, sessionWorkdir, "sh")
 		if err != nil {
 			return err
 		}
@@ -259,10 +248,7 @@ func runMicrosandbox(
 	if !params.NoLoginShell && filepath.Base(shell) == "bash" {
 		shellArgs = []string{"-lc", shellBootstrap() + "; exec \"$0\" -l", shell}
 	}
-	if cfg.Services.Docker.Enabled || params.Kubernetes {
-		shell, shellArgs = dockerCommand(shell, shellArgs, params.Kubernetes)
-	}
-	code, err := sandbox.AttachWith(ctx, shell, shellArgs, sandboxAttachOptions(workdir)...)
+	code, err := sandbox.AttachWith(ctx, shell, shellArgs, sandboxAttachOptions(sessionWorkdir)...)
 	if err != nil {
 		return err
 	}
@@ -311,22 +297,32 @@ func sandboxAttachOptions(workdir string) []msb.AttachOption {
 func shellBootstrap() string {
 	cols, rows := terminalSize(int(os.Stdout.Fd()))
 	return fmt.Sprintf(
-		`if [ -t 0 ]; then stty rows %d cols %d 2>/dev/null || :; fi; if [ -d "$HOME/.nix-profile/bin" ]; then PATH="$HOME/.nix-profile/bin:$PATH"; export PATH; fi`,
+		`if [ -t 0 ]; then stty rows %d cols %d 2>/dev/null || :; fi; if [ -d "/nix/mezha/root/.mezha/runtime-bin" ]; then PATH="/nix/mezha/root/.mezha/runtime-bin:$PATH"; export PATH; fi; if [ -d "$HOME/.nix-profile/bin" ]; then PATH="$HOME/.nix-profile/bin:$PATH"; export PATH; fi`,
 		rows,
 		cols,
 	)
 }
 
-// remoteCommand runs commands through a login shell by default. The fixed
+// remoteCommand returns Bash arguments for a direct Mezha command. The fixed
 // script preserves every command argument without shell interpolation.
-func remoteCommand(command []string, noLoginShell bool) (string, []string) {
+func remoteCommand(command []string, noLoginShell, interactive bool) []string {
+	mode := "-lc"
+	bootstrap := shellBootstrap() + "; "
+	if interactive {
+		mode = "-ilc"
+	}
 	if noLoginShell {
-		return command[0], command[1:]
+		mode = "-c"
+		bootstrap = ""
 	}
 	args := make([]string, 0, len(command)+4)
-	args = append(args, "-lc", shellBootstrap()+`; exec "$@"`, "mezha-run")
+	script := bootstrap + `exec devenv shell --no-tui --quiet -- "$@"`
+	if noLoginShell {
+		script = `exec "$@"`
+	}
+	args = append(args, mode, script, "mezha-run")
 	args = append(args, command...)
-	return "bash", args
+	return args
 }
 
 // applyProvisionConfig applies declarative initialization only after a sandbox
@@ -401,7 +397,7 @@ func microsandboxBranchExists(
 		"sh",
 		[]string{
 			"-c",
-			`test -d "$1/.git" && git -C "$1" rev-parse --verify --quiet "$2"`,
+			`test -e "$1/.git" && git -C "$1" rev-parse --verify --quiet "$2"`,
 			"mezha-check-repo",
 			repoDir,
 			"refs/heads/" + branch,
@@ -409,6 +405,23 @@ func microsandboxBranchExists(
 	)
 	if err != nil {
 		return false, fmt.Errorf("check Microsandbox repository branch: %w", err)
+	}
+	return output.Success(), nil
+}
+
+func microsandboxLinkedWorktreeExists(
+	ctx context.Context,
+	sandbox *msb.Sandbox,
+	repoDir string,
+) (bool, error) {
+	output, err := sandbox.Exec(ctx, "sh", []string{
+		"-c",
+		`test -f "$1/.git" && grep -q '^gitdir: ' "$1/.git"`,
+		"mezha-check-linked-worktree",
+		repoDir,
+	})
+	if err != nil {
+		return false, fmt.Errorf("check Microsandbox linked worktree: %w", err)
 	}
 	return output.Success(), nil
 }

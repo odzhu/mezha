@@ -16,7 +16,8 @@ Declarative agent sandboxes powered by Microsandbox.
 
 - Go
 - Microsandbox-supported local virtualization host (KVM on Linux or Apple Silicon on macOS)
-- a local Docker-compatible daemon to import the native devenv image
+- network access to pull the native devenv image from GHCR on first use
+- when SecretSpec integration is enabled, a C compiler, Cargo, and Rust (the build stages SecretSpec's static library)
 
 ## Build
 
@@ -33,6 +34,7 @@ mezha [run-options] [-- command...]
 mezha run [run-options] [-- command...]
 mezha init [options]
 mezha sandbox list
+mezha image pull
 mezha sandbox create [options]
 mezha sandbox recreate [options]
 mezha sandbox start [options]
@@ -55,6 +57,8 @@ Examples:
 ```bash
 mezha init
 mezha sandbox list
+# Refresh the cached ghcr.io/cachix/devenv/devenv:latest image.
+mezha image pull
 mezha volume list
 mezha
 mezha -- git status
@@ -89,9 +93,14 @@ mezha sandbox destroy --volumes-flush
 
 Run `mezha init` in a repository to create `mezha.toml` and
 `.mezha/devenv.nix`. By default, Mezha generates a sandbox name for the current
-repository and Git ref. Use `--sandbox <name>` (or `-s <name>`) with the default session, `sandbox`,
+repository. Use `--sandbox <name>` (or `-s <name>`) with the default session, `sandbox`,
 and `sync` commands to select a reusable sandbox instead. Each project is kept
-in its own `/sandbox/<project>` directory. A Git remote named after the selected
+in its own `/root/<project>` directory, where `<project>` exactly matches the
+host repository folder name. `sandbox.remote_dir`, `MICROSANDBOX_REMOTE_REPO_DIR`,
+and `--remote-dir` may choose the sandbox location but must end in that same
+folder name; Mezha rejects a mismatched path. Mezha also creates a sandbox
+symlink at the repository's absolute host path that points to this project
+directory, allowing sandbox tools to resolve host-style project paths. A Git remote named after the selected
 sandbox is added to the host repository, so the same repository can synchronize
 with multiple sandboxes.
 
@@ -159,7 +168,7 @@ enabled = true
 [sandbox]
 # Default sandbox selection; --sandbox overrides it.
 # name = "development"
-# remote_dir = "/sandbox/my-project"
+# remote_dir = "/root/my-project"
 # policy_advisor = true
 # Register the sandbox with Herdr and synchronize local plugins.
 herdr = false
@@ -167,11 +176,7 @@ herdr = false
 # This devenv.nix declaratively provides Docker, k3s, kubectl, Git, Lazygit, and GitHub CLI.
 [[provision.add]]
 source = ".mezha/devenv.nix"
-target = "/sandbox/devenv.nix"
-
-# Commands use [[run]] tables. command may be a shell string or an exec-form array.
-# [[run]]
-# command = "apk add --no-cache git"
+target = "/root/.config/mezha/services/devenv/user-devenv.nix"
 ```
 
 `provision.add` and `provision.run` are applied only when a sandbox is first created.
@@ -179,13 +184,12 @@ target = "/sandbox/devenv.nix"
 devenv services, but does not publish, upload, or otherwise synchronize repository
 data. Mezha seeds the complete `/nix` directory into the shared `state` volume, which
 is mounted at `/nix`. The temporary state-volume provisioning sandbox receives
-the same `microsandbox.env`, `microsandbox.network`, and `microsandbox.secrets`
-configuration (including secret host allowlists) as the primary sandbox. It then symlinks `/home`, `/root`, `/sandbox`,
-`/var/lib/docker`, and `/var/lib/rancher/k3s` into that volume before any
-initialization command or devenv shell runs. Mezha defaults `GOPATH` to `/sandbox/go` unless it is
-explicitly configured in `microsandbox.env`. The default `provision.add` installs
+the same `microsandbox.network` and `microsandbox.secrets`
+configuration (including secret host allowlists) as the primary sandbox. It then symlinks `/root`,
+`/var/lib/docker`, and `/var/lib/rancher/k3s` into that volume before any initialization command
+or devenv shell runs; `/home` remains empty. The default `provision.add` installs
 Mezha's `.mezha/devenv.nix` at
-`/sandbox/devenv.nix`. It uses devenv `packages` for Docker, k3s, kubectl, Git,
+`/root/.config/mezha/services/devenv/user-devenv.nix`. It uses devenv `packages` for Docker, k3s, kubectl, Git,
 Lazygit, GitHub CLI, Go, Groff, Less, and `col`. It configures Groff and the
 manpage pager so captured help output is plain text rather than raw formatting
 control sequences. Mezha declares Docker and k3s as supervised `processes` in its managed devenv
@@ -203,14 +207,68 @@ state are stored in the shared persistent volume.
 k3s uses Docker as its container runtime, so Docker-built images are immediately
 available to Kubernetes. Named volume names are automatically prefixed with the
 sandbox name, so each sandbox receives its own volume. Volumes are retained when
-the sandbox is recreated or destroyed; this includes the Nix store, the complete
-`/sandbox` workspace, `/home`, and `/root` with their caches and configuration, avoiding
-repeated downloads and evaluation after
+the sandbox is recreated or destroyed; this includes the Nix store and `/root` with its project
+workspaces, caches, and configuration, avoiding repeated downloads and evaluation after
 `mezha --recreate`. Use `--volumes-flush` with
 `mezha sandbox destroy`, or with `mezha --recreate`, only when a clean set of
-persistent volumes is required. Entries in `run` execute before the requested
-command. In TOML, `[[run]]` entries use a string `command` for shell form or
-an array `command` for exec form.
+persistent volumes is required.
+
+## SecretSpec integration
+
+Mezha can resolve a project’s `secretspec.toml` with the SecretSpec Go SDK before
+starting or provisioning a sandbox. This replaces a host-side wrapper such as:
+
+```sh
+secretspec run --provider keyring --profile devtools -- mezha --sandbox sandbox1 -- nvim
+```
+
+with:
+
+```sh
+mezha --sandbox sandbox1 -- nvim
+```
+
+Enable it in `mezha.toml` and configure the equivalent SecretSpec options:
+
+```toml
+[secretspec]
+enabled = true
+provider = "keyring"
+profile = "devtools"
+# path = "secretspec.toml" # optional; the default is SecretSpec's manifest search
+# scope = "sandbox"
+# reason = "start development sandbox"
+```
+
+Resolved values are exported only to the Mezha process. To pass a value to the
+Microsandbox, explicitly declare it in `[[microsandbox.secrets]]`; this keeps
+Microsandbox’s host allowlist and TLS policy in effect:
+
+```toml
+[[microsandbox.secrets]]
+env = "GITHUB_TOKEN"
+value_from_env = "GITHUB_TOKEN"
+allow_hosts = ["api.github.com"]
+require_tls = true
+# Optional secret parameters:
+# passthrough = ["api.internal.corp"]
+# placeholder = "$MSB_TOKEN"
+# violation_action = "block-and-log" # "block", "block-and-log", "block-and-terminate"
+# [microsandbox.secrets.substitution]
+# headers = true
+# query = false
+# body = false
+```
+
+Mezha supports all Microsandbox secret and network parameters:
+- **Secrets**: `env` / `env_var`, `value` / `value_from_env`, `allow` / `allow_hosts`, `passthrough`, `placeholder`, `require_tls` / `require_tls_identity`, `substitution` (`headers`, `query`, `body`), and `violation_action`.
+- **Network**: `default_egress`, `default_ingress`, `strict` / `disable_strict`, `policy` (`"none"` or `"allow-all"`), `profiles` (`"public"`, `"private"`, `"host"`), custom firewall `rules`, `deny_domains`, `deny_domain_suffixes`, in-VM `dns` proxy and `dns_rebind_protection`, transparent `tls` proxy (intercepted ports, bypass, custom CA and scoped certificates), connection caps (`max_tcp_connections`, `max_udp_connections`), `rate_limiter` (egress and ingress bandwidth / ops token buckets), `ports`, `ports_udp`, `port_bindings`, `ipv4_pool`, `ipv6_pool`, `secret_violation_action`, and `trust_host_cas`.
+
+Mezha statically links `libsecretspec` into its binary. `make build`, `make run`,
+and `make test` download the SecretSpec source release matching the pinned Go
+SDK, verify its checksum, and build its static archive on the first run. This
+requires Cargo, Rust, and a C compiler at build time, but neither
+`libsecretspec` nor `SECRETSPEC_FFI_LIB` is needed at runtime.
 
 ## Herdr integration
 
@@ -237,10 +295,20 @@ default session overrides the configured value for that invocation.
 The registration is idempotent and uses Mezha's sandbox SSH proxy. Mezha
 installs the matching Linux Herdr release in the sandbox before registration,
 then records its SSH host key for Herdr's strict saved-machine connection.
-New Herdr panes use Mezha's configured working directory and shell environment.
+New Herdr panes start in `/root` and use the environment inherited from the remote Herdr server. Mezha launches that server through its
+managed `devenv` environment, trusts its managed service configuration with `devenv allow`, and
+adds `eval "$(devenv hook bash)"` to root's `.bashrc`. The server retains the devenv environment
+but marks each Herdr parent pane as not already activated, allowing that hook to
+activate the managed environment when a user enters it. The marker is consumed
+before the hook starts its child shell, so that child retains its active-project
+marker and does not recursively re-enter devenv. Herdr's pane shell remains a
+direct `bash` process so plugins can reliably send startup commands as soon as a
+pane is ready.
 Mezha also natively installs GitHub-managed local Herdr plugins in the sandbox,
 preserves their enabled state, and copies each plugin's local configuration
-directory. Plugin installation and build commands run through Mezha's managed
+directory. It also copies the local Herdr `[keys]` configuration, so
+`plugin_action` hotkeys (such as herdr-plus) work on the remote Herdr server.
+Plugin installation and build commands run through Mezha's managed
 `devenv` environment. The generated `.mezha/devenv.nix` includes Go for native
 plugin builds; add other plugin-specific build tools there. `mezha sandbox destroy`
 removes the corresponding saved Herdr machine profile. Herdr

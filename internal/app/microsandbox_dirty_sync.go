@@ -43,6 +43,9 @@ func uploadDirtyRepoToMicrosandbox(
 		return err
 	}
 	defer func() { _ = sandbox.Detach(context.Background()) }()
+	if err := ensureSandboxProjectDir(ctx, sandbox, remoteRepoDir, repoRoot); err != nil {
+		return err
+	}
 	createdDirs := make(map[string]struct{})
 	for _, relativePath := range dirty.copy {
 		local := filepath.Join(repoRoot, filepath.FromSlash(relativePath))
@@ -101,6 +104,9 @@ func downloadDirtyRepoFromMicrosandbox(
 		return err
 	}
 	defer func() { _ = sandbox.Detach(context.Background()) }()
+	if err := ensureSandboxProjectDir(ctx, sandbox, remoteRepoDir, repoRoot); err != nil {
+		return err
+	}
 	out, err := sandbox.Exec(
 		ctx,
 		"git",

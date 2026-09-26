@@ -26,21 +26,23 @@ func openMicrosandbox(
 	if cfg == nil || cfg.Microsandbox == nil {
 		return nil, nil, nil, fmt.Errorf("microsandbox configuration is missing")
 	}
-	if err := msb.EnsureInstalled(ctx); err != nil {
+	if _, err := msb.EnsureRuntime(ctx, msb.RuntimeConfig{}, msb.InstallOptions{}); err != nil {
 		return nil, nil, nil, fmt.Errorf("install Microsandbox runtime: %w", err)
 	}
-	if recreate {
-		if h, e := msb.GetSandbox(ctx, params.SandboxName); e == nil {
-			if e = h.Destroy(ctx, msb.WithDestroyForce()); e != nil {
-				return nil, nil, nil, e
+	sandboxExists := false
+	if handle, err := msb.GetSandbox(ctx, params.SandboxName); err == nil {
+		if recreate {
+			if err := handle.Destroy(ctx, msb.WithDestroyForce()); err != nil {
+				return nil, nil, nil, fmt.Errorf("recreate sandbox %q: %w", params.SandboxName, err)
 			}
+		} else {
+			sandboxExists = true
 		}
 	}
-	if err := ensureDevenvImage(ctx, rc.RepoRoot); err != nil {
-		return nil, nil, nil, fmt.Errorf("import Microsandbox image: %w", err)
-	}
-	if err := ensureStateVolume(ctx, params.SandboxName, *cfg.Microsandbox); err != nil {
-		return nil, nil, nil, err
+	if !sandboxExists {
+		if err := ensureStateVolume(ctx, params.SandboxName, *cfg.Microsandbox); err != nil {
+			return nil, nil, nil, err
+		}
 	}
 	opts, err := cfg.Microsandbox.sandboxOptions(rc.RepoRoot, params.SandboxName)
 	if err != nil {
@@ -74,7 +76,7 @@ func ensureStateVolume(
 		}
 	}
 	name := sandboxName + "-" + volume.Name
-	if ready, err := stateVolumeReady(ctx, name, ".mezha-state-v2"); err != nil {
+	if ready, err := stateVolumeReady(ctx, name, ".mezha-state-v3", volume); err != nil {
 		return err
 	} else if ready {
 		return nil
@@ -97,7 +99,9 @@ func ensureStateVolume(
 	bootstrapOpts := []msb.SandboxOption{
 		msb.WithImage(defaultDevenvImage),
 		msb.WithDetached(),
+		msb.WithPullPolicy(msb.PullPolicyIfMissing),
 		msb.WithUser("0"),
+		msb.WithReplace(),
 		msb.WithMounts(map[string]msb.MountConfig{"/mnt/mezha": mount}),
 	}
 	bootstrapOpts = append(bootstrapOpts, runtimeOpts...)
@@ -110,10 +114,11 @@ func ensureStateVolume(
 set -o pipefail
 rm -rf /mnt/mezha/* /mnt/mezha/.[!.]* /mnt/mezha/..?*
 tar -C /nix -cf - . | tar -C /mnt/mezha -xpf -
-mkdir -p /mnt/mezha/mezha/root /mnt/mezha/mezha/home /mnt/mezha/mezha/sandbox /mnt/mezha/mezha/docker /mnt/mezha/mezha/k3s
-cp -a /home/. /mnt/mezha/mezha/home/
-touch /mnt/mezha/.mezha-state-v2
-sync`})
+mkdir -p /mnt/mezha/mezha/root/.mezha /mnt/mezha/mezha/services/docker /mnt/mezha/mezha/services/k3s
+mkdir -p /mnt/mezha/mezha/root/.mezha/runtime-bin
+cp -a /home/devenv/.nix-profile/bin/. /mnt/mezha/mezha/root/.mezha/runtime-bin/
+touch /mnt/mezha/.mezha-state-v3
+sync`}, msb.WithExecEnv(map[string]string{"PATH": "/home/devenv/.nix-profile/bin"}))
 	pulse()
 	if err != nil {
 		stopAndDestroySandbox(bootstrap)
@@ -129,7 +134,11 @@ sync`})
 }
 
 // stateVolumeReady checks a disk-backed volume from inside a sandbox.
-func stateVolumeReady(ctx context.Context, name, marker string) (bool, error) {
+func stateVolumeReady(
+	ctx context.Context,
+	name, marker string,
+	volume MicrosandboxVolume,
+) (bool, error) {
 	if _, err := msb.GetVolume(ctx, name); err != nil {
 		return false, nil
 	}
@@ -144,9 +153,25 @@ func stateVolumeReady(ctx context.Context, name, marker string) (bool, error) {
 		probeName,
 		msb.WithImage(defaultDevenvImage),
 		msb.WithDetached(),
+		msb.WithPullPolicy(msb.PullPolicyIfMissing),
 		msb.WithUser("0"),
+		msb.WithReplace(),
 		msb.WithMounts(map[string]msb.MountConfig{
-			"/mnt/mezha": msb.Mount.Named(name, msb.MountOptions{}),
+			"/mnt/mezha": msb.Mount.NamedWith(
+				name,
+				msb.MountOptions{
+					Readonly: volume.ReadOnly,
+					Noexec:   volume.NoExec,
+					Nosuid:   volume.NoSUID,
+					Nodev:    volume.NoDev,
+				},
+				msb.NamedVolumeOptions{
+					Mode:     volume.Mode,
+					Kind:     volume.Kind,
+					SizeMiB:  volume.SizeMiB,
+					QuotaMiB: volume.QuotaMiB,
+				},
+			),
 		}),
 	)
 	if err != nil {
@@ -158,8 +183,9 @@ func stateVolumeReady(ctx context.Context, name, marker string) (bool, error) {
 		"sh",
 		[]string{
 			"-c",
-			"set -eu; target=$(readlink /home/devenv/.nix-profile/bin/devenv); test -f /mnt/mezha/" + marker + " && test -x /mnt/mezha/store/${target#/nix/store/}",
+			"set -eu; test -f /mnt/mezha/" + marker + " && test -d /mnt/mezha/mezha/root/.mezha/runtime-bin && test -x /mnt/mezha/mezha/root/.mezha/runtime-bin/sh",
 		},
+		msb.WithExecEnv(map[string]string{"PATH": "/home/devenv/.nix-profile/bin"}),
 	)
 	if err != nil {
 		return false, fmt.Errorf("inspect state volume %q: %w", name, err)
@@ -167,10 +193,15 @@ func stateVolumeReady(ctx context.Context, name, marker string) (bool, error) {
 	return output.Success(), nil
 }
 
+// persistentRuntimeExecEnv makes the seeded Nix profile available to exec sessions.
+func persistentRuntimeExecEnv() msb.ExecOption {
+	return msb.WithExecEnv(map[string]string{"PATH": "/nix/mezha/root/.mezha/runtime-bin"})
+}
+
 // ensurePersistentLinks runs before any devenv shell or initialization command.
 func ensurePersistentLinks(ctx context.Context, sandbox *msb.Sandbox) error {
-	output, err := sandbox.Exec(ctx, "sh", []string{"-c", `set -eu
-if [ ! -f /nix/.mezha-state-v2 ]; then
+	output, err := sandbox.Exec(ctx, persistentRuntimeBin+"/sh", []string{"-c", `set -eu
+if [ ! -f /nix/.mezha-state-v3 ]; then
   echo "shared persistent /nix volume is not mounted; recreate the sandbox" >&2
   exit 1
 fi
@@ -184,16 +215,15 @@ persist_link() {
   rm -rf "$target"
   ln -s "$source" "$target"
 }
-home_source=/nix/mezha/home
-mkdir -p "$home_source"
-if [ -d /home ] && [ -z "$(find "$home_source" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
-  cp -a /home/. "$home_source"/
-fi
-persist_link /home "$home_source"
-persist_link /sandbox /nix/mezha/sandbox
-persist_link /var/lib/docker /nix/mezha/docker
-persist_link /var/lib/rancher/k3s /nix/mezha/k3s
-persist_link /root /nix/mezha/root`}, msb.WithExecCwd("/"))
+persist_link /var/lib/docker /nix/mezha/services/docker
+persist_link /var/lib/rancher/k3s /nix/mezha/services/k3s
+persist_link /root /nix/mezha/root
+PATH=/nix/mezha/root/.mezha/runtime-bin
+rm -rf /home
+mkdir -p /home/devenv`},
+		msb.WithExecCwd("/"),
+		persistentRuntimeExecEnv(),
+	)
 	if err != nil {
 		return fmt.Errorf("create persistent state symlinks: %w", err)
 	}

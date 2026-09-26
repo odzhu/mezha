@@ -9,6 +9,11 @@ import (
 )
 
 func Run(ctx context.Context, rc RepoContext, params RunParams) error {
+	remoteRepoDir, err := sandboxProjectDir(rc, params.RemoteRepoDir)
+	if err != nil {
+		return err
+	}
+	params.RemoteRepoDir = remoteRepoDir
 	cfg, _, err := LoadConfig(rc.RepoRoot)
 	if err != nil {
 		return fmt.Errorf("load mezha configuration: %w", err)
@@ -16,9 +21,19 @@ func Run(ctx context.Context, rc RepoContext, params RunParams) error {
 	if cfg == nil || cfg.Microsandbox == nil {
 		return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 	}
+	closeSecrets, err := loadSecretSpec(cfg.SecretSpec)
+	if err != nil {
+		return err
+	}
+	defer closeSecrets()
 	return runMicrosandbox(ctx, rc, params, cfg)
 }
 func Upload(ctx context.Context, rc RepoContext, params UploadParams) error {
+	remoteRepoDir, err := sandboxProjectDir(rc, params.RemoteRepoDir)
+	if err != nil {
+		return err
+	}
+	params.RemoteRepoDir = remoteRepoDir
 	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		dirty, err := trackedDirtyPaths(ctx, rc.RepoRoot)
 		if err != nil {
@@ -35,6 +50,11 @@ func Upload(ctx context.Context, rc RepoContext, params UploadParams) error {
 	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 }
 func Download(ctx context.Context, rc RepoContext, params DownloadParams) error {
+	remoteRepoDir, err := sandboxProjectDir(rc, params.RemoteRepoDir)
+	if err != nil {
+		return err
+	}
+	params.RemoteRepoDir = remoteRepoDir
 	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		return downloadDirtyRepoFromMicrosandbox(
 			ctx,

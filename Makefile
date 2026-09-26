@@ -7,12 +7,12 @@ PREFIX ?= $(HOME)/.local
 DESTDIR ?=
 INSTALL ?= install
 
-.PHONY: help build install run test test-unit fmt tidy clean
+.PHONY: help build install run test test-unit fmt tidy clean stage-secretspec-static
 
 help:
 	@echo "Targets:"
-	@echo "  make build         Build the CLI into \$(BIN_DIR)/\$(APP)"
-	@echo "  make install       Install the CLI into \$(DESTDIR)\$(PREFIX)/bin"
+	@echo "  make build         Build a self-contained CLI into $(BIN_DIR)/$(APP)"
+	@echo "  make install       Install the CLI into $(DESTDIR)$(PREFIX)/bin"
 	@echo "  make run           Run the CLI locally"
 	@echo "  make test          Run all Go tests (unit)"
 	@echo "  make test-unit     Run unit tests only"
@@ -20,28 +20,31 @@ help:
 	@echo "  make tidy          Tidy Go modules"
 	@echo "  make clean         Remove build artifacts"
 
-build:
-	@mkdir -p \$(BIN_DIR)
-	CGO_ENABLED=\$(CGO_ENABLED) \$(GO) build -o \$(BIN_DIR)/\$(APP) \$(CMD_DIR)
+stage-secretspec-static:
+	bash scripts/stage-secretspec-static.sh
+
+build: stage-secretspec-static
+	@mkdir -p $(BIN_DIR)
+	CGO_ENABLED=$(CGO_ENABLED) GOWORK=$(CURDIR)/.secretspec-static.work $(GO) build -tags static -ldflags='-s -w' -o $(BIN_DIR)/$(APP) $(CMD_DIR)
 
 install: build
 	@mkdir -p "$(DESTDIR)$(PREFIX)/bin"
 	$(INSTALL) -m 0755 "$(BIN_DIR)/$(APP)" "$(DESTDIR)$(PREFIX)/bin/$(APP)"
 
-run:
-	CGO_ENABLED=\$(CGO_ENABLED) \$(GO) run \$(CMD_DIR)
+run: stage-secretspec-static
+	CGO_ENABLED=$(CGO_ENABLED) GOWORK=$(CURDIR)/.secretspec-static.work $(GO) run -tags static $(CMD_DIR)
 
-test:
-	CGO_ENABLED=\$(CGO_ENABLED) \$(GO) test ./...
+test: stage-secretspec-static
+	CGO_ENABLED=$(CGO_ENABLED) GOWORK=$(CURDIR)/.secretspec-static.work $(GO) test -tags static ./...
 
-test-unit:
-	CGO_ENABLED=\$(CGO_ENABLED) \$(GO) test ./cmd/... ./internal/...
+test-unit: stage-secretspec-static
+	CGO_ENABLED=$(CGO_ENABLED) GOWORK=$(CURDIR)/.secretspec-static.work $(GO) test -tags static ./cmd/... ./internal/...
 
 fmt:
-	\$(GO) fmt ./...
+	$(GO) fmt ./...
 
 tidy:
-	\$(GO) mod tidy
+	$(GO) mod tidy
 
 clean:
-	rm -rf \$(BIN_DIR)
+	rm -rf $(BIN_DIR) .cache/secretspec .secretspec-static.work

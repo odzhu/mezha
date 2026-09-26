@@ -4,6 +4,8 @@ import "time"
 
 type RepoContext struct {
 	RepoRoot           string
+	PrimaryRepoRoot    string
+	IsLinkedWorktree   bool
 	RepoName           string
 	GitRef             string
 	DefaultSandboxName string

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	cli "github.com/urfave/cli/v3"
@@ -16,6 +15,7 @@ const rootUsageText = `Usage:
   mezha run [run-options] [-- command...]
   mezha init [options]
   mezha sandbox <list|create|recreate|start|stop|destroy|status|logs> [options]
+  mezha image pull
   mezha sync <status|push|pull|upload|download|remote> [options]
   mezha volume <list|rm> [options]
 
@@ -28,6 +28,7 @@ Examples:
   mezha --sandbox shared-dev -- bash -lc 'git status && pwd'
   mezha sandbox create --herdr
   mezha sandbox recreate
+  mezha image pull
   mezha sandbox logs --follow
   mezha sync upload
   mezha sync download results/report.json ./report.json
@@ -45,6 +46,7 @@ func New() *cli.Command {
 			newRunCommand(),
 			newInitCommand(),
 			newSandboxCommand(),
+			newImageCommand(),
 			newSyncCommand(),
 			newVolumeCommand(),
 			newSSHProxyCommand(),
@@ -181,15 +183,17 @@ func newRunCommand() *cli.Command {
 
 			kubernetes := cfg.Services.K3s.Enabled
 
+			remoteRepoDir, err := resolveSandboxProjectDir(cmd, cfg, rc)
+			if err != nil {
+				return err
+			}
 			params := RunParams{
-				SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
-				RemoteRepoDir: resolveParam(
+				SandboxName: resolveSandboxParam(
 					cmd,
-					"remote-dir",
-					os.Getenv("MICROSANDBOX_REMOTE_REPO_DIR"),
-					cfg.Sandbox.RemoteDir,
-					filepath.ToSlash(filepath.Join("/sandbox", rc.RepoName)),
+					cfg.Sandbox.Name,
+					rc.DefaultSandboxName,
 				),
+				RemoteRepoDir:        remoteRepoDir,
 				Recreate:             recreate,
 				Kubernetes:           kubernetes,
 				ReplaceSandboxRemote: cmd.Bool("replace-sandbox-remote"),
@@ -258,19 +262,17 @@ func newProvisionCommand() *cli.Command {
 				return errors.New("--volumes-flush requires --recreate")
 			}
 			kubernetes := cfg.Services.K3s.Enabled
+			remoteRepoDir, err := resolveSandboxProjectDir(cmd, cfg, rc)
+			if err != nil {
+				return err
+			}
 			return Provision(ctx, rc, ProvisionParams{
-				SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
-				RemoteRepoDir: resolveParam(
-					cmd,
-					"remote-dir",
-					os.Getenv("MICROSANDBOX_REMOTE_REPO_DIR"),
-					cfg.Sandbox.RemoteDir,
-					filepath.ToSlash(filepath.Join("/sandbox", rc.RepoName)),
-				),
-				Recreate:     recreate,
-				Kubernetes:   kubernetes,
-				Herdr:        herdr,
-				VolumesFlush: volumesFlush,
+				SandboxName:   resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
+				RemoteRepoDir: remoteRepoDir,
+				Recreate:      recreate,
+				Kubernetes:    kubernetes,
+				Herdr:         herdr,
+				VolumesFlush:  volumesFlush,
 			})
 		},
 	}
@@ -305,19 +307,17 @@ func newRecreateCommand() *cli.Command {
 				cfg = &MezhaConfig{}
 			}
 			herdr := resolveHerdrParam(cmd, cfg.Sandbox.Herdr)
+			remoteRepoDir, err := resolveSandboxProjectDir(cmd, cfg, rc)
+			if err != nil {
+				return err
+			}
 			return Provision(ctx, rc, ProvisionParams{
-				SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
-				RemoteRepoDir: resolveParam(
-					cmd,
-					"remote-dir",
-					os.Getenv("MICROSANDBOX_REMOTE_REPO_DIR"),
-					cfg.Sandbox.RemoteDir,
-					filepath.ToSlash(filepath.Join("/sandbox", rc.RepoName)),
-				),
-				Recreate:     true,
-				Kubernetes:   cfg.Services.K3s.Enabled,
-				Herdr:        herdr,
-				VolumesFlush: true,
+				SandboxName:   resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
+				RemoteRepoDir: remoteRepoDir,
+				Recreate:      true,
+				Kubernetes:    cfg.Services.K3s.Enabled,
+				Herdr:         herdr,
+				VolumesFlush:  true,
 			})
 		},
 	}
@@ -379,6 +379,20 @@ func newSandboxCommand() *cli.Command {
 	}
 }
 
+func newImageCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "image",
+		Usage: "Manage Microsandbox images",
+		Commands: []*cli.Command{
+			{
+				Name:   "pull",
+				Usage:  "Pull the latest native devenv image into Microsandbox",
+				Action: func(ctx context.Context, _ *cli.Command) error { return pullDevenvImage(ctx) },
+			},
+		},
+	}
+}
+
 func newSyncCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "sync",
@@ -430,6 +444,16 @@ func newDestroyCommand() *cli.Command {
 	}
 }
 
+func resolveSandboxProjectDir(cmd *cli.Command, cfg *MezhaConfig, rc RepoContext) (string, error) {
+	return sandboxProjectDir(rc, resolveParam(
+		cmd,
+		"remote-dir",
+		os.Getenv("MICROSANDBOX_REMOTE_REPO_DIR"),
+		cfg.Sandbox.RemoteDir,
+		canonicalSandboxProjectPaths(rc).worktree,
+	))
+}
+
 func transferCommandFlags(includeRecreate bool) []cli.Flag {
 	flags := []cli.Flag{
 		sandboxFlag(),
@@ -455,16 +479,14 @@ func loadTransferParams(cmd *cli.Command, rc RepoContext) (TransferParams, error
 	if cfg == nil {
 		cfg = &MezhaConfig{}
 	}
+	remoteRepoDir, err := resolveSandboxProjectDir(cmd, cfg, rc)
+	if err != nil {
+		return TransferParams{}, err
+	}
 	return TransferParams{
-		SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
-		RemoteRepoDir: resolveParam(
-			cmd,
-			"remote-dir",
-			os.Getenv("MICROSANDBOX_REMOTE_REPO_DIR"),
-			cfg.Sandbox.RemoteDir,
-			filepath.ToSlash(filepath.Join("/sandbox", rc.RepoName)),
-		),
-		Recreate: cmd.Bool("recreate"),
+		SandboxName:   resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
+		RemoteRepoDir: remoteRepoDir,
+		Recreate:      cmd.Bool("recreate"),
 	}, nil
 }
 
@@ -545,15 +567,13 @@ func loadGitParams(cmd *cli.Command, rc RepoContext) (GitParams, error) {
 	if cfg == nil {
 		cfg = &MezhaConfig{}
 	}
+	remoteRepoDir, err := resolveSandboxProjectDir(cmd, cfg, rc)
+	if err != nil {
+		return GitParams{}, err
+	}
 	return GitParams{
-		SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
-		RemoteRepoDir: resolveParam(
-			cmd,
-			"remote-dir",
-			os.Getenv("MICROSANDBOX_REMOTE_REPO_DIR"),
-			cfg.Sandbox.RemoteDir,
-			filepath.ToSlash(filepath.Join("/sandbox", rc.RepoName)),
-		),
+		SandboxName:   resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
+		RemoteRepoDir: remoteRepoDir,
 	}, nil
 }
 

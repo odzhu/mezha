@@ -35,6 +35,7 @@ The dashboard provides:
   worktree, and sandbox configuration layers
 - an interactive sandbox shell in a new tab
 - sandbox and persistent-volume listings
+- pull the latest native devenv image
 - sandbox create, start, and stop operations
 - repository synchronization status
 - upload, download, pull, and push operations

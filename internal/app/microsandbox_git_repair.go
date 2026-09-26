@@ -2,9 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
-	"path/filepath"
-	"strings"
 )
 
 func repairMicrosandboxGitRemote(
@@ -17,10 +14,6 @@ func repairMicrosandboxGitRemote(
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf(
-		"ssh://root@%s//%s/.git",
-		host,
-		strings.TrimPrefix(filepath.ToSlash(params.RemoteRepoDir), "/"),
-	)
+	url := sandboxGitURL(host, rc, params.RemoteRepoDir)
 	return setSandboxGitRemote(context.Background(), rc.RepoRoot, params.SandboxName, url, replace)
 }

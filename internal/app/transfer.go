@@ -11,6 +11,11 @@ func UploadPath(
 	params TransferParams,
 	localPath, remotePath string,
 ) error {
+	remoteRepoDir, err := sandboxProjectDir(rc, params.RemoteRepoDir)
+	if err != nil {
+		return err
+	}
+	params.RemoteRepoDir = remoteRepoDir
 	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		return uploadPathMicrosandbox(ctx, rc, params, localPath, remotePath)
 	}
@@ -23,6 +28,11 @@ func DownloadPath(
 	params TransferParams,
 	remotePath, localPath string,
 ) error {
+	remoteRepoDir, err := sandboxProjectDir(rc, params.RemoteRepoDir)
+	if err != nil {
+		return err
+	}
+	params.RemoteRepoDir = remoteRepoDir
 	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		return downloadPathMicrosandbox(ctx, rc, params, remotePath, localPath)
 	}
