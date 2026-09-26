@@ -68,7 +68,7 @@ func newInitCommand() *cli.Command {
 
 func Init(_ context.Context, rc RepoContext, force bool) error {
 	configPath := filepath.Join(rc.RepoRoot, "mezha.toml")
-	devenvPath := filepath.Join(rc.RepoRoot, ".mezha", "devenv.nix")
+	devenvPath := filepath.Join(rc.RepoRoot, ".mezha", "provision", "devenv.nix")
 	if !force {
 		for _, path := range []string{configPath, devenvPath} {
 			if _, err := os.Stat(path); err == nil {
@@ -165,7 +165,7 @@ func InitHome(force bool) error {
 	if err != nil {
 		return err
 	}
-	devenvPath := filepath.Join(filepath.Dir(configPath), ".mezha", "devenv.nix")
+	devenvPath := filepath.Join(filepath.Dir(configPath), ".mezha", "provision", "devenv.nix")
 	if !force {
 		for _, path := range []string{configPath, devenvPath} {
 			if _, err := os.Stat(path); err == nil {
@@ -217,7 +217,7 @@ func InitHomeScope(rc RepoContext, scope string, force bool) error {
 		return fmt.Errorf("unknown home configuration scope: %s", scope)
 	}
 	configPath := filepath.Join(configDir, "mezha.toml")
-	devenvPath := filepath.Join(configDir, ".mezha", "devenv.nix")
+	devenvPath := filepath.Join(configDir, ".mezha", "provision", "devenv.nix")
 	if !force {
 		for _, path := range []string{configPath, devenvPath} {
 			if _, err := os.Stat(path); err == nil {
@@ -263,4 +263,49 @@ func projectConfigTemplate() (string, error) {
 		return "", fmt.Errorf("read home configuration template: %w", err)
 	}
 	return string(contents), nil
+}
+
+func resolveProvisionDir(repoRoot string) string {
+	if repoRoot != "" {
+		p := filepath.Join(repoRoot, ".mezha", "provision")
+		if info, err := os.Stat(p); err == nil && info.IsDir() {
+			return p
+		}
+	}
+	if homeDir, err := HomeConfigDir(); err == nil {
+		if repoRoot != "" {
+			if projectName, worktreeName, gitRef, err := configScopeNames(repoRoot); err == nil {
+				candidates := []string{
+					filepath.Join(
+						homeDir,
+						"sandboxes",
+						slugify(projectName+"-"+gitRef),
+						".mezha",
+						"provision",
+					),
+					filepath.Join(
+						homeDir,
+						"worktrees",
+						slugify(projectName+"-"+worktreeName),
+						".mezha",
+						"provision",
+					),
+					filepath.Join(homeDir, "projects", slugify(projectName), ".mezha", "provision"),
+				}
+				for _, c := range candidates {
+					if info, err := os.Stat(c); err == nil && info.IsDir() {
+						return c
+					}
+				}
+			}
+		}
+		c := filepath.Join(homeDir, ".mezha", "provision")
+		if info, err := os.Stat(c); err == nil && info.IsDir() {
+			return c
+		}
+	}
+	if repoRoot != "" {
+		return filepath.Join(repoRoot, ".mezha", "provision")
+	}
+	return ""
 }

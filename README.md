@@ -92,7 +92,7 @@ mezha sandbox destroy --volumes-flush
 ## Configuration
 
 Run `mezha init` in a repository to create `mezha.toml` and
-`.mezha/devenv.nix`. By default, Mezha generates a sandbox name for the current
+`.mezha/provision/devenv.nix`. By default, Mezha generates a sandbox name for the current
 repository. Use `--sandbox <name>` (or `-s <name>`) with the default session, `sandbox`,
 and `sync` commands to select a reusable sandbox instead. Each project is kept
 in its own `/root/<project>` directory, where `<project>` exactly matches the
@@ -130,9 +130,9 @@ name format; linked worktrees use the primary repository's name for
 `<git-project>`. Mezha always uses `ghcr.io/cachix/devenv/devenv:latest` and
 runs it as UID 0: Docker and k3s
 require it, and Microsandbox cannot resolve the native image's `1000:100` user
-declaration. Mezha uploads its managed devenv configuration during sandbox
-creation. Relative paths in `provision.add` are resolved relative to the
-configuration file.
+declaration. Mezha synchronizes the managed provisioner devenv configuration from
+`.mezha/provision` during sandbox creation and runs. Relative paths in `provision.add`
+are resolved relative to the configuration file.
 
 ```toml
 version = 1
@@ -163,11 +163,6 @@ size_mib = 51200
 # policy_advisor = true
 # Register the sandbox with Herdr and synchronize local plugins.
 herdr = false
-
-# This devenv.nix declaratively provides Docker, k3s, kubectl, Git, Lazygit, and GitHub CLI.
-[[provision.add]]
-source = ".mezha/devenv.nix"
-target = "/root/.config/mezha/services/devenv/user-devenv.nix"
 ```
 
 `provision.add` and `provision.run` are applied only when a sandbox is first created.
@@ -178,9 +173,10 @@ is mounted at `/nix`. The temporary state-volume provisioning sandbox receives
 the same `microsandbox.network` and `microsandbox.secrets`
 configuration (including secret host allowlists) as the primary sandbox. It then symlinks `/root`,
 `/var/lib/docker`, and `/var/lib/rancher/k3s` into that volume before any initialization command
-or devenv shell runs; `/home` remains empty. The default `provision.add` installs
-Mezha's `.mezha/devenv.nix` at
-`/root/.config/mezha/services/devenv/user-devenv.nix`. It uses devenv `packages` for Docker, k3s, kubectl, Git,
+or devenv shell runs; `/home` remains empty. Mezha automatically synchronizes the entire
+`.mezha/provision` directory to `/root/.config/mezha/services/devenv`, supporting
+`.mezha/provision/devenv.nix` as well as any other imports and helper files without requiring
+any provision sync configuration in `mezha.toml`. It uses devenv `packages` for Docker, k3s, kubectl, Git,
 Lazygit, GitHub CLI, Go, Groff, Less, and `col`. It configures Groff and the
 manpage pager so captured help output is plain text rather than raw formatting
 control sequences. Mezha declares Docker and k3s as supervised `processes` in its managed devenv
@@ -191,7 +187,7 @@ sessions share one Docker daemon and one k3s cluster. Update that file and run
 `mezha --recreate` to apply a changed managed environment.
 
 Provisioning parameters and services (such as Docker or k3s) are managed directly in
-`.mezha/devenv.nix`. Enable or disable processes via `processes.<name>.start.enable`
+`.mezha/provision/devenv.nix` or its imports. Enable or disable processes via `processes.<name>.start.enable`
 in that file. Docker images, containers, and volumes plus k3s cluster
 state are stored in the shared persistent volume.
 k3s uses Docker as its container runtime, so Docker-built images are immediately
@@ -299,7 +295,7 @@ preserves their enabled state, and copies each plugin's local configuration
 directory. It also copies the local Herdr `[keys]` configuration, so
 `plugin_action` hotkeys (such as herdr-plus) work on the remote Herdr server.
 Plugin installation and build commands run through Mezha's managed
-`devenv` environment. The generated `.mezha/devenv.nix` includes Go for native
+`devenv` environment. The generated `.mezha/provision/devenv.nix` includes Go for native
 plugin builds; add other plugin-specific build tools there. `mezha sandbox destroy`
 removes the corresponding saved Herdr machine profile. Herdr
 is optional: if its command is not on `PATH`, Mezha skips both operations.

@@ -408,11 +408,6 @@ size_mib = 51200
 # --sandbox. Set herdr to register it and synchronize local plugins.
 [sandbox]
 herdr = false
-
-# Initialization applied only when a new sandbox is provisioned.
-[[provision.add]]
-source = ".mezha/devenv.nix"
-target = "/root/.config/mezha/services/devenv/user-devenv.nix"
 `
 }
 

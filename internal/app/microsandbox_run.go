@@ -81,7 +81,7 @@ func runMicrosandbox(
 	}
 	sessionWorkdir := "/root"
 	herdrEnabled := reregisterHerdr && herdrCommandAvailable()
-	if err := ensureManagedDevenvConfig(ctx, sandbox, cfg.Provision); err != nil {
+	if err := ensureManagedDevenvConfig(ctx, sandbox, rc.RepoRoot); err != nil {
 		return err
 	}
 	if err := ensureDevenvServices(ctx, sandbox); err != nil {

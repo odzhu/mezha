@@ -17,12 +17,6 @@ const managedDevenvPath = "/root/.config/mezha/services/devenv"
 const managedDevenvConfig = managedDevenvPath + "/devenv.nix"
 const persistentRuntimeBin = "/nix/mezha/root/.mezha/runtime-bin"
 const nativeDevenvPath = persistentRuntimeBin + "/devenv"
-const managedDevenvUserConfig = managedDevenvPath + "/user-devenv.nix"
-const managedDevenvWrapper = `# Mezha managed devenv services wrapper v4
-{
-  imports = [ ./user-devenv.nix ];
-}
-`
 
 // devenvDirectCommand keeps managed tools on PATH without activating the
 // managed environment as the command's project.
@@ -160,55 +154,55 @@ func printDevenvDaemonLog(ctx context.Context, sandbox *msb.Sandbox) {
 func ensureManagedDevenvConfig(
 	ctx context.Context,
 	sandbox *msb.Sandbox,
-	provision ProvisionConfig,
+	repoRoot string,
 ) error {
 	output, err := sandbox.Exec(
 		ctx,
-		persistentRuntimeBin+"/sh",
-		[]string{"-c", "test -f \"$1\"", "mezha-test-file", managedDevenvUserConfig},
+		persistentRuntimeBin+"/mkdir",
+		[]string{"-p", managedDevenvPath},
 		persistentRuntimeExecEnv(),
 	)
 	if err != nil {
-		return fmt.Errorf("inspect managed user devenv configuration: %w", err)
+		return fmt.Errorf("create managed devenv configuration directory: %w", err)
 	}
 	if !output.Success() {
-		for _, add := range provision.Add {
-			target := add.Target
-			if strings.HasSuffix(target, "/") {
-				info, statErr := os.Stat(add.Source)
-				if statErr != nil || info.IsDir() {
-					continue
-				}
-				target = filepath.ToSlash(filepath.Join(target, filepath.Base(add.Source)))
+		return fmt.Errorf(
+			"create managed devenv configuration directory: %s",
+			strings.TrimSpace(output.Stderr()),
+		)
+	}
+
+	provisionDir := resolveProvisionDir(repoRoot)
+	if info, err := os.Stat(provisionDir); err == nil && info.IsDir() {
+		devenvFile := filepath.Join(provisionDir, "devenv.nix")
+		if _, err := os.Stat(devenvFile); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("managed devenv configuration is missing: %s", devenvFile)
 			}
-			if filepath.Clean(target) != managedDevenvUserConfig {
-				continue
-			}
-			if err := nativeUpload(ctx, sandbox, add.Source, target); err != nil {
-				return fmt.Errorf("restore managed user devenv configuration: %w", err)
-			}
-			break
+			return fmt.Errorf("inspect managed devenv configuration: %w", err)
 		}
-		output, err = sandbox.Exec(
+		if err := nativeUpload(ctx, sandbox, provisionDir, managedDevenvPath); err != nil {
+			return fmt.Errorf("sync managed devenv provision configuration: %w", err)
+		}
+	} else {
+		output, err := sandbox.Exec(
 			ctx,
 			persistentRuntimeBin+"/sh",
-			[]string{"-c", "test -f \"$1\"", "mezha-test-file", managedDevenvUserConfig},
+			[]string{"-c", "test -f \"$1\"", "mezha-test-file", managedDevenvConfig},
 			persistentRuntimeExecEnv(),
 		)
 		if err != nil {
-			return fmt.Errorf("inspect restored managed user devenv configuration: %w", err)
+			return fmt.Errorf("inspect managed devenv configuration: %w", err)
 		}
 		if !output.Success() {
 			return fmt.Errorf(
-				"managed user devenv configuration %s is missing; add it to provision.add or recreate the sandbox",
-				managedDevenvUserConfig,
+				"managed devenv configuration %s is missing; create %s or run mezha init",
+				managedDevenvConfig,
+				filepath.Join(repoRoot, ".mezha", "provision", "devenv.nix"),
 			)
 		}
 	}
 
-	if err := ensureManagedDevenvServicesConfig(ctx, sandbox); err != nil {
-		return err
-	}
 	return ensureDevenvBashHook(ctx, sandbox)
 }
 
@@ -256,29 +250,6 @@ EOF
 	}
 	if !output.Success() {
 		return fmt.Errorf("install devenv Bash profile: %s", strings.TrimSpace(output.Stderr()))
-	}
-	return nil
-}
-
-// ensureManagedDevenvServicesConfig writes Mezha's service wrapper.
-func ensureManagedDevenvServicesConfig(ctx context.Context, sandbox *msb.Sandbox) error {
-	output, err := sandbox.Exec(
-		ctx,
-		persistentRuntimeBin+"/mkdir",
-		[]string{"-p", filepath.Dir(managedDevenvUserConfig)},
-		persistentRuntimeExecEnv(),
-	)
-	if err != nil {
-		return fmt.Errorf("create managed devenv configuration directory: %w", err)
-	}
-	if !output.Success() {
-		return fmt.Errorf(
-			"create managed devenv configuration directory: %s",
-			strings.TrimSpace(output.Stderr()),
-		)
-	}
-	if err := sandbox.FS().WriteString(ctx, managedDevenvConfig, managedDevenvWrapper); err != nil {
-		return fmt.Errorf("write managed devenv services configuration: %w", err)
 	}
 	return nil
 }
