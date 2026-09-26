@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/go-git/go-git/v5"
 )
 
 const defaultDevenvImage = "ghcr.io/cachix/devenv/devenv:latest"
@@ -131,7 +130,7 @@ func HomeConfigDir() (string, error) {
 	return filepath.Join(home, ".mezha"), nil
 }
 
-// HomeConfigPath returns the single home-level configuration path.
+// HomeConfigPath returns the home-level configuration path.
 func HomeConfigPath() (string, error) {
 	dir, err := HomeConfigDir()
 	if err != nil {
@@ -140,26 +139,34 @@ func HomeConfigPath() (string, error) {
 	return filepath.Join(dir, "mezha.toml"), nil
 }
 
-// LoadConfig loads the most specific available configuration. Configurations do
-// not inherit or merge from lower-precedence locations.
-func LoadConfig(repoRoot string) (*MezhaConfig, string, error) {
-	homeDir, err := HomeConfigDir()
-	if err != nil {
-		return nil, "", err
+// projectConfigDir returns the project configuration directory under homeDir.
+func projectConfigDir(homeDir, repoRoot string) string {
+	if homeDir == "" || repoRoot == "" {
+		return ""
 	}
-	projectName, worktreeName, gitRef, err := configScopeNames(repoRoot)
+	primaryRepoRoot, _, err := linkedWorktreePrimaryRepoRoot(repoRoot)
 	if err != nil {
-		return nil, "", err
+		primaryRepoRoot = repoRoot
 	}
+	name := slugify(filepath.Base(primaryRepoRoot))
+	if name == "" {
+		return ""
+	}
+	return filepath.Join(homeDir, "projects", name)
+}
 
-	// Check in reverse precedence order: repository, sandbox, worktree,
-	// project, then the general Mezha home configuration.
-	paths := []string{
-		filepath.Join(repoRoot, "mezha.toml"),
-		filepath.Join(homeDir, "sandboxes", slugify(projectName+"-"+gitRef), "mezha.toml"),
-		filepath.Join(homeDir, "worktrees", slugify(projectName+"-"+worktreeName), "mezha.toml"),
-		filepath.Join(homeDir, "projects", slugify(projectName), "mezha.toml"),
-		filepath.Join(homeDir, "mezha.toml"),
+// LoadConfig loads the project configuration when present; otherwise it loads
+// the global home configuration.
+func LoadConfig(repoRoot string) (*MezhaConfig, string, error) {
+	var paths []string
+	if repoRoot != "" {
+		paths = append(paths, filepath.Join(repoRoot, "mezha.toml"))
+	}
+	if homeDir, err := HomeConfigDir(); err == nil {
+		if projectDir := projectConfigDir(homeDir, repoRoot); projectDir != "" {
+			paths = append(paths, filepath.Join(projectDir, "mezha.toml"))
+		}
+		paths = append(paths, filepath.Join(homeDir, "mezha.toml"))
 	}
 	for _, path := range paths {
 		config, found, err := loadConfigMap(path)
@@ -171,43 +178,6 @@ func LoadConfig(repoRoot string) (*MezhaConfig, string, error) {
 		}
 	}
 	return nil, "", nil
-}
-
-// configScopeNames identifies the source project, current worktree, and ref.
-func configScopeNames(repoRoot string) (projectName, worktreeName, gitRef string, err error) {
-	projectRoot := repoRoot
-	gitPath := filepath.Join(repoRoot, ".git")
-	info, statErr := os.Stat(gitPath)
-	if statErr != nil {
-		return "", "", "", fmt.Errorf("inspect git metadata: %w", statErr)
-	}
-	if !info.IsDir() {
-		data, readErr := os.ReadFile(gitPath)
-		if readErr != nil {
-			return "", "", "", fmt.Errorf("read git worktree metadata: %w", readErr)
-		}
-		gitDir := strings.TrimSpace(strings.TrimPrefix(string(data), "gitdir:"))
-		if gitDir == string(data) || gitDir == "" {
-			return "", "", "", fmt.Errorf("parse git worktree metadata: %s", gitPath)
-		}
-		if !filepath.IsAbs(gitDir) {
-			gitDir = filepath.Join(repoRoot, gitDir)
-		}
-		gitDir = filepath.Clean(gitDir)
-		if filepath.Base(filepath.Dir(gitDir)) == "worktrees" {
-			projectRoot = filepath.Dir(filepath.Dir(filepath.Dir(gitDir)))
-		}
-	}
-
-	repo, openErr := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
-	if openErr != nil {
-		return "", "", "", fmt.Errorf("open git repository: %w", openErr)
-	}
-	gitRef, err = currentGitRef(repo)
-	if err != nil {
-		return "", "", "", err
-	}
-	return filepath.Base(projectRoot), filepath.Base(repoRoot), gitRef, nil
 }
 
 func decodeConfig(config map[string]any, path string) (*MezhaConfig, string, error) {

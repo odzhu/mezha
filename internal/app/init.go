@@ -25,41 +25,22 @@ func newInitCommand() *cli.Command {
 			},
 			&cli.BoolFlag{
 				Name:  "project",
-				Usage: "With --home, create the current project configuration",
-			},
-			&cli.BoolFlag{
-				Name:  "worktree",
-				Usage: "With --home, create the current worktree configuration",
-			},
-			&cli.BoolFlag{
-				Name:  "sandbox",
-				Usage: "With --home, create the current branch sandbox configuration",
+				Usage: "With --home, create the current project configuration in $MEZHA_HOME",
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			scopes := []string{"project", "worktree", "sandbox"}
-			selectedScope := ""
-			for _, scope := range scopes {
-				if !cmd.Bool(scope) {
-					continue
-				}
-				if !cmd.Bool("home") {
-					return fmt.Errorf("--%s requires --home", scope)
-				}
-				if selectedScope != "" {
-					return fmt.Errorf("--project, --worktree, and --sandbox are mutually exclusive")
-				}
-				selectedScope = scope
+			if cmd.Bool("project") && !cmd.Bool("home") {
+				return fmt.Errorf("--project requires --home")
 			}
-			if cmd.Bool("home") && selectedScope == "" {
+			if cmd.Bool("home") && !cmd.Bool("project") {
 				return InitHome(cmd.Bool("force"))
 			}
 			rc, err := ResolveRepoContext(ctx)
 			if err != nil {
 				return err
 			}
-			if selectedScope != "" {
-				return InitHomeScope(rc, selectedScope, cmd.Bool("force"))
+			if cmd.Bool("home") && cmd.Bool("project") {
+				return InitHomeProject(rc, cmd.Bool("force"))
 			}
 			return Init(ctx, rc, cmd.Bool("force"))
 		},
@@ -139,7 +120,7 @@ func InitHome(force bool) error {
 	if err != nil {
 		return err
 	}
-	provisionDir := filepath.Join(filepath.Dir(configPath), ".mezha", "provision")
+	provisionDir := filepath.Join(filepath.Dir(configPath), "provision")
 	devenvPath := filepath.Join(provisionDir, "devenv.nix")
 	if !force {
 		for _, path := range []string{configPath, devenvPath} {
@@ -167,29 +148,18 @@ func InitHome(force bool) error {
 	return nil
 }
 
-// InitHomeScope creates a configuration for one current Git configuration scope.
-func InitHomeScope(rc RepoContext, scope string, force bool) error {
+// InitHomeProject creates a project configuration under $MEZHA_HOME/projects/<project>.
+func InitHomeProject(rc RepoContext, force bool) error {
 	homeDir, err := HomeConfigDir()
 	if err != nil {
 		return err
 	}
-	projectName, worktreeName, gitRef, err := configScopeNames(rc.RepoRoot)
-	if err != nil {
-		return err
-	}
-	var configDir string
-	switch scope {
-	case "project":
-		configDir = filepath.Join(homeDir, "projects", slugify(projectName))
-	case "worktree":
-		configDir = filepath.Join(homeDir, "worktrees", slugify(projectName+"-"+worktreeName))
-	case "sandbox":
-		configDir = filepath.Join(homeDir, "sandboxes", slugify(projectName+"-"+gitRef))
-	default:
-		return fmt.Errorf("unknown home configuration scope: %s", scope)
+	configDir := projectConfigDir(homeDir, rc.RepoRoot)
+	if configDir == "" {
+		return fmt.Errorf("resolve project directory: invalid repository root")
 	}
 	configPath := filepath.Join(configDir, "mezha.toml")
-	provisionDir := filepath.Join(configDir, ".mezha", "provision")
+	provisionDir := filepath.Join(configDir, "provision")
 	devenvPath := filepath.Join(provisionDir, "devenv.nix")
 	if !force {
 		for _, path := range []string{configPath, devenvPath} {
@@ -208,10 +178,10 @@ func InitHomeScope(rc RepoContext, scope string, force bool) error {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		return fmt.Errorf("create %s configuration directory: %w", scope, err)
+		return fmt.Errorf("create project configuration directory: %w", err)
 	}
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("write %s configuration file: %w", scope, err)
+		return fmt.Errorf("write project configuration file: %w", err)
 	}
 	if err := writeProvisionFiles(provisionDir, force); err != nil {
 		return fmt.Errorf("write managed devenv provision configuration: %w", err)
@@ -246,39 +216,22 @@ func resolveProvisionDir(repoRoot string) string {
 		}
 	}
 	if homeDir, err := HomeConfigDir(); err == nil {
-		if repoRoot != "" {
-			if projectName, worktreeName, gitRef, err := configScopeNames(repoRoot); err == nil {
-				candidates := []string{
-					filepath.Join(
-						homeDir,
-						"sandboxes",
-						slugify(projectName+"-"+gitRef),
-						".mezha",
-						"provision",
-					),
-					filepath.Join(
-						homeDir,
-						"worktrees",
-						slugify(projectName+"-"+worktreeName),
-						".mezha",
-						"provision",
-					),
-					filepath.Join(homeDir, "projects", slugify(projectName), ".mezha", "provision"),
-				}
-				for _, c := range candidates {
-					if info, err := os.Stat(c); err == nil && info.IsDir() {
-						return c
-					}
-				}
+		if projectDir := projectConfigDir(homeDir, repoRoot); projectDir != "" {
+			p := filepath.Join(projectDir, "provision")
+			if info, err := os.Stat(p); err == nil && info.IsDir() {
+				return p
 			}
 		}
-		c := filepath.Join(homeDir, ".mezha", "provision")
+		c := filepath.Join(homeDir, "provision")
 		if info, err := os.Stat(c); err == nil && info.IsDir() {
 			return c
 		}
 	}
 	if repoRoot != "" {
 		return filepath.Join(repoRoot, ".mezha", "provision")
+	}
+	if homeDir, err := HomeConfigDir(); err == nil {
+		return filepath.Join(homeDir, "provision")
 	}
 	return ""
 }

@@ -151,3 +151,74 @@ done`,
 		})
 	}
 }
+
+func TestLoadConfigGlobalAndProject(t *testing.T) {
+	globalDir := t.TempDir()
+	projectDir := t.TempDir()
+	t.Setenv("MEZHA_HOME", globalDir)
+
+	globalConfig := filepath.Join(globalDir, "mezha.toml")
+	if err := os.WriteFile(
+		globalConfig,
+		[]byte("version = 1\n[sandbox]\nname = \"global-sandbox\"\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+
+	// Falls back to global when project config is absent
+	cfg, path, err := LoadConfig(projectDir)
+	if err != nil {
+		t.Fatalf("LoadConfig error = %v", err)
+	}
+	if path != globalConfig {
+		t.Fatalf("LoadConfig path = %q, want %q", path, globalConfig)
+	}
+	if cfg.Sandbox.Name != "global-sandbox" {
+		t.Fatalf("cfg.Sandbox.Name = %q, want global-sandbox", cfg.Sandbox.Name)
+	}
+
+	// Home project config takes precedence over global
+	homeProjectDir := filepath.Join(globalDir, "projects", slugify(filepath.Base(projectDir)))
+	if err := os.MkdirAll(homeProjectDir, 0o755); err != nil {
+		t.Fatalf("mkdir home project: %v", err)
+	}
+	homeProjectConfig := filepath.Join(homeProjectDir, "mezha.toml")
+	if err := os.WriteFile(
+		homeProjectConfig,
+		[]byte("version = 1\n[sandbox]\nname = \"home-project-sandbox\"\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("write home project config: %v", err)
+	}
+	cfg, path, err = LoadConfig(projectDir)
+	if err != nil {
+		t.Fatalf("LoadConfig error = %v", err)
+	}
+	if path != homeProjectConfig {
+		t.Fatalf("LoadConfig path = %q, want %q", path, homeProjectConfig)
+	}
+	if cfg.Sandbox.Name != "home-project-sandbox" {
+		t.Fatalf("cfg.Sandbox.Name = %q, want home-project-sandbox", cfg.Sandbox.Name)
+	}
+
+	// Project repo config takes highest precedence
+	projectConfig := filepath.Join(projectDir, "mezha.toml")
+	if err := os.WriteFile(
+		projectConfig,
+		[]byte("version = 1\n[sandbox]\nname = \"project-sandbox\"\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+	cfg, path, err = LoadConfig(projectDir)
+	if err != nil {
+		t.Fatalf("LoadConfig error = %v", err)
+	}
+	if path != projectConfig {
+		t.Fatalf("LoadConfig path = %q, want %q", path, projectConfig)
+	}
+	if cfg.Sandbox.Name != "project-sandbox" {
+		t.Fatalf("cfg.Sandbox.Name = %q, want project-sandbox", cfg.Sandbox.Name)
+	}
+}

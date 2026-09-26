@@ -867,7 +867,8 @@ func herdrDashboardSettings(projectDir string) ([]herdrDashboardSetting, bool, e
 		return nil, false, err
 	}
 	mezhaPath := filepath.Join(repoRoot, "mezha.toml")
-	devenvPath := filepath.Join(repoRoot, ".mezha", "provision", "devenv.nix")
+	provisionDir := resolveProvisionDir(repoRoot)
+	devenvPath := filepath.Join(provisionDir, "devenv.nix")
 	settings := make([]herdrDashboardSetting, 0, 4)
 	if _, configPath, err := LoadConfig(repoRoot); err != nil {
 		return nil, false, fmt.Errorf("load Mezha settings: %w", err)
@@ -879,8 +880,8 @@ func herdrDashboardSettings(projectDir string) ([]herdrDashboardSetting, bool, e
 		path  string
 	}{
 		{label: "devenv", path: devenvPath},
-		{label: "common", path: filepath.Join(repoRoot, ".mezha", "provision", "common.nix")},
-		{label: "extension", path: filepath.Join(repoRoot, ".mezha", "provision", "extension.nix")},
+		{label: "common", path: filepath.Join(provisionDir, "common.nix")},
+		{label: "extension", path: filepath.Join(provisionDir, "extension.nix")},
 	} {
 		if _, err := os.Stat(entry.path); err == nil {
 			settings = append(settings, herdrDashboardSetting{label: entry.label, path: entry.path})
@@ -934,7 +935,7 @@ func herdrRepoInitialized(projectDir string) (bool, error) {
 		return true, nil
 	}
 	paths := []string{
-		filepath.Join(repoRoot, ".mezha", "provision", "devenv.nix"),
+		filepath.Join(resolveProvisionDir(repoRoot), "devenv.nix"),
 	}
 	for _, path := range paths {
 		if _, err := os.Stat(path); err == nil {

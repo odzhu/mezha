@@ -53,19 +53,79 @@ func TestInitCreatesProvisionDevenv(t *testing.T) {
 }
 
 func TestResolveProvisionDir(t *testing.T) {
-	tempDir := t.TempDir()
-	provisionDir := filepath.Join(tempDir, ".mezha", "provision")
+	projectDir := t.TempDir()
+	globalDir := t.TempDir()
+	t.Setenv("MEZHA_HOME", globalDir)
 
-	if err := os.MkdirAll(provisionDir, 0o755); err != nil {
-		t.Fatalf("mkdir error = %v", err)
-	}
-	devenvFile := filepath.Join(provisionDir, "devenv.nix")
-	if err := os.WriteFile(devenvFile, []byte("{}\n"), 0o644); err != nil {
-		t.Fatalf("write devenv.nix error = %v", err)
+	globalProvisionDir := filepath.Join(globalDir, "provision")
+	if err := os.MkdirAll(globalProvisionDir, 0o755); err != nil {
+		t.Fatalf("mkdir global provision error = %v", err)
 	}
 
-	resolved := resolveProvisionDir(tempDir)
-	if resolved != provisionDir {
-		t.Fatalf("resolveProvisionDir() = %q, want %q", resolved, provisionDir)
+	// Falls back to global when project provision dir does not exist
+	resolved := resolveProvisionDir(projectDir)
+	if resolved != globalProvisionDir {
+		t.Fatalf("resolveProvisionDir() = %q, want global %q", resolved, globalProvisionDir)
+	}
+
+	// Home project provision takes precedence over global
+	homeProjectProvisionDir := filepath.Join(
+		globalDir,
+		"projects",
+		slugify(filepath.Base(projectDir)),
+		"provision",
+	)
+	if err := os.MkdirAll(homeProjectProvisionDir, 0o755); err != nil {
+		t.Fatalf("mkdir home project provision error = %v", err)
+	}
+	resolved = resolveProvisionDir(projectDir)
+	if resolved != homeProjectProvisionDir {
+		t.Fatalf(
+			"resolveProvisionDir() = %q, want home project %q",
+			resolved,
+			homeProjectProvisionDir,
+		)
+	}
+
+	// Project repo provision takes highest precedence
+	projectProvisionDir := filepath.Join(projectDir, ".mezha", "provision")
+	if err := os.MkdirAll(projectProvisionDir, 0o755); err != nil {
+		t.Fatalf("mkdir project provision error = %v", err)
+	}
+	resolved = resolveProvisionDir(projectDir)
+	if resolved != projectProvisionDir {
+		t.Fatalf("resolveProvisionDir() = %q, want project %q", resolved, projectProvisionDir)
+	}
+}
+
+func TestInitHomeProject(t *testing.T) {
+	globalDir := t.TempDir()
+	projectDir := t.TempDir()
+	t.Setenv("MEZHA_HOME", globalDir)
+
+	rc := RepoContext{RepoRoot: projectDir}
+	if err := InitHomeProject(rc, false); err != nil {
+		t.Fatalf("InitHomeProject error = %v", err)
+	}
+
+	expectedConfig := filepath.Join(
+		globalDir,
+		"projects",
+		slugify(filepath.Base(projectDir)),
+		"mezha.toml",
+	)
+	if _, err := os.Stat(expectedConfig); err != nil {
+		t.Fatalf("expected home project config to exist: %v", err)
+	}
+
+	expectedProvision := filepath.Join(
+		globalDir,
+		"projects",
+		slugify(filepath.Base(projectDir)),
+		"provision",
+		"devenv.nix",
+	)
+	if _, err := os.Stat(expectedProvision); err != nil {
+		t.Fatalf("expected home project provision to exist: %v", err)
 	}
 }

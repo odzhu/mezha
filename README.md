@@ -106,32 +106,21 @@ with multiple sandboxes.
 
 Run `mezha init --home` to create a default configuration at
 `$MEZHA_HOME/mezha.toml` (`~/.mezha/mezha.toml` when `MEZHA_HOME` is unset).
-Create a scoped home configuration from a Git checkout with one of:
+To create a project configuration in `$MEZHA_HOME`, run `mezha init --home --project`
+from a Git checkout.
 
-```sh
-mezha init --home --project
-mezha init --home --worktree
-mezha init --home --sandbox
-```
-
-The scope flags are mutually exclusive. They create the project, current
-worktree, or current branch sandbox configuration, respectively.
 Mezha selects one configuration rather than merging layers. The most specific
 existing file is used; precedence increases in this order:
 
 1. `$MEZHA_HOME/mezha.toml`
 2. `$MEZHA_HOME/projects/<git-project>/mezha.toml`
-3. `$MEZHA_HOME/worktrees/<git-project>-<worktree>/mezha.toml`
-4. `$MEZHA_HOME/sandboxes/<git-project>-<git-branch>/mezha.toml`
-5. `<project-root>/mezha.toml`
+3. `<project-root>/mezha.toml`
 
-The project, worktree, and sandbox directory names use Mezha's safe sandbox
-name format; linked worktrees use the primary repository's name for
-`<git-project>`. Mezha always uses `ghcr.io/cachix/devenv/devenv:latest` and
+Mezha always uses `ghcr.io/cachix/devenv/devenv:latest` and
 runs it as UID 0: Docker and k3s
 require it, and Microsandbox cannot resolve the native image's `1000:100` user
 declaration. Mezha synchronizes the managed provisioner devenv configuration from
-`.mezha/provision` during sandbox creation and runs. Relative paths in `provision.add`
+`.mezha/provision` (or `$MEZHA_HOME/projects/<git-project>/provision` or `$MEZHA_HOME/provision` globally) during sandbox creation and runs. Relative paths in `provision.add`
 are resolved relative to the configuration file.
 
 ```toml
@@ -174,7 +163,7 @@ the same `microsandbox.network` and `microsandbox.secrets`
 configuration (including secret host allowlists) as the primary sandbox. It then symlinks `/root`,
 `/var/lib/docker`, and `/var/lib/rancher/k3s` into that volume before any initialization command
 or devenv shell runs; `/home` remains empty. Mezha automatically synchronizes the entire
-`.mezha/provision` directory to `/root/.config/mezha/services/devenv`, supporting
+`.mezha/provision` directory (or `$MEZHA_HOME/provision` globally) to `/root/.config/mezha/services/devenv`, supporting
 decomposed devenv configuration with nested devenv projects for extensions without requiring
 any provision sync configuration in `mezha.toml`. The provision folder structure includes:
 - `devenv.nix`: entrypoint defining imports (`common.nix` and `extension.nix`)
