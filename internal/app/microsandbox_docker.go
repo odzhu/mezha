@@ -165,7 +165,7 @@ func parseDevenvHasEnabledProcesses(stdout string) (bool, error) {
 func printDevenvDaemonLog(ctx context.Context, sandbox *msb.Sandbox) {
 	output, err := sandbox.Exec(ctx, "sh", []string{
 		"-c",
-		"for log in /tmp/devenv-*/processes/daemon.log; do [ -f \"$log\" ] || continue; echo \"--- $log ---\" >&2; tail -n 200 \"$log\" >&2; done",
+		"for log in /tmp/devenv-*/processes/daemon.log /tmp/devenv-*/processes/logs/*; do [ -f \"$log\" ] && [ -s \"$log\" ] || continue; echo \"--- $log ---\" >&2; tail -n 200 \"$log\" >&2; done",
 	}, persistentRuntimeExecEnv())
 	if err != nil {
 		return
