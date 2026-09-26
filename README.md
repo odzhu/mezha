@@ -175,20 +175,29 @@ configuration (including secret host allowlists) as the primary sandbox. It then
 `/var/lib/docker`, and `/var/lib/rancher/k3s` into that volume before any initialization command
 or devenv shell runs; `/home` remains empty. Mezha automatically synchronizes the entire
 `.mezha/provision` directory to `/root/.config/mezha/services/devenv`, supporting
-`.mezha/provision/devenv.nix` as well as any other imports and helper files without requiring
-any provision sync configuration in `mezha.toml`. It uses devenv `packages` for Docker, k3s, kubectl, Git,
+decomposed devenv configuration with nested devenv projects for extensions without requiring
+any provision sync configuration in `mezha.toml`. The provision folder structure includes:
+- `devenv.nix`: entrypoint defining imports (`common.nix` and `extension.nix`)
+- `devenv.yaml`: root devenv project configuration
+- `common.nix`: default common packages, environment settings, and tasks
+- `extension.nix`: extension imports
+- `extension/`: nested devenv extension projects (e.g., `extension/docker/` and `extension/k3s/`, each with its own `devenv.nix` and `devenv.yaml`)
+
+Lock files are generated and maintained natively inside the sandbox, avoiding host platform or architecture discrepancies.
+
+It uses devenv `packages` for Docker, k3s, kubectl, Git,
 Lazygit, GitHub CLI, Go, Groff, Less, and `col`. It configures Groff and the
 manpage pager so captured help output is plain text rather than raw formatting
-control sequences. Mezha declares Docker and k3s as supervised `processes` in its managed devenv
-configuration. It starts the configured processes once with `devenv up -d` and
+control sequences. Mezha declares Docker and k3s as supervised `processes` in their respective extension
+configurations. It starts the configured processes once with `devenv up -d` and
 waits for their readiness probes before opening commands or interactive
 sessions. Subsequent sessions attach to the same process manager, so concurrent
-sessions share one Docker daemon and one k3s cluster. Update that file and run
+sessions share one Docker daemon and one k3s cluster. Update that configuration and run
 `mezha --recreate` to apply a changed managed environment.
 
 Provisioning parameters and services (such as Docker or k3s) are managed directly in
-`.mezha/provision/devenv.nix` or its imports. Enable or disable processes via `processes.<name>.start.enable`
-in that file. Docker images, containers, and volumes plus k3s cluster
+`.mezha/provision/` (e.g., `extension/docker/devenv.nix` and `extension/k3s/devenv.nix`). Enable or disable processes via `processes.<name>.start.enable`
+in those files, or toggle extensions in `extension.nix`. Docker images, containers, and volumes plus k3s cluster
 state are stored in the shared persistent volume.
 k3s uses Docker as its container runtime, so Docker-built images are immediately
 available to Kubernetes. Named volume names are automatically prefixed with the

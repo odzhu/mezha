@@ -868,16 +868,25 @@ func herdrDashboardSettings(projectDir string) ([]herdrDashboardSetting, bool, e
 	}
 	mezhaPath := filepath.Join(repoRoot, "mezha.toml")
 	devenvPath := filepath.Join(repoRoot, ".mezha", "provision", "devenv.nix")
-	settings := make([]herdrDashboardSetting, 0, 2)
+	settings := make([]herdrDashboardSetting, 0, 4)
 	if _, configPath, err := LoadConfig(repoRoot); err != nil {
 		return nil, false, fmt.Errorf("load Mezha settings: %w", err)
 	} else if configPath != "" {
 		settings = append(settings, herdrDashboardSetting{label: "Mezha", path: configPath})
 	}
-	if _, err := os.Stat(devenvPath); err == nil {
-		settings = append(settings, herdrDashboardSetting{label: "devenv", path: devenvPath})
-	} else if !os.IsNotExist(err) {
-		return nil, false, fmt.Errorf("inspect devenv settings: %w", err)
+	for _, entry := range []struct {
+		label string
+		path  string
+	}{
+		{label: "devenv", path: devenvPath},
+		{label: "common", path: filepath.Join(repoRoot, ".mezha", "provision", "common.nix")},
+		{label: "extension", path: filepath.Join(repoRoot, ".mezha", "provision", "extension.nix")},
+	} {
+		if _, err := os.Stat(entry.path); err == nil {
+			settings = append(settings, herdrDashboardSetting{label: entry.label, path: entry.path})
+		} else if !os.IsNotExist(err) {
+			return nil, false, fmt.Errorf("inspect %s settings: %w", entry.label, err)
+		}
 	}
 	if len(settings) > 0 {
 		return settings, false, nil

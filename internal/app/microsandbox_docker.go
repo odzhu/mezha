@@ -181,7 +181,7 @@ func ensureManagedDevenvConfig(
 			}
 			return fmt.Errorf("inspect managed devenv configuration: %w", err)
 		}
-		if err := nativeUpload(ctx, sandbox, provisionDir, managedDevenvPath); err != nil {
+		if err := syncProvisionDir(ctx, sandbox, provisionDir, managedDevenvPath); err != nil {
 			return fmt.Errorf("sync managed devenv provision configuration: %w", err)
 		}
 	} else {
@@ -204,6 +204,34 @@ func ensureManagedDevenvConfig(
 	}
 
 	return ensureDevenvBashHook(ctx, sandbox)
+}
+
+// syncProvisionDir uploads the provision directory excluding lock files.
+func syncProvisionDir(ctx context.Context, sandbox *msb.Sandbox, local, remote string) error {
+	info, err := os.Lstat(local)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("provision path is not a directory: %s", local)
+	}
+	return filepath.Walk(local, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !info.IsDir() && strings.HasSuffix(info.Name(), ".lock") {
+			return nil
+		}
+		rel, err := filepath.Rel(local, path)
+		if err != nil {
+			return err
+		}
+		guestPath := filepath.ToSlash(filepath.Join(remote, rel))
+		if info.IsDir() {
+			return sandbox.FS().Mkdir(ctx, guestPath)
+		}
+		return sandbox.FS().CopyFromHost(ctx, path, guestPath)
+	})
 }
 
 // ensureDevenvBashHook enables directory-based devenv activation for Bash.
