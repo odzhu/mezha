@@ -26,8 +26,6 @@
       persist_link /var/lib/docker /nix/mezha/services/docker
       persist_link /var/lib/rancher/k3s /nix/mezha/services/k3s
       persist_link /root /nix/mezha/root
-      rm -rf /home
-      mkdir -p /home/devenv
 
       # 2. Project Directory Links
       if [ -n "''${MSB_PROJECT:-}" ]; then

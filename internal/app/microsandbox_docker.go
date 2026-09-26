@@ -180,6 +180,9 @@ func ensureManagedDevenvConfig(
 	sandbox *msb.Sandbox,
 	repoRoot string,
 ) error {
+	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
+		return err
+	}
 	output, err := sandbox.Exec(
 		ctx,
 		persistentRuntimeBin+"/mkdir",

@@ -100,6 +100,8 @@ func runMezhaInitSandboxTask(
 	herdrEnabled bool,
 ) error {
 	env := map[string]string{
+		"HOME":        "/root",
+		"USER":        "root",
 		"MSB_WORKDIR": repoDir,
 		"PATH":        "/nix/mezha/root/.mezha/runtime-bin",
 	}
@@ -162,7 +164,7 @@ func runMezhaInitSandboxTask(
 		"--show-output",
 		"--from",
 		"path:" + managedDevenvPath,
-	}, msb.WithAttachEnv(env))
+	}, msb.WithAttachCwd(managedDevenvPath), msb.WithAttachEnv(env))
 	if err != nil {
 		return fmt.Errorf("run mezha:init-sandbox task: %w", err)
 	}
