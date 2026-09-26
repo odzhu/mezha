@@ -21,7 +21,7 @@ var herdrVersion = regexp.MustCompile(`^herdr (\d+\.\d+\.\d+)$`)
 
 // ensureSandboxHerdr installs the matching Linux release without relying on
 // SSH stdin streaming, which Microsandbox's SSH proxy does not support here.
-func ensureSandboxHerdr(ctx context.Context, sandbox *msb.Sandbox, useDevenv bool) error {
+func ensureSandboxHerdr(ctx context.Context, sandbox *msb.Sandbox) error {
 	versionOutput, err := execx.Output(ctx, "herdr", "--version")
 	if err != nil {
 		return fmt.Errorf("get Herdr version: %w", err)

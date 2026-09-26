@@ -181,8 +181,6 @@ func newRunCommand() *cli.Command {
 			}
 			advisor := resolveAdvisorParam(cmd, cfg)
 
-			kubernetes := cfg.Services.K3s.Enabled
-
 			remoteRepoDir, err := resolveSandboxProjectDir(cmd, cfg, rc)
 			if err != nil {
 				return err
@@ -195,7 +193,6 @@ func newRunCommand() *cli.Command {
 				),
 				RemoteRepoDir:        remoteRepoDir,
 				Recreate:             recreate,
-				Kubernetes:           kubernetes,
 				ReplaceSandboxRemote: cmd.Bool("replace-sandbox-remote"),
 				Editor:               resolveParam(cmd, "editor", "", cfg.Sandbox.Editor, ""),
 				RemoteCommand:        remoteArgs,
@@ -261,7 +258,6 @@ func newProvisionCommand() *cli.Command {
 			if volumesFlush && !recreate {
 				return errors.New("--volumes-flush requires --recreate")
 			}
-			kubernetes := cfg.Services.K3s.Enabled
 			remoteRepoDir, err := resolveSandboxProjectDir(cmd, cfg, rc)
 			if err != nil {
 				return err
@@ -270,7 +266,6 @@ func newProvisionCommand() *cli.Command {
 				SandboxName:   resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
 				RemoteRepoDir: remoteRepoDir,
 				Recreate:      recreate,
-				Kubernetes:    kubernetes,
 				Herdr:         herdr,
 				VolumesFlush:  volumesFlush,
 			})
@@ -315,7 +310,6 @@ func newRecreateCommand() *cli.Command {
 				SandboxName:   resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
 				RemoteRepoDir: remoteRepoDir,
 				Recreate:      true,
-				Kubernetes:    cfg.Services.K3s.Enabled,
 				Herdr:         herdr,
 				VolumesFlush:  true,
 			})

@@ -16,7 +16,6 @@ type RunParams struct {
 	SandboxName          string
 	RemoteRepoDir        string
 	Recreate             bool
-	Kubernetes           bool
 	ReplaceSandboxRemote bool
 	Editor               string
 	RemoteCommand        []string
@@ -74,7 +73,6 @@ type ProvisionParams struct {
 	SandboxName   string
 	RemoteRepoDir string
 	Recreate      bool
-	Kubernetes    bool
 	Herdr         bool
 	VolumesFlush  bool
 }

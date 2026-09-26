@@ -17,21 +17,9 @@ type MezhaConfig struct {
 	Version      uint32            `toml:"version,omitempty"`
 	Microsandbox *MicrosandboxSpec `toml:"microsandbox,omitempty"`
 	Sandbox      SandboxConfig     `toml:"sandbox,omitempty"`
-	Services     ServicesConfig    `toml:"services,omitempty"`
 	Files        FilesConfig       `toml:"files,omitempty"`
 	Provision    ProvisionConfig   `toml:"provision,omitempty"`
 	SecretSpec   SecretSpecConfig  `toml:"secretspec,omitempty"`
-}
-
-// ServicesConfig controls services available inside the sandbox.
-type ServicesConfig struct {
-	Docker ServiceConfig `toml:"docker,omitempty"`
-	K3s    ServiceConfig `toml:"k3s,omitempty"`
-}
-
-// ServiceConfig controls an individual sandbox service.
-type ServiceConfig struct {
-	Enabled bool `toml:"enabled,omitempty"`
 }
 
 // SecretSpecConfig configures host-side SecretSpec resolution for Mezha sessions.
@@ -223,6 +211,11 @@ func configScopeNames(repoRoot string) (projectName, worktreeName, gitRef string
 }
 
 func decodeConfig(config map[string]any, path string) (*MezhaConfig, string, error) {
+	if _, ok := config["services"]; ok {
+		return nil, "", fmt.Errorf(
+			"services configuration is no longer supported; manage provisioning parameters in devenv.nix",
+		)
+	}
 	var data bytes.Buffer
 	if err := toml.NewEncoder(&data).Encode(config); err != nil {
 		return nil, "", fmt.Errorf("encode configuration: %w", err)
@@ -404,12 +397,6 @@ size_mib = 51200
 # path = "secretspec.toml"
 # scope = "sandbox"
 # reason = "start development sandbox"
-
-# Docker, k3s, Git, Lazygit, and GitHub CLI are provided by .mezha/devenv.nix.
-[services.docker]
-enabled = true
-[services.k3s]
-enabled = true
 
 # Set name to reuse one sandbox by default, or select one per command with
 # --sandbox. Set herdr to register it and synchronize local plugins.

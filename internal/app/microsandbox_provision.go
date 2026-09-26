@@ -75,21 +75,15 @@ func provisionMicrosandbox(
 			return err
 		}
 	}
-	useDevenv := cfg.Services.Docker.Enabled || params.Kubernetes
+	if err := ensureManagedDevenvConfig(ctx, sandbox, cfg.Provision); err != nil {
+		return err
+	}
+	if err := ensureDevenvServices(ctx, sandbox); err != nil {
+		return err
+	}
 	herdrEnabled := params.Herdr && herdrCommandAvailable()
-	if useDevenv || herdrEnabled {
-		if err := ensureManagedDevenvConfig(ctx, sandbox, cfg.Provision); err != nil {
-			return err
-		}
-	}
-	if useDevenv {
-		fmt.Println("Starting core devenv services...")
-		if err := ensureDevenvServices(ctx, sandbox, params.Kubernetes); err != nil {
-			return err
-		}
-	}
 	if herdrEnabled {
-		if err := ensureSandboxHerdr(ctx, sandbox, useDevenv); err != nil {
+		if err := ensureSandboxHerdr(ctx, sandbox); err != nil {
 			return err
 		}
 		if err := registerHerdrMachine(ctx, params.SandboxName); err != nil {

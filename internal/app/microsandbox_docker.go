@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,48 +18,9 @@ const managedDevenvConfig = managedDevenvPath + "/devenv.nix"
 const persistentRuntimeBin = "/nix/mezha/root/.mezha/runtime-bin"
 const nativeDevenvPath = persistentRuntimeBin + "/devenv"
 const managedDevenvUserConfig = managedDevenvPath + "/user-devenv.nix"
-const managedDevenvWrapper = `# Mezha managed devenv services wrapper v3
-args@{ pkgs, ... }:
-let
-  user = import ./user-devenv.nix;
-  base = user args;
-in
-base // {
-  packages = (base.packages or []) ++ [ pkgs.docker pkgs.k3s pkgs.kubectl ];
-  env = (base.env or {}) // {
-    KUBECONFIG = "/var/lib/rancher/k3s/k3s.yaml";
-  };
-  processes = (base.processes or {}) // {
-    mezha-docker = {
-      start.enable = false;
-      exec = ''
-        rm -f /var/run/docker.pid
-        exec dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs
-      '';
-      ready.exec = "docker info >/dev/null";
-      restart.on = "always";
-      shutdown.grace = 30;
-    };
-    mezha-k3s = {
-      start.enable = false;
-      after = [ "devenv:processes:mezha-docker" ];
-      exec = ''
-        exec k3s server \
-          --data-dir /var/lib/rancher/k3s \
-          --node-name mezha-k3s \
-          --https-listen-port=16443 \
-          --docker \
-          --write-kubeconfig /var/lib/rancher/k3s/k3s.yaml \
-          --write-kubeconfig-mode 644
-      '';
-      ready.exec = ''
-        kubectl --kubeconfig /var/lib/rancher/k3s/k3s.yaml get nodes --no-headers |
-          awk '$2 ~ /^Ready/ { ready=1 } END { exit !ready }'
-      '';
-      restart.on = "always";
-      shutdown.grace = 30;
-    };
-  };
+const managedDevenvWrapper = `# Mezha managed devenv services wrapper v4
+{
+  imports = [ ./user-devenv.nix ];
 }
 `
 
@@ -91,13 +53,15 @@ func devenvInteractiveShellCommand() (string, []string) {
 
 // ensureDevenvServices starts the singleton devenv process manager and waits
 // until its requested services pass their configured readiness probes.
-func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox, kubernetes bool) error {
-	processes := []string{"mezha-docker"}
-	if kubernetes {
-		processes = append(processes, "mezha-k3s")
+func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox) error {
+	hasProcesses, err := devenvHasEnabledProcesses(ctx, sandbox)
+	if err != nil {
+		return err
+	}
+	if !hasProcesses {
+		return nil
 	}
 	args := []string{"up", "--detach", "--from", "path:" + managedDevenvPath}
-	args = append(args, processes...)
 	fmt.Println("Starting devenv services...")
 	code, err := sandbox.AttachWith(
 		ctx,
@@ -125,6 +89,59 @@ func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox, kubernetes 
 		return fmt.Errorf("wait for devenv services exited with code %d", code)
 	}
 	return nil
+}
+
+func devenvHasEnabledProcesses(ctx context.Context, sandbox *msb.Sandbox) (bool, error) {
+	output, err := sandbox.Exec(
+		ctx,
+		nativeDevenvPath,
+		[]string{
+			"eval",
+			"--quiet",
+			"--no-tui",
+			"--from",
+			"path:" + managedDevenvPath,
+			"--",
+			"processes",
+		},
+		persistentRuntimeExecEnv(),
+		msb.WithExecCwd(managedDevenvPath),
+	)
+	if err != nil {
+		return false, fmt.Errorf("evaluate devenv processes: %w", err)
+	}
+	if !output.Success() {
+		return false, fmt.Errorf(
+			"evaluate devenv processes: %s",
+			strings.TrimSpace(output.Stderr()),
+		)
+	}
+	return parseDevenvHasEnabledProcesses(output.Stdout())
+}
+
+func parseDevenvHasEnabledProcesses(stdout string) (bool, error) {
+	stdout = strings.TrimSpace(stdout)
+	start := strings.Index(stdout, "{")
+	end := strings.LastIndex(stdout, "}")
+	if start < 0 || end <= start {
+		return false, nil
+	}
+	var res struct {
+		Processes map[string]struct {
+			Start struct {
+				Enable bool `json:"enable"`
+			} `json:"start"`
+		} `json:"processes"`
+	}
+	if err := json.Unmarshal([]byte(stdout[start:end+1]), &res); err != nil {
+		return false, fmt.Errorf("parse devenv processes evaluation: %w", err)
+	}
+	for _, proc := range res.Processes {
+		if proc.Start.Enable {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func printDevenvDaemonLog(ctx context.Context, sandbox *msb.Sandbox) {
