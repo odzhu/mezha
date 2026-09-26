@@ -344,71 +344,7 @@ func ProjectDefaultConfigTemplate() string {
 }
 
 func defaultConfigTemplate() string {
-	return `# Mezha configuration file
-# For details, see: https://github.com/odzhu/mezha
-version = 1
-
-# Native local Microsandbox configuration. Mezha always uses the native devenv
-# container and runs it as UID 0.
-[microsandbox]
-# Nixpkgs evaluation needs more than Microsandbox's 512 MiB default.
-memory_mib = 4096
-# cpus = 2
-
-# Secrets are sourced from the local environment and restricted to an allowlist.
-# [[microsandbox.secrets]]
-# env = "GITHUB_TOKEN"
-# value_from_env = "GITHUB_TOKEN"
-# allow_hosts = ["api.github.com"]
-# require_tls = true
-# passthrough = ["api.internal.corp"]
-# violation_action = "block-and-log"
-# [microsandbox.secrets.substitution]
-# headers = true
-# query = false
-# body = false
-
-# Bind mounts use [[microsandbox.mounts]] tables.
-# [[microsandbox.mounts]]
-# source = "."
-# target = "/workspace"
-
-# All persistent state shares one volume. Mezha seeds the Nix store and creates
-# the required symlinks before entering the devenv shell.
-[[microsandbox.volumes]]
-name = "state"
-target = "/nix"
-mode = "ensure-exists"
-kind = "disk"
-size_mib = 51200
-
-# [microsandbox.network]
-# default_egress = "deny"
-# default_ingress = "allow"
-# strict = true
-# dns_rebind_protection = true
-# [[microsandbox.network.rules]]
-# action = "allow"
-# direction = "egress"
-# destination = "public"
-# ports = ["80", "443"]
-
-# Resolve secrets with the SecretSpec SDK before Mezha starts the sandbox. The
-# values are exported to Mezha and can be passed into the sandbox with
-# [[microsandbox.secrets]] entries above.
-# [secretspec]
-# enabled = true
-# provider = "keyring"
-# profile = "devtools"
-# path = "secretspec.toml"
-# scope = "sandbox"
-# reason = "start development sandbox"
-
-# Set name to reuse one sandbox by default, or select one per command with
-# --sandbox. Set herdr to register it and synchronize local plugins.
-[sandbox]
-herdr = false
-`
+	return defaultMezhaToml
 }
 
 func expandEnvValue(val string) string {

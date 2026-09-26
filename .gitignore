@@ -20,7 +20,7 @@ cover.out
 
 # Mezha project-local state
 .mezha*
-mezha.*
+/mezha.*
 docs
 .pi
 upstream/

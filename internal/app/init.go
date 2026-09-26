@@ -102,38 +102,11 @@ func Init(_ context.Context, rc RepoContext, force bool) error {
 	return nil
 }
 
-type provisionFileEntry struct {
-	relPath string
-	content string
-}
-
-func defaultProvisionFiles() []provisionFileEntry {
-	return []provisionFileEntry{
-		{relPath: "devenv.nix", content: defaultProvisionDevenvNix},
-		{relPath: "devenv.yaml", content: defaultProvisionDevenvYaml},
-		{relPath: "common.nix", content: defaultProvisionCommonNix},
-		{relPath: "extension.nix", content: defaultProvisionExtensionNix},
-		{
-			relPath: filepath.Join("extension", "docker", "devenv.nix"),
-			content: defaultProvisionDockerDevenvNix,
-		},
-		{
-			relPath: filepath.Join("extension", "docker", "devenv.yaml"),
-			content: defaultProvisionExtensionDevenvYaml,
-		},
-		{
-			relPath: filepath.Join("extension", "k3s", "devenv.nix"),
-			content: defaultProvisionK3sDevenvNix,
-		},
-		{
-			relPath: filepath.Join("extension", "k3s", "devenv.yaml"),
-			content: defaultProvisionExtensionDevenvYaml,
-		},
-	}
-}
-
 func writeProvisionFiles(provisionDir string, force bool) error {
-	files := defaultProvisionFiles()
+	files, err := defaultProvisionFiles()
+	if err != nil {
+		return err
+	}
 	if !force {
 		for _, file := range files {
 			target := filepath.Join(provisionDir, file.relPath)
@@ -158,125 +131,6 @@ func writeProvisionFiles(provisionDir string, force bool) error {
 	}
 	return nil
 }
-
-const defaultProvisionDevenvNix = `{ ... }:
-
-{
-  imports = [
-    ./common.nix
-    ./extension.nix
-  ];
-}
-`
-
-const defaultProvisionDevenvYaml = `# yaml-language-server: $schema=https://devenv.sh/devenv.schema.json
-inputs:
-  git-hooks:
-    url: github:cachix/git-hooks.nix
-    inputs:
-      nixpkgs:
-        follows: nixpkgs
-  mk-shell-bin:
-    url: github:rrbutani/nix-mk-shell-bin
-  nix2container:
-    url: github:nlewo/nix2container
-    inputs:
-      nixpkgs:
-        follows: nixpkgs
-  nixpkgs:
-    url: github:cachix/devenv-nixpkgs/rolling
-`
-
-const defaultProvisionCommonNix = `{ pkgs, ... }:
-
-{
-  packages = [
-    pkgs.less
-    pkgs.unixtools.col
-    pkgs.git
-    pkgs.lazygit
-    pkgs.gh
-    pkgs.go
-    pkgs.groff
-    pkgs.procps
-  ];
-
-  # Render manpages safely when command output is captured instead of attached
-  # to a terminal. grotty then emits overstrikes and col removes them.
-  env.GROFF_NO_SGR = "1";
-  env.MANPAGER = "col -b";
-}
-`
-
-const defaultProvisionExtensionNix = `{ ... }:
-
-{
-  imports = [
-    ./extension/docker/devenv.nix
-    ./extension/k3s/devenv.nix
-  ];
-}
-`
-
-const defaultProvisionDockerDevenvNix = `{ pkgs, ... }:
-
-{
-  packages = [
-    pkgs.docker
-  ];
-
-  # Mezha starts these once with devenv up -d and each session is a client.
-  processes.mezha-docker = {
-    start.enable = false;
-    exec = ''
-      rm -f /var/run/docker.pid
-      exec dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs
-    '';
-    ready.exec = "docker info >/dev/null";
-    restart.on = "always";
-    shutdown.grace = 30;
-  };
-}
-`
-
-const defaultProvisionK3sDevenvNix = `{ pkgs, ... }:
-
-{
-  packages = [
-    pkgs.k3s
-    pkgs.kubectl
-  ];
-
-  env.KUBECONFIG = "/var/lib/rancher/k3s/k3s.yaml";
-
-  # Mezha starts these once with devenv up -d and each session is a client.
-  processes.mezha-k3s = {
-    start.enable = false;
-    after = [ "devenv:processes:mezha-docker" ];
-    exec = ''
-      exec k3s server \
-        --data-dir /var/lib/rancher/k3s \
-        --node-name mezha-k3s \
-        --https-listen-port=16443 \
-        --docker \
-        --write-kubeconfig /var/lib/rancher/k3s/k3s.yaml \
-        --write-kubeconfig-mode 644
-    '';
-    ready.exec = ''
-      kubectl --kubeconfig /var/lib/rancher/k3s/k3s.yaml get nodes --no-headers |
-        awk '$2 ~ /^Ready/ { ready=1 } END { exit !ready }'
-    '';
-    restart.on = "always";
-    shutdown.grace = 30;
-  };
-}
-`
-
-const defaultProvisionExtensionDevenvYaml = `# yaml-language-server: $schema=https://devenv.sh/devenv.schema.json
-inputs:
-  nixpkgs:
-    url: github:cachix/devenv-nixpkgs/rolling
-`
 
 // InitHome creates the home-level configuration without requiring a Git
 // repository.
