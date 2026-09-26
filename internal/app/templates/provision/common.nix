@@ -10,6 +10,8 @@
     pkgs.go
     pkgs.groff
     pkgs.procps
+    pkgs.neovim
+    pkgs.pi-coding-agent
   ];
 
   # Render manpages safely when command output is captured instead of attached
