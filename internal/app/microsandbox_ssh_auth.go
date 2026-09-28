@@ -2,13 +2,18 @@ package app
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/odzhu/mezha/internal/execx"
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 // microsandboxHomeDir returns the Microsandbox home directory.
@@ -101,16 +106,16 @@ func findHostSSHPublicKeys(ctx context.Context) ([]string, error) {
 		}
 	}
 
-	agentCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	if stdout, _, err := execx.Run(
-		agentCtx,
-		"ssh-add",
-		[]string{"-L"},
-		execx.RunOptions{CaptureStdout: true},
-	); err == nil {
-		for _, line := range strings.Split(string(stdout), "\n") {
-			addKey(line)
+	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
+		dialer := net.Dialer{Timeout: 2 * time.Second}
+		if conn, err := dialer.DialContext(ctx, "unix", sock); err == nil {
+			defer func() { _ = conn.Close() }()
+			ag := agent.NewClient(conn)
+			if keys, err := ag.List(); err == nil {
+				for _, k := range keys {
+					addKey(k.String())
+				}
+			}
 		}
 	}
 
@@ -120,16 +125,24 @@ func findHostSSHPublicKeys(ctx context.Context) ([]string, error) {
 			if err := os.MkdirAll(sshDir, 0o700); err != nil {
 				return nil, fmt.Errorf("create SSH directory: %w", err)
 			}
-			genCtx, genCancel := context.WithTimeout(ctx, 10*time.Second)
-			defer genCancel()
-			_, _, err := execx.Run(
-				genCtx,
-				"ssh-keygen",
-				[]string{"-t", "ed25519", "-N", "", "-f", defaultKey},
-				execx.RunOptions{},
-			)
+			pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
 			if err != nil {
 				return nil, fmt.Errorf("generate default SSH key: %w", err)
+			}
+			privBlock, err := ssh.MarshalPrivateKey(privKey, "")
+			if err != nil {
+				return nil, fmt.Errorf("marshal default private key: %w", err)
+			}
+			if err := os.WriteFile(defaultKey, pem.EncodeToMemory(privBlock), 0o600); err != nil {
+				return nil, fmt.Errorf("write default private key: %w", err)
+			}
+			sshPubKey, err := ssh.NewPublicKey(pubKey)
+			if err != nil {
+				return nil, fmt.Errorf("convert default public key: %w", err)
+			}
+			pubAuthorized := ssh.MarshalAuthorizedKey(sshPubKey)
+			if err := os.WriteFile(defaultKey+".pub", pubAuthorized, 0o644); err != nil {
+				return nil, fmt.Errorf("write default public key: %w", err)
 			}
 			addFile(defaultKey + ".pub")
 		}

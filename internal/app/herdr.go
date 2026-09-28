@@ -1,15 +1,24 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/odzhu/mezha/internal/execx"
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 func herdrCommandAvailable() bool {
@@ -54,7 +63,7 @@ func registerHerdrMachine(ctx context.Context, sandboxName string) error {
 	if err != nil {
 		return fmt.Errorf("configure sandbox SSH for Herdr: %w", err)
 	}
-	if err := trustSandboxSSHHost(ctx, target); err != nil {
+	if err := trustSandboxSSHHost(ctx, target, sandboxName); err != nil {
 		return err
 	}
 	machines, err := listHerdrMachines(ctx)
@@ -104,39 +113,150 @@ func unregisterHerdrMachine(ctx context.Context, sandboxName string) (bool, erro
 	return removed, nil
 }
 
-func trustSandboxSSHHost(ctx context.Context, target string) error {
+type stdioConn struct {
+	io.Reader
+	io.WriteCloser
+}
+
+func (c *stdioConn) Close() error                     { return c.WriteCloser.Close() }
+func (c *stdioConn) LocalAddr() net.Addr              { return &net.IPAddr{} }
+func (c *stdioConn) RemoteAddr() net.Addr             { return &net.IPAddr{} }
+func (c *stdioConn) SetDeadline(time.Time) error      { return nil }
+func (c *stdioConn) SetReadDeadline(time.Time) error  { return nil }
+func (c *stdioConn) SetWriteDeadline(time.Time) error { return nil }
+
+func trustSandboxSSHHost(ctx context.Context, target, sandboxName string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("resolve home directory for sandbox SSH host key: %w", err)
 	}
-	knownHosts := filepath.Join(home, ".ssh", "known_hosts")
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		return fmt.Errorf("create SSH directory: %w", err)
+	}
+	knownHosts := filepath.Join(sshDir, "known_hosts")
 
-	// A sandbox with a reused name has a new SSH server identity. The alias is
-	// local to Mezha's proxy, so replace its old identity before recording it.
-	_, _, err = execx.Run(
-		ctx,
-		"ssh-keygen",
-		[]string{"-R", target, "-f", knownHosts},
-		execx.RunOptions{IgnoreExitCode: true},
-	)
+	executable, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("remove previous sandbox SSH host key: %w", err)
+		return fmt.Errorf("resolve mezha executable: %w", err)
 	}
 
-	_, stderr, err := execx.Run(ctx, "ssh", []string{
-		"-o", "UserKnownHostsFile=" + knownHosts,
-		"-o", "GlobalKnownHostsFile=/dev/null",
-		"-o", "StrictHostKeyChecking=accept-new",
-		target,
-		"true",
-	}, execx.RunOptions{CaptureStdout: true, CaptureStderr: true})
+	cmd := exec.CommandContext(ctx, executable, "ssh-proxy", "--sandbox", sandboxName)
+	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		if message := strings.TrimSpace(string(stderr)); message != "" {
-			return fmt.Errorf("trust sandbox SSH host key: %w: %s", err, message)
+		return fmt.Errorf("create proxy stdin pipe: %w", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("create proxy stdout pipe: %w", err)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start proxy command: %w", err)
+	}
+	defer func() {
+		_ = stdin.Close()
+		_ = cmd.Wait()
+	}()
+
+	var hostKey ssh.PublicKey
+	clientConfig := &ssh.ClientConfig{
+		User: "root",
+		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
+			hostKey = key
+			return nil
+		},
+		Timeout: 10 * time.Second,
+	}
+
+	conn, _, reqs, _ := ssh.NewClientConn(
+		&stdioConn{Reader: stdout, WriteCloser: stdin},
+		target,
+		clientConfig,
+	)
+	if conn != nil {
+		_ = conn.Close()
+	}
+	if reqs != nil {
+		go ssh.DiscardRequests(reqs)
+	}
+
+	if hostKey == nil {
+		_ = stdin.Close()
+		_ = cmd.Wait()
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return fmt.Errorf("fetch sandbox SSH host key: %s", msg)
 		}
+		return fmt.Errorf("fetch sandbox SSH host key: handshake failed")
+	}
+
+	if err := updateKnownHosts(knownHosts, target, hostKey); err != nil {
 		return fmt.Errorf("trust sandbox SSH host key: %w", err)
 	}
 	return nil
+}
+
+func updateKnownHosts(path, target string, key ssh.PublicKey) error {
+	var remaining []string
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read known_hosts: %w", err)
+	}
+	if len(data) > 0 {
+		for _, line := range strings.Split(string(data), "\n") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				if trimmed != "" {
+					remaining = append(remaining, line)
+				}
+				continue
+			}
+			fields := strings.Fields(trimmed)
+			if len(fields) < 2 {
+				remaining = append(remaining, line)
+				continue
+			}
+			if isHostPatternMatch(fields[0], target) {
+				continue
+			}
+			remaining = append(remaining, line)
+		}
+	}
+	remaining = append(remaining, knownhosts.Line([]string{target}, key))
+	output := strings.Join(remaining, "\n") + "\n"
+	return os.WriteFile(path, []byte(output), 0o600)
+}
+
+func isHostPatternMatch(pattern, target string) bool {
+	if strings.HasPrefix(pattern, "|1|") {
+		return matchHashedHost(pattern, target)
+	}
+	for _, h := range strings.Split(pattern, ",") {
+		h = strings.TrimSpace(h)
+		if h == target || h == "["+target+"]" || strings.HasPrefix(h, "["+target+"]:") {
+			return true
+		}
+	}
+	return false
+}
+
+func matchHashedHost(pattern, hostname string) bool {
+	parts := strings.Split(pattern, "|")
+	if len(parts) != 4 || parts[1] != "1" {
+		return false
+	}
+	salt, err := base64.StdEncoding.DecodeString(parts[2])
+	if err != nil {
+		return false
+	}
+	expectedHash, err := base64.StdEncoding.DecodeString(parts[3])
+	if err != nil {
+		return false
+	}
+	mac := hmac.New(sha1.New, salt)
+	mac.Write([]byte(hostname))
+	return hmac.Equal(mac.Sum(nil), expectedHash)
 }
 
 func listHerdrMachines(ctx context.Context) ([]herdrMachine, error) {

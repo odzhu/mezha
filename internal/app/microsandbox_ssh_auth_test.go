@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -245,4 +246,39 @@ func TestMicrosandboxHomeDir(t *testing.T) {
 			t.Errorf("got %q, want %q", got, want)
 		}
 	})
+}
+
+func TestFindHostSSHPublicKeys_GeneratesDefaultKey(t *testing.T) {
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
+	t.Setenv("SSH_AUTH_SOCK", "")
+
+	keys, err := findHostSSHPublicKeys(context.Background())
+	if err != nil {
+		t.Fatalf("findHostSSHPublicKeys failed: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("expected 1 generated key, got %d", len(keys))
+	}
+	if !strings.HasPrefix(keys[0], "ssh-ed25519 ") {
+		t.Errorf("expected ssh-ed25519 key, got %q", keys[0])
+	}
+
+	privKeyPath := filepath.Join(tempHome, ".ssh", "id_ed25519")
+	privData, err := os.ReadFile(privKeyPath)
+	if err != nil {
+		t.Fatalf("read private key: %v", err)
+	}
+	if !strings.Contains(string(privData), "OPENSSH PRIVATE KEY") {
+		t.Errorf("expected OpenSSH private key PEM block, got:\n%s", string(privData))
+	}
+
+	pubKeyPath := filepath.Join(tempHome, ".ssh", "id_ed25519.pub")
+	pubData, err := os.ReadFile(pubKeyPath)
+	if err != nil {
+		t.Fatalf("read public key: %v", err)
+	}
+	if strings.TrimSpace(string(pubData)) != keys[0] {
+		t.Errorf("public key file mismatch:\nfile: %s\nkey:  %s", string(pubData), keys[0])
+	}
 }
