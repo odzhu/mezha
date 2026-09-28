@@ -3,25 +3,35 @@ package app
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
-	"github.com/odzhu/mezha/internal/execx"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	transportssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 func PullSandboxBranch(
 	ctx context.Context,
 	rc RepoContext,
 	params GitParams,
-	rebase, merge bool,
 ) error {
 	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		if err := RepairSandboxGitRemote(ctx, rc, params, false); err != nil {
 			return err
 		}
-		return pullSandboxBranchInternal(ctx, rc, params, rebase, merge)
+		return pullSandboxBranchInternal(ctx, rc, params)
 	}
 	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 }
@@ -61,6 +71,7 @@ func RepairSandboxGitRemote(
 	}
 	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 }
+
 func SandboxGitStatus(ctx context.Context, rc RepoContext, params GitParams) error {
 	branch, err := currentBranch(ctx, rc.RepoRoot)
 	if err != nil {
@@ -74,6 +85,7 @@ func SandboxGitStatus(ctx context.Context, rc RepoContext, params GitParams) err
 	}
 	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 }
+
 func SSHProxy(ctx context.Context, sandboxName string) error {
 	if nativeMicrosandboxConfigured() {
 		return microsandboxSSHProxy(ctx, sandboxName)
@@ -81,65 +93,197 @@ func SSHProxy(ctx context.Context, sandboxName string) error {
 	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 }
 
-func currentBranch(ctx context.Context, repoRoot string) (string, error) {
-	output, err := execx.Output(
-		ctx,
-		"git",
-		"-C",
-		repoRoot,
-		"symbolic-ref",
-		"--quiet",
-		"--short",
-		"HEAD",
-	)
+func currentBranch(_ context.Context, repoRoot string) (string, error) {
+	repo, err := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	if err != nil {
+		return "", fmt.Errorf("open git repository: %w", err)
+	}
+	head, err := repo.Head()
 	if err != nil {
 		return "", fmt.Errorf(
 			"current Git HEAD is detached or unborn; check out a branch with a commit before synchronizing it: %w",
 			err,
 		)
 	}
-	branch := strings.TrimSpace(string(output))
+	if !head.Name().IsBranch() {
+		return "", fmt.Errorf(
+			"current Git HEAD is detached or unborn; check out a branch with a commit before synchronizing it",
+		)
+	}
+	branch := head.Name().Short()
 	if branch == "" {
 		return "", fmt.Errorf("current Git branch is empty")
 	}
 	return branch, nil
 }
 
-func gitIdentityValue(ctx context.Context, repoRoot, key string) (string, error) {
-	for _, scope := range []string{"--local", "--global"} {
-		output, err := execx.Output(ctx, "git", "-C", repoRoot, "config", scope, "--get", key)
-		if err == nil {
-			return strings.TrimSpace(string(output)), nil
+func gitIdentityValue(_ context.Context, repoRoot, key string) (string, error) {
+	repo, err := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	if err != nil {
+		return "", nil
+	}
+	parts := strings.SplitN(key, ".", 2)
+	if len(parts) != 2 {
+		return "", nil
+	}
+	section, option := parts[0], parts[1]
+	for _, scope := range []config.Scope{config.LocalScope, config.GlobalScope} {
+		cfg, err := repo.ConfigScoped(scope)
+		if err != nil || cfg == nil || cfg.Raw == nil {
+			continue
+		}
+		if sec := cfg.Raw.Section(section); sec != nil {
+			if val := sec.Option(option); val != "" {
+				return val, nil
+			}
 		}
 	}
 	return "", nil
 }
 
 func setSandboxGitRemote(
-	ctx context.Context,
+	_ context.Context,
 	repoRoot, remoteName, url string,
 	replace bool,
 ) error {
 	if err := validateSandboxGitRemoteName(remoteName); err != nil {
 		return err
 	}
-	output, err := execx.Output(ctx, "git", "-C", repoRoot, "remote", "get-url", remoteName)
+	repo, err := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
 	if err != nil {
-		if err := execx.Stream(ctx, repoRoot, "git", "remote", "add", remoteName, url); err != nil {
+		return fmt.Errorf("open git repository: %w", err)
+	}
+	existing, err := repo.Remote(remoteName)
+	if err != nil {
+		if _, err := repo.CreateRemote(&config.RemoteConfig{
+			Name: remoteName,
+			URLs: []string{url},
+		}); err != nil {
 			return fmt.Errorf("register sandbox Git remote: %w", err)
 		}
 		return nil
 	}
-	if !replace && !strings.Contains(string(output), "ssh://root@mezha-sandbox-") {
+	urls := existing.Config().URLs
+	if len(urls) > 0 && !replace && !strings.Contains(urls[0], "ssh://root@mezha-sandbox-") {
 		return fmt.Errorf(
 			"existing %q remote is not managed by mezha; use --replace-sandbox-remote to replace it",
 			remoteName,
 		)
 	}
-	if err := execx.Stream(ctx, repoRoot, "git", "remote", "set-url", remoteName, url); err != nil {
+	remCfg := existing.Config()
+	remCfg.URLs = []string{url}
+	if err := repo.DeleteRemote(remoteName); err != nil {
+		return fmt.Errorf("update sandbox Git remote: %w", err)
+	}
+	if _, err := repo.CreateRemote(remCfg); err != nil {
 		return fmt.Errorf("update sandbox Git remote: %w", err)
 	}
 	return nil
+}
+
+type sandboxSSHTunnel struct {
+	listener  net.Listener
+	targetURL string
+}
+
+func (t *sandboxSSHTunnel) Close() error {
+	if t.listener != nil {
+		return t.listener.Close()
+	}
+	return nil
+}
+
+func startSandboxSSHTunnel(
+	ctx context.Context,
+	sandboxName, originalURL string,
+) (*sandboxSSHTunnel, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, fmt.Errorf("start local SSH tunnel listener: %w", err)
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		_ = listener.Close()
+		return nil, fmt.Errorf("resolve mezha executable for tunnel: %w", err)
+	}
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer func() { _ = c.Close() }()
+				cmd := exec.CommandContext(ctx, executable, "ssh-proxy", "--sandbox", sandboxName)
+				cmd.Stdin = c
+				cmd.Stdout = c
+				_ = cmd.Run()
+			}(conn)
+		}
+	}()
+
+	endpoint, err := transport.NewEndpoint(originalURL)
+	if err != nil {
+		_ = listener.Close()
+		return nil, fmt.Errorf("parse remote URL: %w", err)
+	}
+	_, portStr, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		_ = listener.Close()
+		return nil, fmt.Errorf("resolve tunnel listener port: %w", err)
+	}
+	port, _ := strconv.Atoi(portStr)
+	endpoint.Host = "127.0.0.1"
+	endpoint.Port = port
+
+	return &sandboxSSHTunnel{
+		listener:  listener,
+		targetURL: endpoint.String(),
+	}, nil
+}
+
+func sandboxSSHAuth() (transport.AuthMethod, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("resolve home directory for SSH auth: %w", err)
+	}
+	sshDir := filepath.Join(home, ".ssh")
+
+	var signers []ssh.Signer
+	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
+		if conn, err := net.Dial("unix", sock); err == nil {
+			defer func() { _ = conn.Close() }()
+			ag := agent.NewClient(conn)
+			if agentSigners, err := ag.Signers(); err == nil {
+				signers = append(signers, agentSigners...)
+			}
+		}
+	}
+
+	for _, name := range []string{"id_ed25519", "id_ecdsa", "id_rsa", "id_dsa"} {
+		keyPath := filepath.Join(sshDir, name)
+		if data, err := os.ReadFile(keyPath); err == nil {
+			if signer, err := ssh.ParsePrivateKey(data); err == nil {
+				signers = append(signers, signer)
+			}
+		}
+	}
+
+	if len(signers) == 0 {
+		return nil, fmt.Errorf("no SSH signers available from agent or ~/.ssh")
+	}
+
+	return &transportssh.PublicKeysCallback{
+		User: "root",
+		Callback: func() ([]ssh.Signer, error) {
+			return signers, nil
+		},
+		HostKeyCallbackHelper: transportssh.HostKeyCallbackHelper{
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		},
+	}, nil
 }
 
 func pushSandboxBranchInternal(
@@ -148,16 +292,47 @@ func pushSandboxBranchInternal(
 	remoteName, branch string,
 	forceWithLease bool,
 ) error {
-	if err := requireSandboxGitRemote(ctx, rc.RepoRoot, remoteName); err != nil {
+	repo, err := git.PlainOpenWithOptions(rc.RepoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	if err != nil {
+		return fmt.Errorf("open git repository: %w", err)
+	}
+	rem, err := repo.Remote(remoteName)
+	if err != nil || len(rem.Config().URLs) == 0 {
+		return fmt.Errorf(
+			"sandbox Git remote is not configured; create the sandbox with `mezha sandbox create` first",
+		)
+	}
+	tunnel, err := startSandboxSSHTunnel(ctx, remoteName, rem.Config().URLs[0])
+	if err != nil {
 		return err
 	}
-	args := []string{"push"}
-	if forceWithLease {
-		args = append(args, "--force-with-lease")
+	defer func() { _ = tunnel.Close() }()
+
+	auth, err := sandboxSSHAuth()
+	if err != nil {
+		return err
 	}
-	args = append(args, remoteName, "HEAD:refs/heads/"+branch)
+
+	pushOpts := &git.PushOptions{
+		RemoteURL: tunnel.targetURL,
+		RefSpecs: []config.RefSpec{
+			config.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/%s", branch, branch)),
+		},
+		Auth:     auth,
+		Progress: os.Stdout,
+	}
+	if forceWithLease {
+		pushOpts.Force = true
+		pushOpts.ForceWithLease = &git.ForceWithLease{
+			RefName: plumbing.NewBranchReferenceName(branch),
+		}
+	}
 	fmt.Printf("Pushing branch %q to Microsandbox Git remote over SSH...\n", branch)
-	if err := execx.Stream(ctx, rc.RepoRoot, "git", args...); err != nil {
+	if err := repo.PushContext(ctx, pushOpts); err != nil {
+		if errors.Is(err, git.NoErrAlreadyUpToDate) {
+			fmt.Println("Already up to date.")
+			return nil
+		}
 		return fmt.Errorf("push branch to Microsandbox Git remote: %w", err)
 	}
 	return nil
@@ -167,43 +342,121 @@ func pullSandboxBranchInternal(
 	ctx context.Context,
 	rc RepoContext,
 	params GitParams,
-	rebase, merge bool,
 ) error {
 	branch, err := currentBranch(ctx, rc.RepoRoot)
 	if err != nil {
 		return err
 	}
-	if err := requireSandboxGitRemote(ctx, rc.RepoRoot, params.SandboxName); err != nil {
+	repo, err := git.PlainOpenWithOptions(rc.RepoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	if err != nil {
+		return fmt.Errorf("open git repository: %w", err)
+	}
+	rem, err := repo.Remote(params.SandboxName)
+	if err != nil || len(rem.Config().URLs) == 0 {
+		return fmt.Errorf(
+			"sandbox Git remote is not configured; create the sandbox with `mezha sandbox create` first",
+		)
+	}
+	tunnel, err := startSandboxSSHTunnel(ctx, params.SandboxName, rem.Config().URLs[0])
+	if err != nil {
 		return err
 	}
-	args := []string{"pull", "--ff-only"}
-	if rebase {
-		args = []string{"pull", "--rebase"}
+	defer func() { _ = tunnel.Close() }()
+
+	auth, err := sandboxSSHAuth()
+	if err != nil {
+		return err
 	}
-	if merge {
-		args = []string{"pull", "--no-ff"}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return fmt.Errorf("open git worktree: %w", err)
 	}
-	args = append(args, params.SandboxName, "refs/heads/"+branch)
+
 	fmt.Printf("Pulling branch %q from Microsandbox Git remote over SSH...\n", branch)
-	if err := execx.Stream(ctx, rc.RepoRoot, "git", args...); err != nil {
+	pullOpts := &git.PullOptions{
+		RemoteURL:     tunnel.targetURL,
+		ReferenceName: plumbing.NewBranchReferenceName(branch),
+		SingleBranch:  true,
+		Auth:          auth,
+		Progress:      os.Stdout,
+	}
+	if err := worktree.PullContext(ctx, pullOpts); err != nil {
+		if errors.Is(err, git.NoErrAlreadyUpToDate) {
+			fmt.Println("Already up to date.")
+			return nil
+		}
 		return fmt.Errorf("pull branch from Microsandbox Git remote: %w", err)
 	}
 	return nil
 }
 
-func requireSandboxGitRemote(ctx context.Context, repoRoot, remoteName string) error {
+func countAheadBehind(repo *git.Repository, localHash, remoteHash plumbing.Hash) (int, int, error) {
+	if localHash == remoteHash {
+		return 0, 0, nil
+	}
+	localCommit, err := repo.CommitObject(localHash)
+	if err != nil {
+		return 0, 0, err
+	}
+	remoteCommit, err := repo.CommitObject(remoteHash)
+	if err != nil {
+		return 0, 0, err
+	}
+	bases, err := localCommit.MergeBase(remoteCommit)
+	if err != nil {
+		return 0, 0, err
+	}
+	var baseHash plumbing.Hash
+	if len(bases) > 0 {
+		baseHash = bases[0].Hash
+	}
+	ahead, err := countCommitsBetween(repo, localHash, baseHash)
+	if err != nil {
+		return 0, 0, err
+	}
+	behind, err := countCommitsBetween(repo, remoteHash, baseHash)
+	if err != nil {
+		return 0, 0, err
+	}
+	return ahead, behind, nil
+}
+
+func countCommitsBetween(repo *git.Repository, from, to plumbing.Hash) (int, error) {
+	if from == to || from.IsZero() {
+		return 0, nil
+	}
+	cIter, err := repo.Log(&git.LogOptions{From: from})
+	if err != nil {
+		return 0, err
+	}
+	defer cIter.Close()
+	count := 0
+	for {
+		c, err := cIter.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, err
+		}
+		if !to.IsZero() && c.Hash == to {
+			break
+		}
+		count++
+	}
+	return count, nil
+}
+
+func requireSandboxGitRemote(_ context.Context, repoRoot, remoteName string) error {
 	if err := validateSandboxGitRemoteName(remoteName); err != nil {
 		return err
 	}
-	if _, err := execx.Output(
-		ctx,
-		"git",
-		"-C",
-		repoRoot,
-		"remote",
-		"get-url",
-		remoteName,
-	); err != nil {
+	repo, err := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	if err != nil {
+		return fmt.Errorf("open git repository: %w", err)
+	}
+	if _, err := repo.Remote(remoteName); err != nil {
 		return fmt.Errorf(
 			"sandbox Git remote is not configured; create the sandbox with `mezha sandbox create` first: %w",
 			err,

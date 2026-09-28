@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/go-git/go-git/v5"
 )
 
 const syncedUntrackedPathsFile = ".mezha/dirty-sync-untracked.json"
@@ -23,21 +24,43 @@ type dirtyPaths struct {
 	delete []string
 }
 
+func localWorktreeStatus(repoRoot string) (git.Status, error) {
+	repo, err := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	if err != nil {
+		return nil, fmt.Errorf("open git repository: %w", err)
+	}
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return nil, fmt.Errorf("open git worktree: %w", err)
+	}
+	status, err := worktree.Status()
+	if err != nil {
+		return nil, fmt.Errorf("get git worktree status: %w", err)
+	}
+	return status, nil
+}
+
 // trackedDirtyPaths returns paths whose working-tree state differs from HEAD.
-func trackedDirtyPaths(ctx context.Context, repoRoot string) (dirtyPaths, error) {
-	output, err := gitOutput(ctx, repoRoot, "diff", "--name-status", "-z", "HEAD")
+func trackedDirtyPaths(_ context.Context, repoRoot string) (dirtyPaths, error) {
+	status, err := localWorktreeStatus(repoRoot)
 	if err != nil {
 		return dirtyPaths{}, fmt.Errorf("find dirty tracked files: %w", err)
 	}
-	dirty, err := parseDirtyPaths(output)
-	if err != nil {
-		return dirtyPaths{}, fmt.Errorf("parse dirty tracked files: %w", err)
+	var dirty dirtyPaths
+	for p, fileStatus := range status {
+		if !validRepoRelativePath(p) || ignoredSyncPath(p) {
+			continue
+		}
+		if fileStatus.Worktree == git.Deleted ||
+			(fileStatus.Staging == git.Deleted && fileStatus.Worktree == git.Unmodified) {
+			dirty.delete = append(dirty.delete, p)
+		} else if fileStatus.Worktree == git.Untracked || fileStatus.Worktree != git.Unmodified ||
+			fileStatus.Staging != git.Unmodified {
+			dirty.copy = append(dirty.copy, p)
+		}
 	}
-	untracked, err := localUntrackedPaths(ctx, repoRoot)
-	if err != nil {
-		return dirtyPaths{}, err
-	}
-	dirty.copy = append(dirty.copy, untracked...)
+	sort.Strings(dirty.copy)
+	sort.Strings(dirty.delete)
 	return dirty, nil
 }
 
@@ -65,24 +88,23 @@ func loadSyncedUntrackedPaths(repoRoot string) ([]string, error) {
 	return filtered, nil
 }
 
-func localUntrackedPaths(ctx context.Context, repoRoot string) ([]string, error) {
-	output, err := gitOutput(ctx, repoRoot, "ls-files", "--others", "--exclude-standard", "-z")
+func localUntrackedPaths(_ context.Context, repoRoot string) ([]string, error) {
+	status, err := localWorktreeStatus(repoRoot)
 	if err != nil {
 		return nil, fmt.Errorf("find untracked files: %w", err)
 	}
-	paths := make([]string, 0)
-	for _, item := range bytesSplit(output, 0) {
-		relativePath := string(item)
-		if relativePath == "" {
-			continue
-		}
-		if !validRepoRelativePath(relativePath) {
-			return nil, fmt.Errorf("invalid untracked path %q", relativePath)
-		}
-		if !ignoredSyncPath(relativePath) {
-			paths = append(paths, relativePath)
+	var paths []string
+	for p, fileStatus := range status {
+		if fileStatus.Worktree == git.Untracked {
+			if !validRepoRelativePath(p) {
+				return nil, fmt.Errorf("invalid untracked path %q", p)
+			}
+			if !ignoredSyncPath(p) {
+				paths = append(paths, p)
+			}
 		}
 	}
+	sort.Strings(paths)
 	return paths, nil
 }
 
@@ -148,23 +170,6 @@ func parseDirtyPaths(output []byte) (dirtyPaths, error) {
 		}
 	}
 	return dirty, nil
-}
-
-func gitOutput(ctx context.Context, repoRoot string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = repoRoot
-	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf(
-				"git %s: %s",
-				strings.Join(args, " "),
-				strings.TrimSpace(string(exitErr.Stderr)),
-			)
-		}
-		return nil, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
-	}
-	return output, nil
 }
 
 func bytesSplit(b []byte, sep byte) [][]byte {

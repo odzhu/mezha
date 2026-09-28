@@ -560,15 +560,8 @@ func newPullCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "pull",
 		Usage: "Fast-forward the current branch from the sandbox Git remote",
-		Flags: append(
-			gitCommandFlags(),
-			&cli.BoolFlag{Name: "rebase", Usage: "Rebase instead of fast-forward only"},
-			&cli.BoolFlag{Name: "merge", Usage: "Allow a merge commit"},
-		),
+		Flags: gitCommandFlags(),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			if cmd.Bool("rebase") && cmd.Bool("merge") {
-				return errors.New("--rebase cannot be used together with --merge")
-			}
 			rc, err := ResolveRepoContext(ctx)
 			if err != nil {
 				return err
@@ -577,7 +570,7 @@ func newPullCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			return PullSandboxBranch(ctx, rc, params, cmd.Bool("rebase"), cmd.Bool("merge"))
+			return PullSandboxBranch(ctx, rc, params)
 		},
 	}
 }
