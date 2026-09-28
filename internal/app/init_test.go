@@ -25,6 +25,7 @@ func TestInitCreatesProvisionDevenv(t *testing.T) {
 		filepath.Join(tempDir, ".mezha", "provision", "devenv.nix"),
 		filepath.Join(tempDir, ".mezha", "provision", "devenv.yaml"),
 		filepath.Join(tempDir, ".mezha", "provision", "common.nix"),
+		filepath.Join(tempDir, ".mezha", "provision", "init.nix"),
 		filepath.Join(tempDir, ".mezha", "provision", "extension.nix"),
 		filepath.Join(tempDir, ".mezha", "provision", "extension", "docker", "devenv.nix"),
 		filepath.Join(tempDir, ".mezha", "provision", "extension", "docker", "devenv.yaml"),

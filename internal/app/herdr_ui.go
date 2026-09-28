@@ -885,6 +885,7 @@ func herdrDashboardSettings(projectDir string) ([]herdrDashboardSetting, bool, e
 		path  string
 	}{
 		{label: "devenv", path: devenvPath},
+		{label: "init", path: filepath.Join(provisionDir, "init.nix")},
 		{label: "common", path: filepath.Join(provisionDir, "common.nix")},
 		{label: "extension", path: filepath.Join(provisionDir, "extension.nix")},
 	} {

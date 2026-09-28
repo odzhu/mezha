@@ -173,9 +173,10 @@ or devenv shell runs; `/home` remains empty. Mezha automatically synchronizes th
 `.mezha/provision` directory (or `$MEZHA_HOME/provision` globally) to `/root/.config/mezha/services/devenv`, supporting
 decomposed devenv configuration with nested devenv projects for extensions without requiring
 any provision sync configuration in `mezha.toml`. The provision folder structure includes:
-- `devenv.nix`: entrypoint defining imports (`common.nix` and `extension.nix`)
+- `devenv.nix`: entrypoint defining imports (`common.nix`, `init.nix`, and `extension.nix`)
 - `devenv.yaml`: root devenv project configuration
 - `common.nix`: default common packages, environment settings, and tasks
+- `init.nix`: core sandbox initialization task and Herdr integration
 - `extension.nix`: extension imports
 - `extension/`: nested devenv extension projects (e.g., `extension/docker/` and `extension/k3s/`, each with its own `devenv.nix` and `devenv.yaml`)
 
