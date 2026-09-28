@@ -161,7 +161,11 @@ func runMezhaInitSandboxTask(
 	}
 
 	fmt.Printf("Running mezha:init-sandbox task...\n")
-	code, err := sandbox.AttachWith(ctx, nativeDevenvPath, []string{
+	code, err := sandbox.AttachWith(ctx, persistentRuntimeBin+"/sh", []string{
+		"-c",
+		`exec "$@" >/dev/null`,
+		"devenv-task",
+		nativeDevenvPath,
 		"tasks",
 		"run",
 		"mezha:init-sandbox",
