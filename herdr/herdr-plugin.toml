@@ -114,6 +114,12 @@ contexts = ["workspace"]
 command = ["mezha", "herdr", "execute", "--", "sandbox", "logs"]
 
 [[actions]]
+id = "processes"
+title = "Show Mezha processes"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--wait", "--", "processes", "list"]
+
+[[actions]]
 id = "destroy"
 title = "Destroy Mezha sandbox"
 contexts = ["workspace"]

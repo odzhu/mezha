@@ -42,6 +42,8 @@ mezha sandbox stop [options]
 mezha sandbox destroy [options]
 mezha sandbox status [options]
 mezha sandbox logs [options]
+mezha processes [options] [-- devenv-processes-args...]
+mezha sandbox processes [options] [-- devenv-processes-args...]
 mezha sync status [options]
 mezha sync upload [options] [local-path] [remote-path]
 mezha sync download [options] [remote-path] [local-path]
@@ -62,6 +64,9 @@ mezha sandbox list
 # Refresh the cached ghcr.io/cachix/devenv/devenv:latest image.
 mezha image pull
 mezha volume list
+# Inspect and manage background devenv processes in the sandbox.
+mezha processes list
+mezha processes status mezha-docker
 mezha
 mezha -- git status
 # `mezha run` is an explicit alias for the default session command.

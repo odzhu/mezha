@@ -57,6 +57,11 @@ var herdrLifecycleItems = []herdrDashboardItem{
 		description: "Refresh the cached native devenv image",
 	},
 	{
+		args:        []string{"processes", "list"},
+		title:       "Processes",
+		description: "List background devenv processes in the sandbox",
+	},
+	{
 		args:        []string{"sandbox", "recreate", "--herdr"},
 		title:       "Recreate",
 		description: "Recreate the sandbox with clean persistent state",

@@ -76,3 +76,8 @@ type ProvisionParams struct {
 	Herdr         bool
 	VolumesFlush  bool
 }
+
+type ProcessesParams struct {
+	SandboxName string
+	Args        []string
+}

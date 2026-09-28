@@ -14,7 +14,8 @@ const rootUsageText = `Usage:
   mezha [run-options] [-- command...]
   mezha run [run-options] [-- command...]
   mezha init [options]
-  mezha sandbox <list|create|recreate|start|stop|destroy|status|logs> [options]
+  mezha sandbox <list|create|recreate|start|stop|destroy|status|logs|processes> [options]
+  mezha processes [options] [-- devenv-processes-args...]
   mezha image pull
   mezha sync <status|push|pull|upload|download|remote> [options]
   mezha volume <list|rm> [options]
@@ -28,6 +29,9 @@ Examples:
   mezha --sandbox shared-dev -- bash -lc 'git status && pwd'
   mezha sandbox create --herdr
   mezha sandbox recreate
+  mezha processes list
+  mezha processes stop mezha-docker
+  mezha processes start mezha-docker
   mezha image pull
   mezha sandbox logs --follow
   mezha sync upload
@@ -46,6 +50,7 @@ func New() *cli.Command {
 			newRunCommand(),
 			newInitCommand(),
 			newSandboxCommand(),
+			newProcessesCommand(),
 			newImageCommand(),
 			newSyncCommand(),
 			newVolumeCommand(),
@@ -369,6 +374,7 @@ func newSandboxCommand() *cli.Command {
 			newDestroyCommand(),
 			newStatusCommand(),
 			newLogsCommand(),
+			newProcessesCommand(),
 		},
 	}
 }
@@ -760,6 +766,32 @@ func newLogsCommand() *cli.Command {
 				Since:       cmd.Duration("since"),
 				Sources:     cmd.StringSlice("source"),
 				MinLevel:    cmd.String("level"),
+			})
+		},
+	}
+}
+
+func newProcessesCommand() *cli.Command {
+	return &cli.Command{
+		Name:            "processes",
+		Usage:           "Manage devenv background processes in the sandbox",
+		UsageText:       "mezha processes [options] [--] [devenv-processes-args...]",
+		SkipFlagParsing: true,
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			rc, err := ResolveRepoContext(ctx)
+			if err != nil {
+				return err
+			}
+			cfg, _, _ := LoadConfig(rc.RepoRoot)
+			if cfg == nil {
+				cfg = &MezhaConfig{}
+			}
+			args := commandArgs(cmd)
+			sandboxName := resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName)
+			sandboxName, cleanArgs := extractSandboxFlag(args, sandboxName)
+			return Processes(ctx, rc, ProcessesParams{
+				SandboxName: sandboxName,
+				Args:        cleanArgs,
 			})
 		},
 	}

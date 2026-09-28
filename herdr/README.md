@@ -26,8 +26,9 @@ The `dev.mezha.dashboard` action opens a Herdr-managed overlay pane. Like
 herdr-plus, the action is only a launcher; the interactive Bubble Tea interface
 runs in the plugin pane declared by the manifest. The manifest also exposes
 first-class Herdr actions for Mezha's public commands, including lifecycle,
-synchronization, remote management, logs, and sandbox or volume listing. Actions
-that need a terminal use their corresponding plugin pane.
+background process management, synchronization, remote management, logs, and
+sandbox or volume listing. Actions that need a terminal use their
+corresponding plugin pane.
 
 The dashboard provides:
 
@@ -35,6 +36,7 @@ The dashboard provides:
 - an interactive sandbox shell in a new tab
 - sandbox and persistent-volume listings
 - pull the latest native devenv image
+- devenv background process inspection and management
 - sandbox create, start, and stop operations
 - repository synchronization status
 - upload, download, pull, and push operations
