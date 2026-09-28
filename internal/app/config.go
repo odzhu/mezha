@@ -54,9 +54,8 @@ type SandboxConfig struct {
 	Herdr bool `toml:"herdr,omitempty"`
 	// Upload and Download are retained only for backwards-compatible parsing.
 	// Repository content is now synchronized exclusively through Git.
-	Upload   *bool  `toml:"upload,omitempty"`
-	Download *bool  `toml:"download,omitempty"`
-	Editor   string `toml:"editor,omitempty"`
+	Upload   *bool `toml:"upload,omitempty"`
+	Download *bool `toml:"download,omitempty"`
 	// NoLoginShell skips sourcing shell login/profile startup files
 	// (bash -lc) when running the requested command/session in Mezha.
 	NoLoginShell bool `toml:"no_login_shell,omitempty"`

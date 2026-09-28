@@ -17,7 +17,6 @@ type RunParams struct {
 	RemoteRepoDir        string
 	Recreate             bool
 	ReplaceSandboxRemote bool
-	Editor               string
 	RemoteCommand        []string
 	TTY                  *bool
 	NoLoginShell         bool

@@ -113,10 +113,6 @@ func newRunCommand() *cli.Command {
 		},
 		&cli.BoolFlag{Name: "tty", Usage: "Force an interactive terminal session"},
 		&cli.BoolFlag{Name: "no-tty", Usage: "Disable interactive terminal mode"},
-		&cli.StringFlag{
-			Name:  "editor",
-			Usage: "Open a remote editor instead of an interactive shell",
-		},
 		sandboxFlag(),
 		&cli.StringFlag{Name: "remote-dir", Usage: "Destination directory in the sandbox"},
 		&cli.BoolFlag{
@@ -188,7 +184,6 @@ func newRunCommand() *cli.Command {
 				RemoteRepoDir:        remoteRepoDir,
 				Recreate:             recreate,
 				ReplaceSandboxRemote: cmd.Bool("replace-sandbox-remote"),
-				Editor:               resolveParam(cmd, "editor", "", cfg.Sandbox.Editor, ""),
 				RemoteCommand:        remoteArgs,
 				TTY:                  tty,
 				NoLoginShell: resolveBoolParam(
@@ -198,10 +193,6 @@ func newRunCommand() *cli.Command {
 				),
 				Herdr:        herdr,
 				VolumesFlush: volumesFlush,
-			}
-
-			if params.Editor != "" && len(params.RemoteCommand) > 0 {
-				return errors.New("--editor cannot be used together with a command after --")
 			}
 
 			return Run(ctx, rc, params)
