@@ -20,7 +20,6 @@ type RunParams struct {
 	Editor               string
 	RemoteCommand        []string
 	TTY                  *bool
-	PolicyAdvisor        *bool
 	NoLoginShell         bool
 	Herdr                bool
 	VolumesFlush         bool

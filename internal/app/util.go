@@ -265,15 +265,3 @@ func resolveRemoteWorkdir(repoRoot, remoteRepoDir, invocationCWD string) (string
 func waitDelay() time.Duration {
 	return 2 * time.Second
 }
-
-func parseBool(val string, defaultVal bool) bool {
-	val = strings.TrimSpace(strings.ToLower(val))
-	switch val {
-	case "1", "t", "true", "yes", "y", "on":
-		return true
-	case "0", "f", "false", "no", "n", "off":
-		return false
-	default:
-		return defaultVal
-	}
-}

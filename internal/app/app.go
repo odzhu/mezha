@@ -111,16 +111,6 @@ func newRunCommand() *cli.Command {
 			Name:  "recreate",
 			Usage: "Delete and recreate the sandbox if it already exists",
 		},
-		&cli.BoolFlag{
-			Name:    "no-advisor",
-			Aliases: []string{"no-policy-advisor"},
-			Usage:   "Disable the Microsandbox policy advisor",
-		},
-		&cli.BoolFlag{
-			Name:    "policy-advisor",
-			Aliases: []string{"advisor"},
-			Usage:   "Enable the Microsandbox policy advisor (default: true)",
-		},
 		&cli.BoolFlag{Name: "tty", Usage: "Force an interactive terminal session"},
 		&cli.BoolFlag{Name: "no-tty", Usage: "Disable interactive terminal mode"},
 		&cli.StringFlag{
@@ -184,7 +174,6 @@ func newRunCommand() *cli.Command {
 			if volumesFlush && !recreate {
 				return errors.New("--volumes-flush requires --recreate")
 			}
-			advisor := resolveAdvisorParam(cmd, cfg)
 
 			remoteRepoDir, err := resolveSandboxProjectDir(cmd, cfg, rc)
 			if err != nil {
@@ -202,7 +191,6 @@ func newRunCommand() *cli.Command {
 				Editor:               resolveParam(cmd, "editor", "", cfg.Sandbox.Editor, ""),
 				RemoteCommand:        remoteArgs,
 				TTY:                  tty,
-				PolicyAdvisor:        advisor,
 				NoLoginShell: resolveBoolParam(
 					cmd,
 					"no-login-shell",
@@ -805,15 +793,6 @@ func commandArgs(cmd *cli.Command) []string {
 	return args
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 func sandboxFlag() cli.Flag {
 	return &cli.StringFlag{
 		Name:    "sandbox",
@@ -864,38 +843,4 @@ func resolveHerdrParam(cmd *cli.Command, cfgVal bool) bool {
 		return false
 	}
 	return cfgVal
-}
-
-func resolveAdvisorParam(cmd *cli.Command, cfg *MezhaConfig) *bool {
-	if cmd != nil {
-		if cmd.Bool("no-advisor") || cmd.Bool("no-policy-advisor") {
-			val := false
-			return &val
-		}
-		if cmd.IsSet("policy-advisor") || cmd.IsSet("advisor") {
-			val := cmd.Bool("policy-advisor") || cmd.Bool("advisor")
-			return &val
-		}
-	}
-
-	if envAdvisor := firstNonEmpty(
-		os.Getenv("MICROSANDBOX_POLICY_ADVISOR"),
-		os.Getenv("MEZHA_POLICY_ADVISOR"),
-		os.Getenv("MICROSANDBOX_ADVISOR"),
-	); envAdvisor != "" {
-		val := parseBool(envAdvisor, true)
-		return &val
-	}
-
-	if cfg != nil {
-		if cfg.Sandbox.PolicyAdvisor != nil {
-			return cfg.Sandbox.PolicyAdvisor
-		}
-		if cfg.Sandbox.Advisor != nil {
-			return cfg.Sandbox.Advisor
-		}
-	}
-
-	val := true
-	return &val
 }

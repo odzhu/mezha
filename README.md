@@ -156,7 +156,6 @@ size_mib = 51200
 # Default sandbox selection; --sandbox overrides it.
 # name = "development"
 # remote_dir = "/root/my-project"
-# policy_advisor = true
 # Register the sandbox with Herdr and synchronize local plugins.
 herdr = false
 ```
@@ -328,7 +327,6 @@ a popup. See `herdr/README.md` for local development instructions.
 
 - `SANDBOX_NAME`
 - `MICROSANDBOX_REMOTE_REPO_DIR`
-- `MICROSANDBOX_POLICY_ADVISOR`
 
 ## Development
 
