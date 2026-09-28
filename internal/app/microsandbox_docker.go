@@ -14,7 +14,7 @@ import (
 )
 
 const managedDevenvPath = "/root/.config/mezha/services/devenv"
-const managedDevenvConfig = managedDevenvPath + "/devenv.nix"
+const managedDevenvUserExtensions = managedDevenvPath + "/extensions-user"
 const persistentRuntimeBin = "/nix/mezha/root/.mezha/runtime-bin"
 const nativeDevenvPath = persistentRuntimeBin + "/devenv"
 
@@ -186,7 +186,7 @@ func ensureManagedDevenvConfig(
 	output, err := sandbox.Exec(
 		ctx,
 		persistentRuntimeBin+"/mkdir",
-		[]string{"-p", managedDevenvPath},
+		[]string{"-p", managedDevenvPath, managedDevenvUserExtensions},
 		persistentRuntimeExecEnv(),
 	)
 	if err != nil {
@@ -199,48 +199,91 @@ func ensureManagedDevenvConfig(
 		)
 	}
 
-	provisionDir := resolveProvisionDir(repoRoot)
-	if info, err := os.Stat(provisionDir); err == nil && info.IsDir() {
-		devenvFile := filepath.Join(provisionDir, "devenv.nix")
-		if _, err := os.Stat(devenvFile); err != nil {
-			if os.IsNotExist(err) {
-				return fmt.Errorf("managed devenv configuration is missing: %s", devenvFile)
-			}
-			return fmt.Errorf("inspect managed devenv configuration: %w", err)
-		}
-		if err := syncProvisionDir(ctx, sandbox, provisionDir, managedDevenvPath); err != nil {
-			return fmt.Errorf("sync managed devenv provision configuration: %w", err)
-		}
-	} else {
-		output, err := sandbox.Exec(
-			ctx,
-			persistentRuntimeBin+"/sh",
-			[]string{"-c", "test -f \"$1\"", "mezha-test-file", managedDevenvConfig},
-			persistentRuntimeExecEnv(),
-		)
-		if err != nil {
-			return fmt.Errorf("inspect managed devenv configuration: %w", err)
-		}
-		if !output.Success() {
-			return fmt.Errorf(
-				"managed devenv configuration %s is missing; create %s or run mezha init",
-				managedDevenvConfig,
-				filepath.Join(repoRoot, ".mezha", "provision", "devenv.nix"),
-			)
-		}
+	if err := syncBaseProvisionFiles(ctx, sandbox); err != nil {
+		return fmt.Errorf("sync base managed devenv configuration: %w", err)
+	}
+
+	extensionsDir := resolveExtensionsDir(repoRoot)
+	if err := syncExtensionsDir(
+		ctx,
+		sandbox,
+		extensionsDir,
+		managedDevenvUserExtensions,
+	); err != nil {
+		return fmt.Errorf("sync managed user extensions: %w", err)
 	}
 
 	return nil
 }
 
-// syncProvisionDir uploads the provision directory excluding lock files.
-func syncProvisionDir(ctx context.Context, sandbox *msb.Sandbox, local, remote string) error {
-	info, err := os.Lstat(local)
+// syncBaseProvisionFiles writes embedded base devenv files to the sandbox.
+func syncBaseProvisionFiles(ctx context.Context, sandbox *msb.Sandbox) error {
+	files, err := defaultProvisionFiles()
 	if err != nil {
 		return err
 	}
+	parents := make(map[string]bool)
+	for _, file := range files {
+		parent := filepath.ToSlash(filepath.Dir(filepath.Join(managedDevenvPath, file.relPath)))
+		parents[parent] = true
+	}
+	parentList := make([]string, 0, len(parents)+1)
+	parentList = append(parentList, "-p")
+	for p := range parents {
+		parentList = append(parentList, p)
+	}
+	if len(parentList) > 1 {
+		output, err := sandbox.Exec(
+			ctx,
+			persistentRuntimeBin+"/mkdir",
+			parentList,
+			persistentRuntimeExecEnv(),
+		)
+		if err != nil {
+			return fmt.Errorf("create base provision directories: %w", err)
+		}
+		if !output.Success() {
+			return fmt.Errorf(
+				"create base provision directories: %s",
+				strings.TrimSpace(output.Stderr()),
+			)
+		}
+	}
+	for _, file := range files {
+		guestPath := filepath.ToSlash(filepath.Join(managedDevenvPath, file.relPath))
+		if err := sandbox.FS().WriteString(ctx, guestPath, file.content); err != nil {
+			return fmt.Errorf("write %s: %w", guestPath, err)
+		}
+	}
+	return nil
+}
+
+// syncExtensionsDir uploads the user extensions directory excluding lock files.
+func syncExtensionsDir(ctx context.Context, sandbox *msb.Sandbox, local, remote string) error {
+	info, err := os.Lstat(local)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
 	if !info.IsDir() {
-		return fmt.Errorf("provision path is not a directory: %s", local)
+		return fmt.Errorf("extensions path is not a directory: %s", local)
+	}
+	output, err := sandbox.Exec(
+		ctx,
+		persistentRuntimeBin+"/sh",
+		[]string{"-c", "rm -rf \"$1\" && mkdir -p \"$1\"", "mezha-clean-dir", remote},
+		persistentRuntimeExecEnv(),
+	)
+	if err != nil {
+		return fmt.Errorf("prepare remote extensions directory: %w", err)
+	}
+	if !output.Success() {
+		return fmt.Errorf(
+			"prepare remote extensions directory: %s",
+			strings.TrimSpace(output.Stderr()),
+		)
 	}
 	return filepath.Walk(local, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {

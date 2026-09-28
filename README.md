@@ -99,7 +99,7 @@ mezha sandbox destroy --volumes-flush
 ## Configuration
 
 Run `mezha init` in a repository to create `mezha.toml` and
-`.mezha/provision/devenv.nix`. By default, Mezha generates a sandbox name for the current
+`.mezha/extensions/sample/devenv.nix`. By default, Mezha generates a sandbox name for the current
 repository. Use `--sandbox <name>` (or `-s <name>`) with the default session, `sandbox`,
 and `sync` commands to select a reusable sandbox instead. Each project is kept
 in its own `/root/<project>` directory, where `<project>` exactly matches the
@@ -126,9 +126,9 @@ existing file is used; precedence increases in this order:
 Mezha always uses `ghcr.io/cachix/devenv/devenv:latest` and
 runs it as UID 0: Docker and k3s
 require it, and Microsandbox cannot resolve the native image's `1000:100` user
-declaration. Mezha synchronizes the managed provisioner devenv configuration from
-`.mezha/provision` (or `$MEZHA_HOME/projects/<git-project>/provision` or `$MEZHA_HOME/provision` globally) during sandbox creation and runs. Relative paths in `provision.add`
-are resolved relative to the configuration file.
+declaration. Mezha internally manages the base devenv environment and synchronizes
+user extensions from `.mezha/extensions` (or `$MEZHA_HOME/projects/<git-project>/extensions`
+or `$MEZHA_HOME/extensions` globally) to `extensions-user` in the sandbox during creation and runs.
 
 ```toml
 version = 1
@@ -169,16 +169,17 @@ is mounted at `/nix`. The temporary state-volume provisioning sandbox receives
 the same `microsandbox.network` and `microsandbox.secrets`
 configuration (including secret host allowlists) as the primary sandbox. It then symlinks `/root`,
 `/var/lib/docker`, and `/var/lib/rancher/k3s` into that volume before any initialization command
-or devenv shell runs; `/home` remains empty. Mezha automatically synchronizes the entire
-`.mezha/provision` directory (or `$MEZHA_HOME/provision` globally) to `/root/.config/mezha/services/devenv`, supporting
-decomposed devenv configuration with nested devenv projects for extensions without requiring
-any provision sync configuration in `mezha.toml`. The provision folder structure includes:
+or devenv shell runs; `/home` remains empty. Mezha automatically provisions the base
+environment to `/root/.config/mezha/services/devenv` and synchronizes `.mezha/extensions`
+(or `$MEZHA_HOME/extensions` globally) to `/root/.config/mezha/services/devenv/extensions-user`,
+auto-importing any user-defined extensions. The managed devenv structure includes:
 - `devenv.nix`: entrypoint defining imports (`common.nix`, `init.nix`, and `extension.nix`)
 - `devenv.yaml`: root devenv project configuration
 - `common.nix`: default common packages, environment settings, and tasks
 - `init.nix`: core sandbox initialization task and Herdr integration
-- `extension.nix`: extension imports
-- `extension/`: nested devenv extension projects (e.g., `extension/docker/` and `extension/k3s/`, each with its own `devenv.nix` and `devenv.yaml`)
+- `extension.nix`: built-in extension imports and user extension auto-importer
+- `extension/`: built-in devenv extension projects (e.g., `extension/docker/` and `extension/k3s/`)
+- `extensions-user/`: synchronized user extensions from `.mezha/extensions/`
 
 Lock files are generated and maintained natively inside the sandbox, avoiding host platform or architecture discrepancies.
 
@@ -189,12 +190,11 @@ control sequences. Mezha declares Docker and k3s as supervised `processes` in th
 configurations. It starts the configured processes once with `devenv up -d` and
 waits for their readiness probes before opening commands or interactive
 sessions. Subsequent sessions attach to the same process manager, so concurrent
-sessions share one Docker daemon and one k3s cluster. Update that configuration and run
+sessions share one Docker daemon and one k3s cluster. Update your extensions and run
 `mezha --recreate` to apply a changed managed environment.
 
-Provisioning parameters and services (such as Docker or k3s) are managed directly in
-`.mezha/provision/` (e.g., `extension/docker/devenv.nix` and `extension/k3s/devenv.nix`). Enable or disable processes via `processes.<name>.start.enable`
-in those files, or toggle extensions in `extension.nix`. Docker images, containers, and volumes plus k3s cluster
+Custom tools, environment settings, and background services can be added as user extensions in
+`.mezha/extensions/` (e.g., `.mezha/extensions/<name>/devenv.nix`). Docker images, containers, and volumes plus k3s cluster
 state are stored in the shared persistent volume.
 k3s uses Docker as its container runtime, so Docker-built images are immediately
 available to Kubernetes. Named volume names are automatically prefixed with the
@@ -301,8 +301,8 @@ preserves their enabled state, and copies each plugin's local configuration
 directory. It also copies the local Herdr `[keys]` configuration, so
 `plugin_action` hotkeys (such as herdr-plus) work on the remote Herdr server.
 Plugin installation and build commands run through Mezha's managed
-`devenv` environment. The generated `.mezha/provision/devenv.nix` includes Go for native
-plugin builds; add other plugin-specific build tools there. `mezha sandbox destroy`
+`devenv` environment. The base environment includes Go for native
+plugin builds; add other plugin-specific build tools in `.mezha/extensions`. `mezha sandbox destroy`
 removes the corresponding saved Herdr machine profile. Herdr
 is optional: if its command is not on `PATH`, Mezha skips both operations.
 

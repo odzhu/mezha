@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestInitCreatesProvisionDevenv(t *testing.T) {
+func TestInitCreatesExtensionsSample(t *testing.T) {
 	tempDir := t.TempDir()
 	rc := RepoContext{RepoRoot: tempDir}
 
@@ -21,25 +21,14 @@ func TestInitCreatesProvisionDevenv(t *testing.T) {
 		t.Fatalf("expected mezha.toml to exist: %v", err)
 	}
 
-	expectedFiles := []string{
-		filepath.Join(tempDir, ".mezha", "provision", "devenv.nix"),
-		filepath.Join(tempDir, ".mezha", "provision", "devenv.yaml"),
-		filepath.Join(tempDir, ".mezha", "provision", "common.nix"),
-		filepath.Join(tempDir, ".mezha", "provision", "init.nix"),
-		filepath.Join(tempDir, ".mezha", "provision", "extension.nix"),
-		filepath.Join(tempDir, ".mezha", "provision", "extension", "docker", "devenv.nix"),
-		filepath.Join(tempDir, ".mezha", "provision", "extension", "docker", "devenv.yaml"),
-		filepath.Join(tempDir, ".mezha", "provision", "extension", "k3s", "devenv.nix"),
-		filepath.Join(tempDir, ".mezha", "provision", "extension", "k3s", "devenv.yaml"),
+	sampleFile := filepath.Join(tempDir, ".mezha", "extensions", "sample", "devenv.nix")
+	if _, err := os.Stat(sampleFile); err != nil {
+		t.Fatalf("expected %s to exist: %v", sampleFile, err)
 	}
-	for _, f := range expectedFiles {
-		if _, err := os.Stat(f); err != nil {
-			t.Fatalf("expected %s to exist: %v", f, err)
-		}
-	}
-	lockFile := filepath.Join(tempDir, ".mezha", "provision", "devenv.lock")
-	if _, err := os.Stat(lockFile); err == nil {
-		t.Fatalf("expected devenv.lock not to be produced, but it exists: %s", lockFile)
+
+	provisionDir := filepath.Join(tempDir, ".mezha", "provision")
+	if _, err := os.Stat(provisionDir); err == nil {
+		t.Fatalf("expected .mezha/provision not to exist, but it does: %s", provisionDir)
 	}
 
 	// Repeated init without force should fail
@@ -53,49 +42,49 @@ func TestInitCreatesProvisionDevenv(t *testing.T) {
 	}
 }
 
-func TestResolveProvisionDir(t *testing.T) {
+func TestResolveExtensionsDir(t *testing.T) {
 	projectDir := t.TempDir()
 	globalDir := t.TempDir()
 	t.Setenv("MEZHA_HOME", globalDir)
 
-	globalProvisionDir := filepath.Join(globalDir, "provision")
-	if err := os.MkdirAll(globalProvisionDir, 0o755); err != nil {
-		t.Fatalf("mkdir global provision error = %v", err)
+	globalExtensionsDir := filepath.Join(globalDir, "extensions")
+	if err := os.MkdirAll(globalExtensionsDir, 0o755); err != nil {
+		t.Fatalf("mkdir global extensions error = %v", err)
 	}
 
-	// Falls back to global when project provision dir does not exist
-	resolved := resolveProvisionDir(projectDir)
-	if resolved != globalProvisionDir {
-		t.Fatalf("resolveProvisionDir() = %q, want global %q", resolved, globalProvisionDir)
+	// Falls back to global when project extensions dir does not exist
+	resolved := resolveExtensionsDir(projectDir)
+	if resolved != globalExtensionsDir {
+		t.Fatalf("resolveExtensionsDir() = %q, want global %q", resolved, globalExtensionsDir)
 	}
 
-	// Home project provision takes precedence over global
-	homeProjectProvisionDir := filepath.Join(
+	// Home project extensions takes precedence over global
+	homeProjectExtensionsDir := filepath.Join(
 		globalDir,
 		"projects",
 		slugify(filepath.Base(projectDir)),
-		"provision",
+		"extensions",
 	)
-	if err := os.MkdirAll(homeProjectProvisionDir, 0o755); err != nil {
-		t.Fatalf("mkdir home project provision error = %v", err)
+	if err := os.MkdirAll(homeProjectExtensionsDir, 0o755); err != nil {
+		t.Fatalf("mkdir home project extensions error = %v", err)
 	}
-	resolved = resolveProvisionDir(projectDir)
-	if resolved != homeProjectProvisionDir {
+	resolved = resolveExtensionsDir(projectDir)
+	if resolved != homeProjectExtensionsDir {
 		t.Fatalf(
-			"resolveProvisionDir() = %q, want home project %q",
+			"resolveExtensionsDir() = %q, want home project %q",
 			resolved,
-			homeProjectProvisionDir,
+			homeProjectExtensionsDir,
 		)
 	}
 
-	// Project repo provision takes highest precedence
-	projectProvisionDir := filepath.Join(projectDir, ".mezha", "provision")
-	if err := os.MkdirAll(projectProvisionDir, 0o755); err != nil {
-		t.Fatalf("mkdir project provision error = %v", err)
+	// Project repo extensions takes highest precedence
+	projectExtensionsDir := filepath.Join(projectDir, ".mezha", "extensions")
+	if err := os.MkdirAll(projectExtensionsDir, 0o755); err != nil {
+		t.Fatalf("mkdir project extensions error = %v", err)
 	}
-	resolved = resolveProvisionDir(projectDir)
-	if resolved != projectProvisionDir {
-		t.Fatalf("resolveProvisionDir() = %q, want project %q", resolved, projectProvisionDir)
+	resolved = resolveExtensionsDir(projectDir)
+	if resolved != projectExtensionsDir {
+		t.Fatalf("resolveExtensionsDir() = %q, want project %q", resolved, projectExtensionsDir)
 	}
 }
 
@@ -119,14 +108,15 @@ func TestInitHomeProject(t *testing.T) {
 		t.Fatalf("expected home project config to exist: %v", err)
 	}
 
-	expectedProvision := filepath.Join(
+	expectedExtension := filepath.Join(
 		globalDir,
 		"projects",
 		slugify(filepath.Base(projectDir)),
-		"provision",
+		"extensions",
+		"sample",
 		"devenv.nix",
 	)
-	if _, err := os.Stat(expectedProvision); err != nil {
-		t.Fatalf("expected home project provision to exist: %v", err)
+	if _, err := os.Stat(expectedExtension); err != nil {
+		t.Fatalf("expected home project extension to exist: %v", err)
 	}
 }

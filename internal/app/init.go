@@ -49,10 +49,10 @@ func newInitCommand() *cli.Command {
 
 func Init(_ context.Context, rc RepoContext, force bool) error {
 	configPath := filepath.Join(rc.RepoRoot, "mezha.toml")
-	provisionDir := filepath.Join(rc.RepoRoot, ".mezha", "provision")
-	devenvPath := filepath.Join(provisionDir, "devenv.nix")
+	extensionsDir := filepath.Join(rc.RepoRoot, ".mezha", "extensions")
+	samplePath := filepath.Join(extensionsDir, "sample", "devenv.nix")
 	if !force {
-		for _, path := range []string{configPath, devenvPath} {
+		for _, path := range []string{configPath, samplePath} {
 			if _, err := os.Stat(path); err == nil {
 				return fmt.Errorf(
 					"configuration file already exists: %s (use --force to overwrite)",
@@ -74,23 +74,23 @@ func Init(_ context.Context, rc RepoContext, force bool) error {
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write configuration file: %w", err)
 	}
-	if err := writeProvisionFiles(provisionDir, force); err != nil {
-		return fmt.Errorf("write managed devenv provision configuration: %w", err)
+	if err := writeExtensionFiles(extensionsDir, force); err != nil {
+		return fmt.Errorf("write managed devenv extension configuration: %w", err)
 	}
 
 	fmt.Printf("Created %s\n", configPath)
-	fmt.Printf("Created %s\n", provisionDir)
+	fmt.Printf("Created %s\n", extensionsDir)
 	return nil
 }
 
-func writeProvisionFiles(provisionDir string, force bool) error {
-	files, err := defaultProvisionFiles()
+func writeExtensionFiles(extensionsDir string, force bool) error {
+	files, err := defaultExtensionFiles()
 	if err != nil {
 		return err
 	}
 	if !force {
 		for _, file := range files {
-			target := filepath.Join(provisionDir, file.relPath)
+			target := filepath.Join(extensionsDir, file.relPath)
 			if _, err := os.Stat(target); err == nil {
 				return fmt.Errorf(
 					"configuration file already exists: %s (use --force to overwrite)",
@@ -102,7 +102,7 @@ func writeProvisionFiles(provisionDir string, force bool) error {
 		}
 	}
 	for _, file := range files {
-		target := filepath.Join(provisionDir, file.relPath)
+		target := filepath.Join(extensionsDir, file.relPath)
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return fmt.Errorf("create directory %s: %w", filepath.Dir(target), err)
 		}
@@ -120,10 +120,10 @@ func InitHome(force bool) error {
 	if err != nil {
 		return err
 	}
-	provisionDir := filepath.Join(filepath.Dir(configPath), "provision")
-	devenvPath := filepath.Join(provisionDir, "devenv.nix")
+	extensionsDir := filepath.Join(filepath.Dir(configPath), "extensions")
+	samplePath := filepath.Join(extensionsDir, "sample", "devenv.nix")
 	if !force {
-		for _, path := range []string{configPath, devenvPath} {
+		for _, path := range []string{configPath, samplePath} {
 			if _, err := os.Stat(path); err == nil {
 				return fmt.Errorf(
 					"configuration file already exists: %s (use --force to overwrite)",
@@ -140,11 +140,11 @@ func InitHome(force bool) error {
 	if err := os.WriteFile(configPath, []byte(DefaultConfigTemplate()), 0o644); err != nil {
 		return fmt.Errorf("write home configuration file: %w", err)
 	}
-	if err := writeProvisionFiles(provisionDir, force); err != nil {
-		return fmt.Errorf("write managed devenv provision configuration: %w", err)
+	if err := writeExtensionFiles(extensionsDir, force); err != nil {
+		return fmt.Errorf("write managed devenv extension configuration: %w", err)
 	}
 	fmt.Printf("Created %s\n", configPath)
-	fmt.Printf("Created %s\n", provisionDir)
+	fmt.Printf("Created %s\n", extensionsDir)
 	return nil
 }
 
@@ -159,10 +159,10 @@ func InitHomeProject(rc RepoContext, force bool) error {
 		return fmt.Errorf("resolve project directory: invalid repository root")
 	}
 	configPath := filepath.Join(configDir, "mezha.toml")
-	provisionDir := filepath.Join(configDir, "provision")
-	devenvPath := filepath.Join(provisionDir, "devenv.nix")
+	extensionsDir := filepath.Join(configDir, "extensions")
+	samplePath := filepath.Join(extensionsDir, "sample", "devenv.nix")
 	if !force {
-		for _, path := range []string{configPath, devenvPath} {
+		for _, path := range []string{configPath, samplePath} {
 			if _, err := os.Stat(path); err == nil {
 				return fmt.Errorf(
 					"configuration file already exists: %s (use --force to overwrite)",
@@ -183,11 +183,11 @@ func InitHomeProject(rc RepoContext, force bool) error {
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write project configuration file: %w", err)
 	}
-	if err := writeProvisionFiles(provisionDir, force); err != nil {
-		return fmt.Errorf("write managed devenv provision configuration: %w", err)
+	if err := writeExtensionFiles(extensionsDir, force); err != nil {
+		return fmt.Errorf("write managed devenv extension configuration: %w", err)
 	}
 	fmt.Printf("Created %s\n", configPath)
-	fmt.Printf("Created %s\n", provisionDir)
+	fmt.Printf("Created %s\n", extensionsDir)
 	return nil
 }
 
@@ -208,30 +208,30 @@ func projectConfigTemplate() (string, error) {
 	return string(contents), nil
 }
 
-func resolveProvisionDir(repoRoot string) string {
+func resolveExtensionsDir(repoRoot string) string {
 	if repoRoot != "" {
-		p := filepath.Join(repoRoot, ".mezha", "provision")
+		p := filepath.Join(repoRoot, ".mezha", "extensions")
 		if info, err := os.Stat(p); err == nil && info.IsDir() {
 			return p
 		}
 	}
 	if homeDir, err := HomeConfigDir(); err == nil {
 		if projectDir := projectConfigDir(homeDir, repoRoot); projectDir != "" {
-			p := filepath.Join(projectDir, "provision")
+			p := filepath.Join(projectDir, "extensions")
 			if info, err := os.Stat(p); err == nil && info.IsDir() {
 				return p
 			}
 		}
-		c := filepath.Join(homeDir, "provision")
+		c := filepath.Join(homeDir, "extensions")
 		if info, err := os.Stat(c); err == nil && info.IsDir() {
 			return c
 		}
 	}
 	if repoRoot != "" {
-		return filepath.Join(repoRoot, ".mezha", "provision")
+		return filepath.Join(repoRoot, ".mezha", "extensions")
 	}
 	if homeDir, err := HomeConfigDir(); err == nil {
-		return filepath.Join(homeDir, "provision")
+		return filepath.Join(homeDir, "extensions")
 	}
 	return ""
 }

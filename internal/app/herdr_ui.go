@@ -872,35 +872,31 @@ func herdrDashboardSettings(projectDir string) ([]herdrDashboardSetting, bool, e
 		return nil, false, err
 	}
 	mezhaPath := filepath.Join(repoRoot, "mezha.toml")
-	provisionDir := resolveProvisionDir(repoRoot)
-	devenvPath := filepath.Join(provisionDir, "devenv.nix")
+	extensionsDir := resolveExtensionsDir(repoRoot)
 	settings := make([]herdrDashboardSetting, 0, 4)
 	if _, configPath, err := LoadConfig(repoRoot); err != nil {
 		return nil, false, fmt.Errorf("load Mezha settings: %w", err)
 	} else if configPath != "" {
 		settings = append(settings, herdrDashboardSetting{label: "Mezha", path: configPath})
 	}
-	for _, entry := range []struct {
-		label string
-		path  string
-	}{
-		{label: "devenv", path: devenvPath},
-		{label: "init", path: filepath.Join(provisionDir, "init.nix")},
-		{label: "common", path: filepath.Join(provisionDir, "common.nix")},
-		{label: "extension", path: filepath.Join(provisionDir, "extension.nix")},
-	} {
-		if _, err := os.Stat(entry.path); err == nil {
-			settings = append(settings, herdrDashboardSetting{label: entry.label, path: entry.path})
-		} else if !os.IsNotExist(err) {
-			return nil, false, fmt.Errorf("inspect %s settings: %w", entry.label, err)
-		}
+	if info, err := os.Stat(extensionsDir); err == nil && info.IsDir() {
+		_ = filepath.Walk(extensionsDir, func(p string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() {
+				return nil
+			}
+			if strings.HasSuffix(info.Name(), ".nix") {
+				rel, _ := filepath.Rel(extensionsDir, p)
+				settings = append(settings, herdrDashboardSetting{label: rel, path: p})
+			}
+			return nil
+		})
 	}
 	if len(settings) > 0 {
 		return settings, false, nil
 	}
 	return []herdrDashboardSetting{
 		{label: "Mezha", path: mezhaPath},
-		{label: "devenv", path: devenvPath},
+		{label: "extension", path: filepath.Join(extensionsDir, "sample", "devenv.nix")},
 	}, true, nil
 }
 
@@ -941,7 +937,7 @@ func herdrRepoInitialized(projectDir string) (bool, error) {
 		return true, nil
 	}
 	paths := []string{
-		filepath.Join(resolveProvisionDir(repoRoot), "devenv.nix"),
+		filepath.Join(resolveExtensionsDir(repoRoot), "sample", "devenv.nix"),
 	}
 	for _, path := range paths {
 		if _, err := os.Stat(path); err == nil {

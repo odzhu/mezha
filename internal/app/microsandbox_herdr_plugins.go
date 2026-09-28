@@ -83,7 +83,7 @@ func syncHerdrPlugin(ctx context.Context, sandbox *msb.Sandbox, plugin herdrPlug
 		fmt.Printf("Installing Herdr plugin %q through devenv...\n", plugin.ID)
 		if err := runSandboxHerdrInDevenv(ctx, sandbox, args...); err != nil {
 			return fmt.Errorf(
-				"install Herdr plugin %q in sandbox; add required build tools to .mezha/provision/devenv.nix: %w",
+				"install Herdr plugin %q in sandbox; add required build tools to an extension in .mezha/extensions: %w",
 				plugin.ID,
 				err,
 			)

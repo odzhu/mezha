@@ -13,7 +13,15 @@ var defaultMezhaToml string
 //go:embed templates/provision
 var provisionTemplatesFS embed.FS
 
+//go:embed templates/extensions
+var extensionTemplatesFS embed.FS
+
 type provisionFileEntry struct {
+	relPath string
+	content string
+}
+
+type extensionFileEntry struct {
 	relPath string
 	content string
 }
@@ -48,6 +56,40 @@ func defaultProvisionFiles() ([]provisionFileEntry, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load provision templates: %w", err)
+	}
+	return files, nil
+}
+
+func defaultExtensionFS() fs.FS {
+	sub, err := fs.Sub(extensionTemplatesFS, "templates/extensions")
+	if err != nil {
+		panic(err)
+	}
+	return sub
+}
+
+func defaultExtensionFiles() ([]extensionFileEntry, error) {
+	var files []extensionFileEntry
+	sub := defaultExtensionFS()
+	err := fs.WalkDir(sub, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		content, err := fs.ReadFile(sub, p)
+		if err != nil {
+			return err
+		}
+		files = append(files, extensionFileEntry{
+			relPath: filepath.FromSlash(p),
+			content: string(content),
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("load extension templates: %w", err)
 	}
 	return files, nil
 }
