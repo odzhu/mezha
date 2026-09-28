@@ -109,7 +109,7 @@ EOF
     '';
   };
 
-  processes.mezha-herdr = {
+  processes.herdr = {
     start.enable = lib.mkDefault false;
     exec = ''
       export HERDR_CONFIG_PATH="/root/.config/mezha/services/herdr/config.toml"

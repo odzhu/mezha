@@ -30,8 +30,8 @@ Examples:
   mezha sandbox create --herdr
   mezha sandbox recreate
   mezha processes list
-  mezha processes stop mezha-docker
-  mezha processes start mezha-docker
+  mezha processes stop docker
+  mezha processes start docker
   mezha image pull
   mezha sandbox logs --follow
   mezha sync upload

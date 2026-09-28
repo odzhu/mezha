@@ -110,8 +110,8 @@ func TestParseDevenvHasEnabledProcesses(t *testing.T) {
 			name: "processes disabled",
 			input: `{
 				"processes": {
-					"mezha-docker": {"start": {"enable": false}},
-					"mezha-k3s": {"start": {"enable": false}}
+					"docker": {"start": {"enable": false}},
+					"k3s": {"start": {"enable": false}}
 				}
 			}`,
 			want: false,
@@ -120,8 +120,8 @@ func TestParseDevenvHasEnabledProcesses(t *testing.T) {
 			name: "processes enabled",
 			input: `{
 				"processes": {
-					"mezha-docker": {"start": {"enable": true}},
-					"mezha-k3s": {"start": {"enable": false}}
+					"docker": {"start": {"enable": true}},
+					"k3s": {"start": {"enable": false}}
 				}
 			}`,
 			want: true,

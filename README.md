@@ -66,7 +66,7 @@ mezha image pull
 mezha volume list
 # Inspect and manage background devenv processes in the sandbox.
 mezha processes list
-mezha processes status mezha-docker
+mezha processes status docker
 mezha
 mezha -- git status
 # `mezha run` is an explicit alias for the default session command.

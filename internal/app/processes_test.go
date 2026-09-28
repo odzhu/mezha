@@ -36,17 +36,17 @@ func TestExtractSandboxFlag(t *testing.T) {
 		},
 		{
 			name:         "short flag separate",
-			args:         []string{"-s", "custom-sb", "stop", "mezha-docker"},
+			args:         []string{"-s", "custom-sb", "stop", "docker"},
 			defaultVal:   "default-sb",
 			wantSandbox:  "custom-sb",
-			wantCleanArg: []string{"stop", "mezha-docker"},
+			wantCleanArg: []string{"stop", "docker"},
 		},
 		{
 			name:         "long flag equals",
-			args:         []string{"--sandbox=custom-sb", "status", "mezha-docker"},
+			args:         []string{"--sandbox=custom-sb", "status", "docker"},
 			defaultVal:   "default-sb",
 			wantSandbox:  "custom-sb",
-			wantCleanArg: []string{"status", "mezha-docker"},
+			wantCleanArg: []string{"status", "docker"},
 		},
 		{
 			name:         "short flag equals",

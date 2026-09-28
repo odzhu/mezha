@@ -57,7 +57,7 @@ func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox, herdrEnable
 	}
 	args := []string{"up", "--detach", "--from", "path:" + managedDevenvPath}
 	if herdrEnabled {
-		args = append(args, "--option", "processes.mezha-herdr.start.enable:bool", "true")
+		args = append(args, "--option", "processes.herdr.start.enable:bool", "true")
 	}
 	fmt.Println("Starting devenv services...")
 	code, err := sandbox.AttachWith(
@@ -84,7 +84,7 @@ func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox, herdrEnable
 		"120",
 	}
 	if herdrEnabled {
-		waitArgs = append(waitArgs, "--option", "processes.mezha-herdr.start.enable:bool", "true")
+		waitArgs = append(waitArgs, "--option", "processes.herdr.start.enable:bool", "true")
 	}
 	code, err = sandbox.AttachWith(
 		ctx,

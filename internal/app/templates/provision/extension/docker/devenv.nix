@@ -6,7 +6,7 @@
   ];
 
   # Mezha starts these once with devenv up -d and each session is a client.
-  processes.mezha-docker = {
+  processes.docker = {
     start.enable = false;
     exec = ''
       rm -f /var/run/docker.pid

@@ -9,12 +9,12 @@
   env.KUBECONFIG = "/var/lib/rancher/k3s/k3s.yaml";
 
   # Ensure Docker is enabled if k3s is enabled, since k3s runs with --docker.
-  processes.mezha-docker.start.enable = lib.mkIf config.processes.mezha-k3s.start.enable true;
+  processes.docker.start.enable = lib.mkIf config.processes.k3s.start.enable true;
 
   # Mezha starts these once with devenv up -d and each session is a client.
-  processes.mezha-k3s = {
+  processes.k3s = {
     start.enable = false;
-    after = lib.mkIf config.processes.mezha-k3s.start.enable [ "devenv:processes:mezha-docker" ];
+    after = lib.mkIf config.processes.k3s.start.enable [ "devenv:processes:docker" ];
     exec = ''
       exec k3s server \
         --data-dir /var/lib/rancher/k3s \
