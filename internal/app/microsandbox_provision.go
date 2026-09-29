@@ -163,7 +163,12 @@ func runMezhaInitSandboxTask(
 	}
 
 	fmt.Printf("Running mezha:init-sandbox task...\n")
+	taskCmd := persistentRuntimeBin + "/sh"
 	taskArgs := []string{
+		"-c",
+		`exec "$@" >/dev/null`,
+		"devenv-task",
+		nativeDevenvPath,
 		"tasks",
 		"run",
 		"mezha:init-sandbox",
@@ -173,7 +178,7 @@ func runMezhaInitSandboxTask(
 	}
 	code, err := sandbox.AttachWith(
 		ctx,
-		nativeDevenvPath,
+		taskCmd,
 		taskArgs,
 		msb.WithAttachCwd(managedDevenvPath),
 		msb.WithAttachEnv(env),
@@ -186,7 +191,7 @@ func runMezhaInitSandboxTask(
 		if streamErr := execStreaming(
 			ctx,
 			sandbox,
-			nativeDevenvPath,
+			taskCmd,
 			taskArgs,
 			execOpts...,
 		); streamErr != nil {
