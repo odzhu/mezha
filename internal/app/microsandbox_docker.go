@@ -29,7 +29,7 @@ func devenvDirectCommand(command string, commandArgs []string) (string, []string
 		"--",
 		"sh",
 		"-c",
-		"export HOME=/root; unset DEVENV_ROOT _DEVENV_HOOK_DIR; exec \"$@\"",
+		"export HOME=/root SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt; unset DEVENV_ROOT _DEVENV_HOOK_DIR; exec \"$@\"",
 		"mezha-direct",
 		command,
 	}
@@ -59,17 +59,35 @@ func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox, herdrEnable
 	if herdrEnabled {
 		args = append(args, "--option", "processes.herdr.start.enable:bool", "true")
 	}
+	attachEnv := msb.WithAttachEnv(map[string]string{
+		"SSL_CERT_FILE":     "/etc/ssl/certs/ca-certificates.crt",
+		"NIX_SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+	})
 	fmt.Println("Starting devenv services...")
 	code, err := sandbox.AttachWith(
 		ctx,
 		nativeDevenvPath,
 		args,
+		attachEnv,
 		msb.WithAttachCwd(managedDevenvPath),
 	)
 	if err != nil {
-		return fmt.Errorf("start devenv services: %w", err)
-	}
-	if code != 0 {
+		execEnv := map[string]string{
+			"SSL_CERT_FILE":     "/etc/ssl/certs/ca-certificates.crt",
+			"NIX_SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+		}
+		if streamErr := execStreaming(
+			ctx,
+			sandbox,
+			nativeDevenvPath,
+			args,
+			msb.WithExecCwd(managedDevenvPath),
+			msb.WithExecEnv(execEnv),
+		); streamErr != nil {
+			printDevenvDaemonLog(ctx, sandbox)
+			return fmt.Errorf("start devenv services: %w", streamErr)
+		}
+	} else if code != 0 {
 		printDevenvDaemonLog(ctx, sandbox)
 		return fmt.Errorf("start devenv services exited with code %d", code)
 	}
@@ -90,12 +108,26 @@ func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox, herdrEnable
 		ctx,
 		nativeDevenvPath,
 		waitArgs,
+		attachEnv,
 		msb.WithAttachCwd(managedDevenvPath),
 	)
 	if err != nil {
-		return fmt.Errorf("wait for devenv services: %w", err)
-	}
-	if code != 0 {
+		execEnv := map[string]string{
+			"SSL_CERT_FILE":     "/etc/ssl/certs/ca-certificates.crt",
+			"NIX_SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+		}
+		if streamErr := execStreaming(
+			ctx,
+			sandbox,
+			nativeDevenvPath,
+			waitArgs,
+			msb.WithExecCwd(managedDevenvPath),
+			msb.WithExecEnv(execEnv),
+		); streamErr != nil {
+			printDevenvDaemonLog(ctx, sandbox)
+			return fmt.Errorf("wait for devenv services: %w", streamErr)
+		}
+	} else if code != 0 {
 		printDevenvDaemonLog(ctx, sandbox)
 		return fmt.Errorf("wait for devenv services exited with code %d", code)
 	}

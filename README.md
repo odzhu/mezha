@@ -8,7 +8,7 @@ Declarative agent sandboxes powered by Microsandbox.
 - create, provision, start, stop, run, rebuild, and destroy Microsandbox sandboxes
 - synchronize committed changes through a sandbox Git remote
 - upload and download dirty working-tree changes or selected files
-- use the native `ghcr.io/cachix/devenv/devenv:latest` image for sandbox tooling
+- use the native `debian` image for sandbox tooling
 - provision Docker, k3s, kubectl, Git, Lazygit, and GitHub CLI declaratively through a Mezha-managed devenv environment
 - optionally run a single-node k3s server in the primary Microsandbox
 
@@ -16,7 +16,7 @@ Declarative agent sandboxes powered by Microsandbox.
 
 - Go
 - Microsandbox-supported local virtualization host (KVM on Linux or Apple Silicon on macOS)
-- network access to pull the native devenv image from GHCR on first use
+- network access to pull the native Debian image and download Nix and devenv into the persistent state volume on first use
 - when SecretSpec integration is enabled, a C compiler, Cargo, and Rust (the build stages SecretSpec's static library)
 
 ## Build
@@ -61,7 +61,7 @@ Examples:
 ```bash
 mezha init
 mezha sandbox list
-# Refresh the cached ghcr.io/cachix/devenv/devenv:latest image.
+# Refresh the cached debian image.
 mezha image pull
 mezha volume list
 # Inspect and manage background devenv processes in the sandbox.
@@ -123,18 +123,18 @@ existing file is used; precedence increases in this order:
 2. `$MEZHA_HOME/projects/<git-project>/mezha.toml`
 3. `<project-root>/mezha.toml`
 
-Mezha always uses `ghcr.io/cachix/devenv/devenv:latest` and
-runs it as UID 0: Docker and k3s
-require it, and Microsandbox cannot resolve the native image's `1000:100` user
-declaration. Mezha internally manages the base devenv environment and synchronizes
-user extensions from `.mezha/extensions` (or `$MEZHA_HOME/projects/<git-project>/extensions`
-or `$MEZHA_HOME/extensions` globally) to `extensions-user` in the sandbox during creation and runs.
+Mezha uses the native `debian` image and runs it as UID 0: Docker and k3s
+require root privileges. Mezha bootstraps Nix and devenv into the shared
+persistent state volume on first initialization, internally manages the base
+devenv environment, and synchronizes user extensions from `.mezha/extensions`
+(or `$MEZHA_HOME/projects/<git-project>/extensions` or `$MEZHA_HOME/extensions` globally)
+to `extensions-user` in the sandbox during creation and runs.
 
 ```toml
 version = 1
 
 [microsandbox]
-# Mezha always uses ghcr.io/cachix/devenv/devenv:latest as UID 0.
+# Mezha uses the debian image and runs as UID 0.
 memory_mib = 4096
 
 # All persistent state shares this volume.

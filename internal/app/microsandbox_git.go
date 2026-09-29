@@ -54,6 +54,7 @@ if [ "$linked_worktree" = true ] || ! git -C "$repo" rev-parse --verify HEAD >/d
 			primaryBranch,
 			fmt.Sprint(rc.IsLinkedWorktree),
 		},
+		persistentRuntimeExecEnv(),
 	)
 	if err != nil {
 		return fmt.Errorf("initialize Microsandbox git repository: %w", err)

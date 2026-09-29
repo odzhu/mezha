@@ -54,7 +54,7 @@ var herdrLifecycleItems = []herdrDashboardItem{
 	{
 		args:        []string{"image", "pull"},
 		title:       "Pull latest image",
-		description: "Refresh the cached native devenv image",
+		description: "Refresh the cached native Debian image",
 	},
 	{
 		args:        []string{"processes", "list"},

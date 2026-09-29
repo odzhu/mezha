@@ -318,7 +318,7 @@ func (pb *MicrosandboxPortBinding) parseString(s string) error {
 func (s MicrosandboxSpec) sandboxOptions(
 	configDir, sandboxName string,
 ) ([]msb.SandboxOption, error) {
-	image := defaultDevenvImage
+	image := defaultDebianImage
 	opts := []msb.SandboxOption{
 		msb.WithImage(image),
 		msb.WithDetached(),
@@ -330,9 +330,7 @@ func (s MicrosandboxSpec) sandboxOptions(
 	if s.MemoryMiB != 0 {
 		opts = append(opts, msb.WithMemory(s.MemoryMiB))
 	}
-	// The native devenv image declares its user as "1000:100", which the
-	// Microsandbox guest-user resolver cannot resolve. Docker and k3s also
-	// require root privileges, so always use root's numeric UID.
+	// Docker and k3s require root privileges, so always use root's numeric UID 0.
 	opts = append(opts, msb.WithUser("0"))
 	runtimeOpts, err := s.runtimeOptions()
 	if err != nil {
@@ -918,7 +916,7 @@ func (b MicrosandboxTokenBucket) toSDK() (msb.TokenBucketConfig, error) {
 func persistentSymlinkTarget(target string) bool {
 	switch filepath.Clean(target) {
 	case "/nix/store", "/home", "/root", "/root/.cache/go-build", "/root/.cache/nix",
-		"/var/lib/docker", "/var/lib/rancher/k3s":
+		"/etc/nix", "/etc/ssl", "/var/lib/docker", "/var/lib/rancher/k3s":
 		return true
 	default:
 		return false

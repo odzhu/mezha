@@ -35,7 +35,7 @@ The dashboard provides:
 - editing for the active Mezha configuration
 - an interactive sandbox shell in a new tab
 - sandbox and persistent-volume listings
-- pull the latest native devenv image
+- pull the latest native Debian image
 - devenv background process inspection and management
 - sandbox create, start, and stop operations
 - repository synchronization status

@@ -10,7 +10,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const defaultDevenvImage = "ghcr.io/cachix/devenv/devenv:latest"
+const defaultDebianImage = "debian"
 
 type MezhaConfig struct {
 	Version      uint32            `toml:"version,omitempty"`

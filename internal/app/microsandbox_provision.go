@@ -104,10 +104,12 @@ func runMezhaInitSandboxTask(
 	herdrEnabled bool,
 ) error {
 	env := map[string]string{
-		"HOME":        "/root",
-		"USER":        "root",
-		"MSB_WORKDIR": repoDir,
-		"PATH":        "/nix/mezha/root/.mezha/runtime-bin",
+		"HOME":              "/root",
+		"USER":              "root",
+		"MSB_WORKDIR":       repoDir,
+		"PATH":              persistentRuntimeBin + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"SSL_CERT_FILE":     "/etc/ssl/certs/ca-certificates.crt",
+		"NIX_SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
 	}
 
 	primaryRoot, linkedWorktree, err := linkedWorktreePrimaryRepoRoot(rc.RepoRoot)
@@ -161,22 +163,36 @@ func runMezhaInitSandboxTask(
 	}
 
 	fmt.Printf("Running mezha:init-sandbox task...\n")
-	code, err := sandbox.AttachWith(ctx, persistentRuntimeBin+"/sh", []string{
-		"-c",
-		`exec "$@" >/dev/null`,
-		"devenv-task",
-		nativeDevenvPath,
+	taskArgs := []string{
 		"tasks",
 		"run",
 		"mezha:init-sandbox",
 		"--show-output",
 		"--from",
 		"path:" + managedDevenvPath,
-	}, msb.WithAttachCwd(managedDevenvPath), msb.WithAttachEnv(env))
-	if err != nil {
-		return fmt.Errorf("run mezha:init-sandbox task: %w", err)
 	}
-	if code != 0 {
+	code, err := sandbox.AttachWith(
+		ctx,
+		nativeDevenvPath,
+		taskArgs,
+		msb.WithAttachCwd(managedDevenvPath),
+		msb.WithAttachEnv(env),
+	)
+	if err != nil {
+		execOpts := []msb.ExecOption{
+			msb.WithExecCwd(managedDevenvPath),
+			msb.WithExecEnv(env),
+		}
+		if streamErr := execStreaming(
+			ctx,
+			sandbox,
+			nativeDevenvPath,
+			taskArgs,
+			execOpts...,
+		); streamErr != nil {
+			return fmt.Errorf("run mezha:init-sandbox task: %w", streamErr)
+		}
+	} else if code != 0 {
 		return fmt.Errorf("run mezha:init-sandbox task exited with code %d", code)
 	}
 	if herdrEnabled {

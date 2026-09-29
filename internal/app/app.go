@@ -365,7 +365,7 @@ func newImageCommand() *cli.Command {
 		Commands: []*cli.Command{
 			{
 				Name:   "pull",
-				Usage:  "Pull the latest native devenv image into Microsandbox",
+				Usage:  "Pull the latest native Debian image into Microsandbox",
 				Action: func(ctx context.Context, _ *cli.Command) error { return pullDevenvImage(ctx) },
 			},
 		},
