@@ -50,6 +50,14 @@
 
       # 2. Bash Hook
       bashrc="/root/.bashrc"
+      if [ -e "$bashrc" ] && [ ! -f "$bashrc" ]; then rm -rf "$bashrc"; fi
+      if [ -f "$bashrc" ] && [ "$(wc -c < "$bashrc")" -ne "$(tr -d '\0' < "$bashrc" | wc -c)" ]; then
+        if [ -f /etc/skel/.bashrc ]; then
+          cp /etc/skel/.bashrc "$bashrc"
+        else
+          : > "$bashrc"
+        fi
+      fi
       touch "$bashrc"
       sed -i '/^# mezha devenv hook$/,/^eval "$(devenv hook bash)"$/d' "$bashrc"
       cat >> "$bashrc" <<'EOF'
@@ -77,6 +85,10 @@ EOF
       # 3. Bash Profile
       if [ -n "''${MSB_WORKDIR:-}" ]; then
         profile="/root/.bash_profile"
+        if [ -e "$profile" ] && [ ! -f "$profile" ]; then rm -rf "$profile"; fi
+        if [ -f "$profile" ] && [ "$(wc -c < "$profile")" -ne "$(tr -d '\0' < "$profile" | wc -c)" ]; then
+          : > "$profile"
+        fi
         touch "$profile"
         sed -i '/^# mezha project shell$/,/^# mezha project shell end$/d' "$profile"
         cat >> "$profile" <<EOF

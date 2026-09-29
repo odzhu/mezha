@@ -284,6 +284,11 @@ func syncBaseProvisionFiles(ctx context.Context, sandbox *msb.Sandbox) error {
 	}
 	for _, file := range files {
 		guestPath := filepath.ToSlash(filepath.Join(managedDevenvPath, file.relPath))
+		if existing, err := sandbox.FS().
+			ReadString(ctx, guestPath); err == nil &&
+			existing == file.content {
+			continue
+		}
 		if err := sandbox.FS().WriteString(ctx, guestPath, file.content); err != nil {
 			return fmt.Errorf("write %s: %w", guestPath, err)
 		}
@@ -306,7 +311,12 @@ func syncExtensionsDir(ctx context.Context, sandbox *msb.Sandbox, local, remote 
 	output, err := sandbox.Exec(
 		ctx,
 		persistentRuntimeBin+"/sh",
-		[]string{"-c", "rm -rf \"$1\" && mkdir -p \"$1\"", "mezha-clean-dir", remote},
+		[]string{
+			"-c",
+			"mkdir -p \"$1\" && find \"$1\" -mindepth 1 ! -name \"*.lock\" -delete 2>/dev/null || true",
+			"mezha-clean-dir",
+			remote,
+		},
 		persistentRuntimeExecEnv(),
 	)
 	if err != nil {

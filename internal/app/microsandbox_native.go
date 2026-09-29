@@ -32,7 +32,7 @@ func openMicrosandbox(
 	sandboxExists := false
 	if handle, err := msb.GetSandbox(ctx, params.SandboxName); err == nil {
 		if recreate {
-			if err := handle.Destroy(ctx, msb.WithDestroyForce()); err != nil {
+			if err := stopAndDestroySandbox(handle); err != nil {
 				return nil, nil, nil, fmt.Errorf("recreate sandbox %q: %w", params.SandboxName, err)
 			}
 		} else {
@@ -193,12 +193,12 @@ sync`,
 			[]string{"-c", step.cmd},
 			msb.WithExecEnv(step.env),
 		); err != nil {
-			stopAndDestroySandbox(bootstrap)
+			_ = stopAndDestroySandbox(bootstrap)
 			return fmt.Errorf("seed state volume (%s): %w", step.desc, err)
 		}
 	}
 
-	stopAndDestroySandbox(bootstrap)
+	_ = stopAndDestroySandbox(bootstrap)
 	fmt.Printf("Seeded persistent Nix state volume: %s\n", name)
 	return nil
 }
@@ -227,7 +227,7 @@ func stateVolumeReady(
 		msb.WithUser("0"),
 		msb.WithReplace(),
 		msb.WithMounts(map[string]msb.MountConfig{
-			"/mnt/mezha": msb.Mount.NamedWith(
+			"/nix": msb.Mount.NamedWith(
 				name,
 				msb.MountOptions{
 					Readonly: volume.ReadOnly,
@@ -247,13 +247,13 @@ func stateVolumeReady(
 	if err != nil {
 		return false, fmt.Errorf("create state volume probe: %w", err)
 	}
-	defer stopAndDestroySandbox(probe)
+	defer func() { _ = stopAndDestroySandbox(probe) }()
 	output, err := probe.Exec(
 		ctx,
 		"sh",
 		[]string{
 			"-c",
-			"set -eu; test -f /mnt/mezha/" + marker + " && test -d /mnt/mezha/mezha/root/.mezha/runtime-bin && test -x /mnt/mezha/mezha/root/.mezha/runtime-bin/devenv",
+			"set -eu; test -f /nix/" + marker + " && test -d /nix/mezha/root/.mezha/runtime-bin && test -x /nix/mezha/root/.mezha/runtime-bin/devenv",
 		},
 		msb.WithExecEnv(
 			map[string]string{
@@ -294,7 +294,7 @@ persist_link() {
     fi
   fi
   if [ "$target" = "/root" ] && [ -d "/root" ] && [ ! -L "/root" ]; then
-    cp -a /root/. "$source/" 2>/dev/null || true
+    cp -an /root/. "$source/" 2>/dev/null || cp -a /root/. "$source/" 2>/dev/null || true
   fi
   rm -rf "$target"
   ln -s "$source" "$target"
@@ -306,6 +306,18 @@ persist_link /etc/nix /nix/mezha/etc/nix
 persist_link /etc/ssl /nix/mezha/etc/ssl
 if [ ! -e /nix/root ]; then
   ln -s /nix/mezha/root /nix/root
+fi
+if [ -e /root/.bashrc ] && [ ! -f /root/.bashrc ]; then rm -rf /root/.bashrc; fi
+if [ -f /root/.bashrc ] && [ "$(wc -c < /root/.bashrc)" -ne "$(tr -d '\0' < /root/.bashrc | wc -c)" ]; then
+  if [ -f /etc/skel/.bashrc ]; then
+    cp /etc/skel/.bashrc /root/.bashrc
+  else
+    : > /root/.bashrc
+  fi
+fi
+if [ -e /root/.bash_profile ] && [ ! -f /root/.bash_profile ]; then rm -rf /root/.bash_profile; fi
+if [ -f /root/.bash_profile ] && [ "$(wc -c < /root/.bash_profile)" -ne "$(tr -d '\0' < /root/.bash_profile | wc -c)" ]; then
+  : > /root/.bash_profile
 fi
 if [ ! -f /etc/ssl/certs/ca-certificates.crt ] || [ ! -s /etc/ssl/certs/ca-certificates.crt ]; then
   mkdir -p /etc/ssl/certs
@@ -376,10 +388,15 @@ mkdir -p /home/devenv`},
 // and flush disk-backed volumes before the sandbox is force-destroyed as a
 // fallback. Force-destroying immediately after a write can drop recent
 // writes on disk-backed volumes.
-func stopAndDestroySandbox(sandbox *msb.Sandbox) {
+type stoppableSandbox interface {
+	Stop(ctx context.Context, opts ...msb.StopOption) error
+	Destroy(ctx context.Context, opts ...msb.DestroyOption) error
+}
+
+func stopAndDestroySandbox(sandbox stoppableSandbox) error {
 	_ = sandbox.Stop(context.Background())
 	time.Sleep(500 * time.Millisecond)
-	_ = sandbox.Destroy(context.Background(), msb.WithDestroyForce())
+	return sandbox.Destroy(context.Background(), msb.WithDestroyForce())
 }
 
 func nativeUpload(ctx context.Context, sandbox *msb.Sandbox, local, remote string) error {

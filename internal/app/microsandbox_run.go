@@ -31,7 +31,7 @@ func runMicrosandbox(
 				return err
 			}
 			reregisterHerdr = reregisterHerdr || registered
-			if err := handle.Destroy(ctx, msb.WithDestroyForce()); err != nil {
+			if err := stopAndDestroySandbox(handle); err != nil {
 				return fmt.Errorf("recreate sandbox %q: %w", params.SandboxName, err)
 			}
 			if err := clearHerdrSSHControlSockets(); err != nil {
