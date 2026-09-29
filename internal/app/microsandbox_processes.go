@@ -39,7 +39,14 @@ func processesMicrosandbox(ctx context.Context, params ProcessesParams) error {
 		args = args[1:]
 	}
 
-	script := `if [ -d "/nix/mezha/root/.mezha/runtime-bin" ]; then PATH="/nix/mezha/root/.mezha/runtime-bin:$PATH"; export PATH; fi; cd /root/.config/mezha/services/devenv && devenv processes "$@"`
+	script := fmt.Sprintf(
+		`if [ -d "%s" ]; then PATH="%s:$PATH"; export PATH; fi; if [ -d "%s" ]; then PATH="%s:$PATH"; export PATH; fi; export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt; cd %s && devenv processes "$@"`,
+		managedDevenvProfileBin,
+		managedDevenvProfileBin,
+		persistentRuntimeBin,
+		persistentRuntimeBin,
+		managedDevenvPath,
+	)
 	cmdArgs := append([]string{"-c", script, "mezha-processes"}, args...)
 
 	term := os.Getenv("TERM")
@@ -69,8 +76,10 @@ func processesMicrosandbox(ctx context.Context, params ProcessesParams) error {
 		cmdArgs,
 		msb.WithExecCwd(managedDevenvPath),
 		msb.WithExecEnv(map[string]string{
-			"TERM": term,
-			"PATH": "/nix/mezha/root/.mezha/runtime-bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin",
+			"TERM":              term,
+			"PATH":              managedDevenvProfileBin + ":" + persistentRuntimeBin + ":/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin",
+			"SSL_CERT_FILE":     "/etc/ssl/certs/ca-certificates.crt",
+			"NIX_SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
 		}),
 	)
 	if err != nil {

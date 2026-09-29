@@ -270,7 +270,7 @@ func stateVolumeReady(
 // persistentRuntimeExecEnv makes the seeded Nix profile available to exec sessions.
 func persistentRuntimeExecEnv() msb.ExecOption {
 	return msb.WithExecEnv(map[string]string{
-		"PATH":              persistentRuntimeBin + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"PATH":              managedDevenvProfileBin + ":" + persistentRuntimeBin + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"SSL_CERT_FILE":     "/etc/ssl/certs/ca-certificates.crt",
 		"NIX_SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
 	})
@@ -315,10 +315,46 @@ if [ ! -f /etc/ssl/certs/ca-certificates.crt ] || [ ! -s /etc/ssl/certs/ca-certi
     ln -sf "$cacert" /etc/ssl/certs/ca-bundle.crt
   fi
 fi
+if [ -f /etc/profile ]; then
+  sed -i -e 's|PATH="/usr/local/sbin|PATH="${PATH:+$PATH:}/usr/local/sbin|' \
+         -e 's|PATH="/usr/local/bin|PATH="${PATH:+$PATH:}/usr/local/bin|' /etc/profile
+fi
+mkdir -p /etc/profile.d
+cat << 'EOF' > /etc/profile.d/mezha.sh
+if [ -d "/root/.config/mezha/services/devenv/.devenv/profile/bin" ]; then
+  case ":$PATH:" in
+    *:/root/.config/mezha/services/devenv/.devenv/profile/bin:*) ;;
+    *) PATH="/root/.config/mezha/services/devenv/.devenv/profile/bin:$PATH" ;;
+  esac
+fi
+if [ -d "/nix/mezha/root/.mezha/runtime-bin" ]; then
+  case ":$PATH:" in
+    *:/nix/mezha/root/.mezha/runtime-bin:*) ;;
+    *) PATH="/nix/mezha/root/.mezha/runtime-bin:$PATH" ;;
+  esac
+fi
+export PATH
+export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+export NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+EOF
+link_runtime_bins() {
+  dir="$1"
+  [ -d "$dir" ] || return 0
+  for b in "$dir"/*; do
+    [ -x "$b" ] || continue
+    name=$(basename "$b")
+    case "$name" in
+      sh|bash|bashbug) continue ;;
+    esac
+    ln -sf "$b" "/nix/mezha/root/.mezha/runtime-bin/$name"
+    ln -sf "$b" "/usr/local/bin/$name" 2>/dev/null || true
+  done
+}
+link_runtime_bins /root/.config/mezha/services/devenv/.devenv/profile/bin
 for b in /nix/mezha/root/.mezha/runtime-bin/*; do
   [ -x "$b" ] && ln -sf "$b" "/usr/local/bin/$(basename "$b")" 2>/dev/null || true
 done
-PATH=/nix/mezha/root/.mezha/runtime-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PATH=/root/.config/mezha/services/devenv/.devenv/profile/bin:/nix/mezha/root/.mezha/runtime-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 rm -rf /home
 mkdir -p /home/devenv`},
 		msb.WithExecCwd("/"),

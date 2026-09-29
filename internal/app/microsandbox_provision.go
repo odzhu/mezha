@@ -107,7 +107,7 @@ func runMezhaInitSandboxTask(
 		"HOME":              "/root",
 		"USER":              "root",
 		"MSB_WORKDIR":       repoDir,
-		"PATH":              persistentRuntimeBin + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"PATH":              managedDevenvProfileBin + ":" + persistentRuntimeBin + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"SSL_CERT_FILE":     "/etc/ssl/certs/ca-certificates.crt",
 		"NIX_SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
 	}

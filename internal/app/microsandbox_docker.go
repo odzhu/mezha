@@ -14,6 +14,7 @@ import (
 )
 
 const managedDevenvPath = "/root/.config/mezha/services/devenv"
+const managedDevenvProfileBin = managedDevenvPath + "/.devenv/profile/bin"
 const managedDevenvUserExtensions = managedDevenvPath + "/extensions-user"
 const persistentRuntimeBin = "/nix/mezha/root/.mezha/runtime-bin"
 const nativeDevenvPath = persistentRuntimeBin + "/devenv"

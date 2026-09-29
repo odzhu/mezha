@@ -54,6 +54,20 @@
       sed -i '/^# mezha devenv hook$/,/^eval "$(devenv hook bash)"$/d' "$bashrc"
       cat >> "$bashrc" <<'EOF'
 # mezha devenv hook
+if [ -d "/root/.config/mezha/services/devenv/.devenv/profile/bin" ]; then
+  case ":$PATH:" in
+    *:/root/.config/mezha/services/devenv/.devenv/profile/bin:*) ;;
+    *) export PATH="/root/.config/mezha/services/devenv/.devenv/profile/bin:$PATH" ;;
+  esac
+fi
+if [ -d "/nix/mezha/root/.mezha/runtime-bin" ]; then
+  case ":$PATH:" in
+    *:/nix/mezha/root/.mezha/runtime-bin:*) ;;
+    *) export PATH="/nix/mezha/root/.mezha/runtime-bin:$PATH" ;;
+  esac
+fi
+export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+export NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 if [ "''${MEZHA_HERDR_PANE:-}" = 1 ]; then
   unset DEVENV_ROOT MEZHA_HERDR_PANE
 fi
@@ -75,7 +89,22 @@ fi
 EOF
       fi
 
-      # 4. Herdr Installation
+      # 4. Managed Devenv Packages Links
+      profile_bin="''${DEVENV_PROFILE:-/root/.config/mezha/services/devenv/.devenv/profile}/bin"
+      if [ -d "$profile_bin" ]; then
+        mkdir -p /nix/mezha/root/.mezha/runtime-bin
+        for b in "$profile_bin"/*; do
+          [ -x "$b" ] || continue
+          name=$(basename "$b")
+          case "$name" in
+            sh|bash|bashbug) continue ;;
+          esac
+          ln -sf "$b" "/nix/mezha/root/.mezha/runtime-bin/$name"
+          ln -sf "$b" "/usr/local/bin/$name" 2>/dev/null || true
+        done
+      fi
+
+      # 5. Herdr Installation
       if [ -n "''${MSB_HERDR_VERSION:-}" ]; then
         binary="/nix/mezha/services/herdr/bin/herdr"
         launcher="/root/.local/bin/herdr"
