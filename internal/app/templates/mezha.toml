@@ -26,6 +26,10 @@ memory_mib = 4096
 # [[microsandbox.mounts]]
 # source = "."
 # target = "/workspace"
+# read_only = false
+# noexec = false
+# nosuid = false
+# nodev = false
 
 # All persistent state shares one volume. Mezha seeds the Nix store and creates
 # the required symlinks before entering the devenv shell.
