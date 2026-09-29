@@ -50,16 +50,16 @@ var (
 				Padding(0, 1)
 )
 
-var herdrLifecycleItems = []herdrDashboardItem{
+var herdrSandboxItems = []herdrDashboardItem{
 	{
-		args:        []string{"image", "pull"},
-		title:       "Pull latest image",
-		description: "Refresh the cached native Debian image",
+		args:        []string{"sandbox", "list"},
+		title:       "List sandboxes",
+		description: "Show all local Mezha sandboxes",
 	},
 	{
-		args:        []string{"processes", "list"},
-		title:       "Processes",
-		description: "List background devenv processes in the sandbox",
+		args:        []string{"sandbox", "create", "--herdr"},
+		title:       "Create sandbox",
+		description: "Create and initialize the configured sandbox",
 	},
 	{
 		args:        []string{"sandbox", "recreate", "--herdr"},
@@ -73,9 +73,45 @@ var herdrLifecycleItems = []herdrDashboardItem{
 		title:       "Destroy",
 		description: "Confirm and permanently remove the sandbox",
 	},
+	{
+		args:        []string{"sandbox", "status"},
+		title:       "Show status",
+		description: "Inspect repository synchronization status",
+	},
+	{
+		args:        []string{"sandbox", "logs"},
+		title:       "Show logs",
+		description: "Show Microsandbox service and runtime logs",
+	},
+	{
+		args:        []string{"sandbox", "processes", "list"},
+		title:       "Processes",
+		description: "List background devenv processes in the sandbox",
+	},
+}
+
+var herdrProcessesItems = []herdrDashboardItem{
+	{
+		args:        []string{"processes", "list"},
+		title:       "List processes",
+		description: "List background devenv processes in the sandbox",
+	},
+}
+
+var herdrImageItems = []herdrDashboardItem{
+	{
+		args:        []string{"image", "pull"},
+		title:       "Pull latest image",
+		description: "Refresh the cached native Debian image",
+	},
 }
 
 var herdrSyncItems = []herdrDashboardItem{
+	{
+		args:        []string{"sync", "status"},
+		title:       "Show status",
+		description: "Inspect repository synchronization status",
+	},
 	{
 		args:        []string{"sync", "upload"},
 		title:       "Upload changes",
@@ -96,48 +132,61 @@ var herdrSyncItems = []herdrDashboardItem{
 		title:       "Push commits",
 		description: "Push committed changes to the sandbox",
 	},
+	{
+		args:        []string{"sync", "remote", "repair"},
+		title:       "Repair remote",
+		description: "Refresh the sandbox remote SSH configuration",
+	},
+	{
+		args:        []string{"sync", "remote", "deregister"},
+		title:       "Deregister remote",
+		description: "Remove the sandbox Git remote from the local repository",
+	},
 }
 
-var herdrDashboardItems = []herdrDashboardItem{
-	{
-		args:        []string{"sandbox", "list"},
-		title:       "List sandboxes",
-		description: "Show all local Mezha sandboxes",
-	},
+var herdrVolumeItems = []herdrDashboardItem{
 	{
 		args:        []string{"volume", "list"},
 		title:       "List volumes",
 		description: "Show persistent Microsandbox volumes",
 	},
-	{
-		args:        []string{"init"},
-		title:       "Initialize",
-		description: "Create the project Mezha configuration",
-	},
+}
+
+var herdrDashboardItems = []herdrDashboardItem{
 	{
 		args:        []string{"run", "--herdr"},
-		title:       "Open sandbox shell",
+		title:       "Run",
 		description: "Open an interactive shell in a new tab",
 	},
 	{
-		args:        []string{"sync", "status"},
-		title:       "Show status",
-		description: "Inspect repository synchronization status",
+		args:        []string{"init"},
+		title:       "Init",
+		description: "Create the project Mezha configuration",
 	},
 	{
-		args:        []string{"sandbox", "create", "--herdr"},
-		title:       "Create sandbox",
-		description: "Create and initialize the configured sandbox",
+		title:       "Sandbox…",
+		description: "Manage sandboxes and instances",
+		children:    herdrSandboxItems,
 	},
 	{
-		title:       "Lifecycle…",
-		description: "Pull the image, recreate, start, stop, or destroy the sandbox",
-		children:    herdrLifecycleItems,
+		title:       "Processes…",
+		description: "Manage devenv background processes",
+		children:    herdrProcessesItems,
 	},
 	{
-		title:       "Synchronize…",
-		description: "Upload, download, pull, or push changes",
+		title:       "Image…",
+		description: "Manage Microsandbox images",
+		children:    herdrImageItems,
+	},
+	{
+		title:       "Sync…",
+		description: "Synchronize repository changes with a sandbox",
 		children:    herdrSyncItems,
+	},
+	{
+		title:       "Volume…",
+		description: "Manage persistent Microsandbox volumes",
+		children:    herdrVolumeItems,
 	},
 	{
 		title:       "Settings…",
@@ -297,10 +346,33 @@ func (m herdrDashboardModel) chooseDashboardItem(matches []int) (tea.Model, tea.
 		return m, nil
 	}
 	m.chosen = append([]string(nil), item.args...)
-	if m.sandbox != "" && item.args[0] != "init" {
+	if m.sandbox != "" && commandSupportsSandbox(item.args) {
 		m.chosen = append(m.chosen, "--sandbox", m.sandbox)
 	}
 	return m, tea.Quit
+}
+
+func commandSupportsSandbox(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "init", "image", "volume":
+		return false
+	case "sandbox":
+		if len(args) > 1 && args[1] == "list" {
+			return false
+		}
+		return true
+	case "sync":
+		if len(args) > 1 && (args[1] == "push" || args[1] == "pull" || args[1] == "remote") {
+			return false
+		}
+		return true
+	case "run", "processes":
+		return true
+	}
+	return false
 }
 
 func (m herdrDashboardModel) updateForceInit(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -638,19 +710,27 @@ func (m herdrDashboardModel) View() tea.View {
 			view.WriteString("No Mezha configuration found; Mezha will initialize it first.\n")
 		}
 		view.WriteString("\n")
+		targetWidth := max(m.width-2, 20)
 		for index, setting := range m.settings {
 			cursor := "  "
 			if index == m.settingCursor {
 				cursor = "> "
 			}
-			fmt.Fprintf(
-				&view,
-				"%s[%s] %-8s %s\n",
-				cursor,
-				dashboardDigitLabel(index),
-				setting.label,
-				setting.path,
-			)
+			digit := ""
+			if index < 10 {
+				digit = dashboardDigitLabel(index)
+			}
+			left := fmt.Sprintf("%s%-8s %s", cursor, setting.label, setting.path)
+			rightWidth := lipgloss.Width(digit)
+			avail := targetWidth - rightWidth - 2
+			if lipgloss.Width(left) > avail && avail > 3 {
+				left = truncateDashboardText(left, avail)
+			}
+			padding := targetWidth - lipgloss.Width(left) - rightWidth
+			if padding < 1 {
+				padding = 1
+			}
+			fmt.Fprintf(&view, "%s%s%s\n", left, strings.Repeat(" ", padding), digit)
 		}
 		view.WriteString("\ndigit edit  •  ↑/↓ or j/k move  •  enter edit  •  esc back\n")
 		result := tea.NewView(view.String())
@@ -713,7 +793,7 @@ func (m herdrDashboardModel) View() tea.View {
 	if m.sandbox != "" {
 		sandbox = m.sandbox
 	}
-	section := "Sandbox"
+	section := "Mezha"
 	if m.submenuTitle != "" {
 		section = strings.TrimSuffix(m.submenuTitle, "…")
 	}
@@ -732,26 +812,48 @@ func (m herdrDashboardModel) View() tea.View {
 
 	items := m.activeDashboardItems()
 	matches := m.filteredDashboardItems()
+	targetWidth := max(w-2, 20)
 	for position, index := range matches {
 		item := items[index]
 		selected := position == m.cursor
+		prefix := "  "
 		if selected {
-			view.WriteString(dashboardBarStyle.Render("▌ "))
-		} else {
-			view.WriteString("  ")
+			prefix = dashboardBarStyle.Render("▌ ")
 		}
 		nameStyle := dashboardNameStyle
 		if selected {
 			nameStyle = dashboardNameSelStyle
 		}
-		view.WriteString(nameStyle.Render("[" + dashboardDigitLabel(position) + "] "))
-		view.WriteString("   ")
-		view.WriteString(nameStyle.Render(item.title))
-		if item.description != "" {
-			view.WriteString("  ")
-			view.WriteString(dashboardDescStyle.Render(item.description))
+
+		digit := ""
+		if position < 10 {
+			digit = dashboardDigitLabel(position)
 		}
-		view.WriteString("\n")
+		right := ""
+		if digit != "" {
+			right = nameStyle.Render(digit)
+		}
+
+		title := nameStyle.Render(item.title)
+		left := prefix + title
+		if item.description != "" {
+			rightWidth := lipgloss.Width(right)
+			prefixWidth := lipgloss.Width(prefix)
+			titleWidth := lipgloss.Width(title)
+			avail := targetWidth - prefixWidth - titleWidth - 4 - rightWidth
+			if avail > 3 {
+				desc := truncateDashboardText(item.description, avail)
+				left += "  " + dashboardDescStyle.Render(desc)
+			}
+		}
+
+		leftWidth := lipgloss.Width(left)
+		rightWidth := lipgloss.Width(right)
+		padding := targetWidth - leftWidth - rightWidth
+		if padding < 1 {
+			padding = 1
+		}
+		view.WriteString(left + strings.Repeat(" ", padding) + right + "\n")
 	}
 	if len(matches) == 0 {
 		view.WriteString(dashboardDescStyle.Render("  No matching actions."))
