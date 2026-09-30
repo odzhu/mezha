@@ -104,12 +104,14 @@ func runMezhaInitSandboxTask(
 	herdrEnabled bool,
 ) error {
 	env := map[string]string{
-		"HOME":              "/root",
-		"USER":              "root",
-		"MSB_WORKDIR":       repoDir,
-		"PATH":              managedDevenvProfileBin + ":" + persistentRuntimeBin + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		"SSL_CERT_FILE":     "/etc/ssl/certs/ca-certificates.crt",
-		"NIX_SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+		"HOME":               "/root",
+		"USER":               "root",
+		"MSB_WORKDIR":        repoDir,
+		"PATH":               managedDevenvProfileBin + ":" + persistentRuntimeBin + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+		"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+		"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+		"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
 	}
 
 	primaryRoot, linkedWorktree, err := linkedWorktreePrimaryRepoRoot(rc.RepoRoot)

@@ -40,7 +40,7 @@ func processesMicrosandbox(ctx context.Context, params ProcessesParams) error {
 	}
 
 	script := fmt.Sprintf(
-		`if [ -d "%s" ]; then PATH="%s:$PATH"; export PATH; fi; if [ -d "%s" ]; then PATH="%s:$PATH"; export PATH; fi; export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt; cd %s && devenv processes "$@"`,
+		`if [ -d "%s" ]; then PATH="%s:$PATH"; export PATH; fi; if [ -d "%s" ]; then PATH="%s:$PATH"; export PATH; fi; export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt; cd %s && devenv processes "$@"`,
 		managedDevenvProfileBin,
 		managedDevenvProfileBin,
 		persistentRuntimeBin,
@@ -76,10 +76,12 @@ func processesMicrosandbox(ctx context.Context, params ProcessesParams) error {
 		cmdArgs,
 		msb.WithExecCwd(managedDevenvPath),
 		msb.WithExecEnv(map[string]string{
-			"TERM":              term,
-			"PATH":              managedDevenvProfileBin + ":" + persistentRuntimeBin + ":/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin",
-			"SSL_CERT_FILE":     "/etc/ssl/certs/ca-certificates.crt",
-			"NIX_SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+			"TERM":               term,
+			"PATH":               managedDevenvProfileBin + ":" + persistentRuntimeBin + ":/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin",
+			"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+			"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+			"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+			"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
 		}),
 	)
 	if err != nil {

@@ -30,7 +30,7 @@ func devenvDirectCommand(command string, commandArgs []string) (string, []string
 		"--",
 		"sh",
 		"-c",
-		"export HOME=/root SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt; unset DEVENV_ROOT _DEVENV_HOOK_DIR; exec \"$@\"",
+		"export HOME=/root SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt; unset DEVENV_ROOT _DEVENV_HOOK_DIR; exec \"$@\"",
 		"mezha-direct",
 		command,
 	}
@@ -61,8 +61,10 @@ func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox, herdrEnable
 		args = append(args, "--option", "processes.herdr.start.enable:bool", "true")
 	}
 	attachEnv := msb.WithAttachEnv(map[string]string{
-		"SSL_CERT_FILE":     "/etc/ssl/certs/ca-certificates.crt",
-		"NIX_SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+		"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+		"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+		"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+		"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
 	})
 	fmt.Println("Starting devenv services...")
 	code, err := sandbox.AttachWith(
@@ -74,8 +76,10 @@ func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox, herdrEnable
 	)
 	if err != nil {
 		execEnv := map[string]string{
-			"SSL_CERT_FILE":     "/etc/ssl/certs/ca-certificates.crt",
-			"NIX_SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+			"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+			"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+			"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+			"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
 		}
 		if streamErr := execStreaming(
 			ctx,
@@ -114,8 +118,10 @@ func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox, herdrEnable
 	)
 	if err != nil {
 		execEnv := map[string]string{
-			"SSL_CERT_FILE":     "/etc/ssl/certs/ca-certificates.crt",
-			"NIX_SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+			"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+			"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+			"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+			"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
 		}
 		if streamErr := execStreaming(
 			ctx,

@@ -276,7 +276,7 @@ func sandboxAttachOptions(workdir string) []msb.AttachOption {
 func shellBootstrap() string {
 	cols, rows := terminalSize(int(os.Stdout.Fd()))
 	return fmt.Sprintf(
-		`if [ -t 0 ]; then stty rows %d cols %d 2>/dev/null || :; fi; if [ -d "%s" ]; then PATH="%s:$PATH"; export PATH; fi; if [ -d "%s" ]; then PATH="%s:$PATH"; export PATH; fi; if [ -d "$HOME/.nix-profile/bin" ]; then PATH="$HOME/.nix-profile/bin:$PATH"; export PATH; fi; export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt`,
+		`if [ -t 0 ]; then stty rows %d cols %d 2>/dev/null || :; fi; if [ -d "%s" ]; then PATH="%s:$PATH"; export PATH; fi; if [ -d "%s" ]; then PATH="%s:$PATH"; export PATH; fi; if [ -d "$HOME/.nix-profile/bin" ]; then PATH="$HOME/.nix-profile/bin:$PATH"; export PATH; fi; export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt`,
 		rows,
 		cols,
 		managedDevenvProfileBin,

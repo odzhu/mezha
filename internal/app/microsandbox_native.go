@@ -139,10 +139,20 @@ cat << "EOF" > /etc/nix/nix.conf
 build-users-group =
 experimental-features = nix-command flakes
 trusted-users = root
-EOF`,
+EOF
+for ca in /.msb/tls/ca.pem /.msb/tls/host-cas.pem; do
+  if [ -f "$ca" ] && [ -s "$ca" ]; then
+    printf '\n' >> /etc/ssl/certs/ca-certificates.crt
+    cat "$ca" >> /etc/ssl/certs/ca-certificates.crt
+  fi
+done`,
 			env: map[string]string{
-				"DEBIAN_FRONTEND": "noninteractive",
-				"PATH":            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+				"DEBIAN_FRONTEND":    "noninteractive",
+				"PATH":               "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+				"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+				"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+				"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+				"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
 			},
 		},
 		{
@@ -152,8 +162,12 @@ if [ ! -d /nix/store ]; then
   curl --proto "=https" --tlsv1.2 -sSf -L https://nixos.org/nix/install | sh -s -- --no-daemon
 fi`,
 			env: map[string]string{
-				"DEBIAN_FRONTEND": "noninteractive",
-				"PATH":            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+				"DEBIAN_FRONTEND":    "noninteractive",
+				"PATH":               "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+				"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+				"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+				"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+				"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
 			},
 		},
 		{
@@ -162,8 +176,12 @@ fi`,
 export PATH="/root/.nix-profile/bin:$PATH"
 nix-env --install --attr devenv git -f "<nixpkgs>" || nix-env --install --attr devenv git -f https://github.com/NixOS/nixpkgs/tarball/nixpkgs-unstable`,
 			env: map[string]string{
-				"DEBIAN_FRONTEND": "noninteractive",
-				"PATH":            "/root/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+				"DEBIAN_FRONTEND":    "noninteractive",
+				"PATH":               "/root/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+				"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+				"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+				"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+				"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
 			},
 		},
 		{
@@ -270,9 +288,11 @@ func stateVolumeReady(
 // persistentRuntimeExecEnv makes the seeded Nix profile available to exec sessions.
 func persistentRuntimeExecEnv() msb.ExecOption {
 	return msb.WithExecEnv(map[string]string{
-		"PATH":              managedDevenvProfileBin + ":" + persistentRuntimeBin + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		"SSL_CERT_FILE":     "/etc/ssl/certs/ca-certificates.crt",
-		"NIX_SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+		"PATH":               managedDevenvProfileBin + ":" + persistentRuntimeBin + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+		"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+		"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+		"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
 	})
 }
 
@@ -293,8 +313,8 @@ persist_link() {
       return
     fi
   fi
-  if [ "$target" = "/root" ] && [ -d "/root" ] && [ ! -L "/root" ]; then
-    cp -an /root/. "$source/" 2>/dev/null || cp -a /root/. "$source/" 2>/dev/null || true
+  if [ -d "$target" ] && [ ! -L "$target" ]; then
+    cp -an "$target/." "$source/" 2>/dev/null || cp -a "$target/." "$source/" 2>/dev/null || true
   fi
   rm -rf "$target"
   ln -s "$source" "$target"
@@ -319,14 +339,76 @@ if [ -e /root/.bash_profile ] && [ ! -f /root/.bash_profile ]; then rm -rf /root
 if [ -f /root/.bash_profile ] && [ "$(wc -c < /root/.bash_profile)" -ne "$(tr -d '\0' < /root/.bash_profile | wc -c)" ]; then
   : > /root/.bash_profile
 fi
-if [ ! -f /etc/ssl/certs/ca-certificates.crt ] || [ ! -s /etc/ssl/certs/ca-certificates.crt ]; then
-  mkdir -p /etc/ssl/certs
-  cacert=$(find /nix/store -name "ca-bundle.crt" -print -quit 2>/dev/null)
-  if [ -n "$cacert" ]; then
-    ln -sf "$cacert" /etc/ssl/certs/ca-certificates.crt
-    ln -sf "$cacert" /etc/ssl/certs/ca-bundle.crt
+mkdir -p /etc/ssl/certs
+if [ -L /etc/ssl/certs/ca-certificates.crt ]; then
+  target=$(readlink -f /etc/ssl/certs/ca-certificates.crt 2>/dev/null || readlink /etc/ssl/certs/ca-certificates.crt 2>/dev/null || :)
+  rm -f /etc/ssl/certs/ca-certificates.crt
+  if [ -n "$target" ] && [ -f "$target" ]; then
+    cp -fL "$target" /etc/ssl/certs/ca-certificates.crt
   fi
 fi
+if [ ! -f /etc/ssl/certs/ca-certificates.crt ] || [ ! -s /etc/ssl/certs/ca-certificates.crt ]; then
+  cacert=$(find /nix/store -name "ca-bundle.crt" -print -quit 2>/dev/null)
+  if [ -n "$cacert" ]; then
+    cp -fL "$cacert" /etc/ssl/certs/ca-certificates.crt
+  fi
+fi
+if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+  chmod 644 /etc/ssl/certs/ca-certificates.crt
+fi
+ln -sf ca-certificates.crt /etc/ssl/certs/ca-bundle.crt 2>/dev/null || true
+ln -sf certs/ca-certificates.crt /etc/ssl/cert.pem 2>/dev/null || true
+append_pem() {
+  src="$1"
+  bundle="$2"
+  [ -f "$src" ] && [ -s "$src" ] || return 0
+  [ -f "$bundle" ] || return 0
+  awk -v bundle="$bundle" '
+    BEGIN {
+      while ((getline line < bundle) > 0) {
+        if (line != "" && index(line, "-----") == 0) {
+          existing[line] = 1
+        }
+      }
+      close(bundle)
+      in_cert = 0
+      cert = ""
+      first_data = ""
+    }
+    /-----BEGIN [A-Z ]*CERTIFICATE-----/ {
+      in_cert = 1
+      cert = $0 "\n"
+      first_data = ""
+      next
+    }
+    /-----END [A-Z ]*CERTIFICATE-----/ {
+      if (in_cert) {
+        cert = cert $0 "\n"
+        if (first_data != "" && !(first_data in existing)) {
+          printf "\n%s", cert >> bundle
+          existing[first_data] = 1
+        }
+        in_cert = 0
+        cert = ""
+        first_data = ""
+      }
+      next
+    }
+    {
+      if (in_cert) {
+        cert = cert $0 "\n"
+        if (first_data == "" && $0 !~ /^[[:space:]]*$/) {
+          first_data = $0
+        }
+      }
+    }
+  ' "$src"
+}
+append_pem /.msb/tls/ca.pem /etc/ssl/certs/ca-certificates.crt
+append_pem /.msb/tls/host-cas.pem /etc/ssl/certs/ca-certificates.crt
+for extra in /usr/local/share/ca-certificates/*.crt /usr/local/share/ca-certificates/*.pem; do
+  append_pem "$extra" /etc/ssl/certs/ca-certificates.crt
+done
 if [ -f /etc/profile ]; then
   sed -i -e 's|PATH="/usr/local/sbin|PATH="${PATH:+$PATH:}/usr/local/sbin|' \
          -e 's|PATH="/usr/local/bin|PATH="${PATH:+$PATH:}/usr/local/bin|' /etc/profile
@@ -348,6 +430,11 @@ fi
 export PATH
 export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 export NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+export CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+if [ -f "/.msb/tls/ca.pem" ]; then
+  export NODE_EXTRA_CA_CERTS="/.msb/tls/ca.pem"
+fi
 EOF
 link_runtime_bins() {
   dir="$1"

@@ -76,6 +76,11 @@ if [ -d "/nix/mezha/root/.mezha/runtime-bin" ]; then
 fi
 export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 export NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+export CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+if [ -f "/.msb/tls/ca.pem" ]; then
+  export NODE_EXTRA_CA_CERTS="/.msb/tls/ca.pem"
+fi
 if [ "''${MEZHA_HERDR_PANE:-}" = 1 ]; then
   unset DEVENV_ROOT MEZHA_HERDR_PANE
 fi
