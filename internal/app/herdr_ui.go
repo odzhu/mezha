@@ -7,8 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
@@ -18,12 +20,20 @@ import (
 )
 
 type herdrDashboardItem struct {
-	args        []string
-	title       string
-	description string
-	custom      bool
-	settings    bool
-	children    []herdrDashboardItem
+	args          []string
+	title         string
+	description   string
+	custom        bool
+	settings      bool
+	processAction string
+	processBase   []string
+	children      []herdrDashboardItem
+}
+
+type herdrSubmenuState struct {
+	items  []herdrDashboardItem
+	title  string
+	cursor int
 }
 
 type herdrDashboardSetting struct {
@@ -50,53 +60,213 @@ var (
 				Padding(0, 1)
 )
 
-var herdrSandboxItems = []herdrDashboardItem{
-	{
-		args:        []string{"sandbox", "list"},
-		title:       "List sandboxes",
-		description: "Show all local Mezha sandboxes",
-	},
-	{
-		args:        []string{"sandbox", "create", "--herdr"},
-		title:       "Create sandbox",
-		description: "Create and initialize the configured sandbox",
-	},
-	{
-		args:        []string{"sandbox", "recreate", "--herdr"},
-		title:       "Recreate",
-		description: "Recreate the sandbox with clean persistent state",
-	},
-	{args: []string{"sandbox", "start"}, title: "Start", description: "Start the sandbox"},
-	{args: []string{"sandbox", "stop"}, title: "Stop", description: "Stop the sandbox"},
-	{
-		args:        []string{"sandbox", "destroy"},
-		title:       "Destroy",
-		description: "Confirm and permanently remove the sandbox",
-	},
-	{
-		args:        []string{"sandbox", "status"},
-		title:       "Show status",
-		description: "Inspect repository synchronization status",
-	},
-	{
-		args:        []string{"sandbox", "logs"},
-		title:       "Show logs",
-		description: "Show Microsandbox service and runtime logs",
-	},
-	{
-		args:        []string{"sandbox", "processes", "list"},
-		title:       "Processes",
-		description: "List background devenv processes in the sandbox",
-	},
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+func stripAnsi(str string) string {
+	return ansiRegex.ReplaceAllString(str, "")
 }
 
-var herdrProcessesItems = []herdrDashboardItem{
-	{
-		args:        []string{"processes", "list"},
-		title:       "List processes",
-		description: "List background devenv processes in the sandbox",
-	},
+func isValidProcessName(name string) bool {
+	if name == "" || name == "herdr" {
+		return false
+	}
+	switch strings.ToLower(name) {
+	case "name", "process", "status", "pid", "age", "exit", "code", "restarts":
+		return false
+	}
+	for _, ch := range name {
+		if (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') &&
+			ch != '-' &&
+			ch != '_' &&
+			ch != '.' {
+			return false
+		}
+	}
+	return true
 }
+
+func parseProcessesList(output string) []string {
+	var names []string
+	seen := make(map[string]bool)
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = stripAnsi(line)
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "•") ||
+			strings.HasPrefix(line, "✓") ||
+			strings.HasPrefix(line, "×") ||
+			strings.HasPrefix(line, "evaluating") ||
+			strings.HasPrefix(line, "Running") ||
+			strings.HasPrefix(line, "┌") ||
+			strings.HasPrefix(line, "├") ||
+			strings.HasPrefix(line, "└") ||
+			strings.HasPrefix(line, "+-") ||
+			strings.HasPrefix(line, "--") {
+			continue
+		}
+
+		if strings.Contains(line, "│") || strings.Contains(line, "|") {
+			sep := "│"
+			if !strings.Contains(line, "│") {
+				sep = "|"
+			}
+			parts := strings.Split(line, sep)
+			if len(parts) >= 2 {
+				name := strings.TrimSpace(parts[1])
+				if isValidProcessName(name) && !seen[name] {
+					seen[name] = true
+					names = append(names, name)
+				}
+			}
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			name := fields[0]
+			if isValidProcessName(name) && !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func detectProcessesList(ctx context.Context, projectDir string, sandbox string) []string {
+	binary, err := os.Executable()
+	if err != nil || strings.HasSuffix(binary, ".test") {
+		if path, err := exec.LookPath("mezha"); err == nil {
+			binary = path
+		} else if _, statErr := os.Stat("./bin/mezha"); statErr == nil {
+			binary = "./bin/mezha"
+		} else {
+			return nil
+		}
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	args := []string{"processes"}
+	if sandbox != "" {
+		args = append(args, "--sandbox", sandbox)
+	}
+	args = append(args, "list")
+
+	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Dir = projectDir
+	out, _ := cmd.CombinedOutput()
+	return parseProcessesList(string(out))
+}
+
+func buildProcessesSubmenu(baseArgs []string, processes []string) []herdrDashboardItem {
+	startChildren := make([]herdrDashboardItem, 0, len(processes)+2)
+	startChildren = append(startChildren, herdrDashboardItem{
+		args:        append(append([]string(nil), baseArgs...), "start"),
+		title:       "All",
+		description: "Start all background devenv processes",
+	})
+	for _, proc := range processes {
+		startChildren = append(startChildren, herdrDashboardItem{
+			args:        append(append([]string(nil), baseArgs...), "start", proc),
+			title:       proc,
+			description: fmt.Sprintf("Start %s process in the sandbox", proc),
+		})
+	}
+	startChildren = append(startChildren, herdrDashboardItem{
+		title:         "Custom…",
+		description:   "Start an individual process by name",
+		processAction: "start",
+		processBase:   baseArgs,
+	})
+
+	stopChildren := make([]herdrDashboardItem, 0, len(processes)+2)
+	stopChildren = append(stopChildren, herdrDashboardItem{
+		args:        append(append([]string(nil), baseArgs...), "stop"),
+		title:       "All",
+		description: "Stop all background devenv processes",
+	})
+	for _, proc := range processes {
+		stopChildren = append(stopChildren, herdrDashboardItem{
+			args:        append(append([]string(nil), baseArgs...), "stop", proc),
+			title:       proc,
+			description: fmt.Sprintf("Stop %s process in the sandbox", proc),
+		})
+	}
+	stopChildren = append(stopChildren, herdrDashboardItem{
+		title:         "Custom…",
+		description:   "Stop an individual process by name",
+		processAction: "stop",
+		processBase:   baseArgs,
+	})
+
+	return []herdrDashboardItem{
+		{
+			args:        append(append([]string(nil), baseArgs...), "list"),
+			title:       "List processes",
+			description: "List background devenv processes in the sandbox",
+		},
+		{
+			title:       "Start…",
+			description: "Start all or individual background processes",
+			children:    startChildren,
+		},
+		{
+			title:       "Stop…",
+			description: "Stop all or individual background processes",
+			children:    stopChildren,
+		},
+	}
+}
+
+func buildSandboxItems(processes []string) []herdrDashboardItem {
+	return []herdrDashboardItem{
+		{
+			args:        []string{"sandbox", "list"},
+			title:       "List sandboxes",
+			description: "Show all local Mezha sandboxes",
+		},
+		{
+			args:        []string{"sandbox", "create", "--herdr"},
+			title:       "Create sandbox",
+			description: "Create and initialize the configured sandbox",
+		},
+		{
+			args:        []string{"sandbox", "recreate", "--herdr"},
+			title:       "Recreate",
+			description: "Recreate the sandbox with clean persistent state",
+		},
+		{args: []string{"sandbox", "start"}, title: "Start", description: "Start the sandbox"},
+		{args: []string{"sandbox", "stop"}, title: "Stop", description: "Stop the sandbox"},
+		{
+			args:        []string{"sandbox", "destroy"},
+			title:       "Destroy",
+			description: "Confirm and permanently remove the sandbox",
+		},
+		{
+			args:        []string{"sandbox", "status"},
+			title:       "Show status",
+			description: "Inspect repository synchronization status",
+		},
+		{
+			args:        []string{"sandbox", "logs"},
+			title:       "Show logs",
+			description: "Show Microsandbox service and runtime logs",
+		},
+		{
+			title:       "Processes…",
+			description: "Manage background devenv processes in the sandbox",
+			children:    buildProcessesSubmenu([]string{"sandbox", "processes"}, processes),
+		},
+	}
+}
+
+var herdrProcessesItems = buildProcessesSubmenu([]string{"processes"}, nil)
+var herdrSandboxItems = buildSandboxItems(nil)
 
 var herdrImageItems = []herdrDashboardItem{
 	{
@@ -152,53 +322,57 @@ var herdrVolumeItems = []herdrDashboardItem{
 	},
 }
 
-var herdrDashboardItems = []herdrDashboardItem{
-	{
-		args:        []string{"run", "--herdr"},
-		title:       "Run",
-		description: "Open an interactive shell in a new tab",
-	},
-	{
-		args:        []string{"init"},
-		title:       "Init",
-		description: "Create the project Mezha configuration",
-	},
-	{
-		title:       "Sandbox…",
-		description: "Manage sandboxes and instances",
-		children:    herdrSandboxItems,
-	},
-	{
-		title:       "Processes…",
-		description: "Manage devenv background processes",
-		children:    herdrProcessesItems,
-	},
-	{
-		title:       "Image…",
-		description: "Manage Microsandbox images",
-		children:    herdrImageItems,
-	},
-	{
-		title:       "Sync…",
-		description: "Synchronize repository changes with a sandbox",
-		children:    herdrSyncItems,
-	},
-	{
-		title:       "Volume…",
-		description: "Manage persistent Microsandbox volumes",
-		children:    herdrVolumeItems,
-	},
-	{
-		title:       "Settings…",
-		description: "Edit the Mezha or managed devenv configuration",
-		settings:    true,
-	},
-	{
-		title:       "Command…",
-		description: "Run any Mezha command with arguments",
-		custom:      true,
-	},
+func buildDashboardItems(processes []string) []herdrDashboardItem {
+	return []herdrDashboardItem{
+		{
+			args:        []string{"run", "--herdr"},
+			title:       "Run",
+			description: "Open an interactive shell in a new tab",
+		},
+		{
+			args:        []string{"init"},
+			title:       "Init",
+			description: "Create the project Mezha configuration",
+		},
+		{
+			title:       "Sandbox…",
+			description: "Manage sandboxes and instances",
+			children:    buildSandboxItems(processes),
+		},
+		{
+			title:       "Processes…",
+			description: "Manage devenv background processes",
+			children:    buildProcessesSubmenu([]string{"processes"}, processes),
+		},
+		{
+			title:       "Image…",
+			description: "Manage Microsandbox images",
+			children:    herdrImageItems,
+		},
+		{
+			title:       "Sync…",
+			description: "Synchronize repository changes with a sandbox",
+			children:    herdrSyncItems,
+		},
+		{
+			title:       "Volume…",
+			description: "Manage persistent Microsandbox volumes",
+			children:    herdrVolumeItems,
+		},
+		{
+			title:       "Settings…",
+			description: "Edit the Mezha or managed devenv configuration",
+			settings:    true,
+		},
+		{
+			title:       "Command…",
+			description: "Run any Mezha command with arguments",
+			custom:      true,
+		},
+	}
 }
+
+var herdrDashboardItems = buildDashboardItems(nil)
 
 type herdrDashboardModel struct {
 	cursor             int
@@ -209,6 +383,11 @@ type herdrDashboardModel struct {
 	settingsMode       bool
 	sandboxMode        bool
 	sandboxCustomMode  bool
+	processMode        bool
+	processAction      string
+	processBase        []string
+	processInput       []rune
+	processInputCursor int
 	input              []rune
 	inputCursor        int
 	filter             []rune
@@ -218,6 +397,7 @@ type herdrDashboardModel struct {
 	settingsNeedInit   bool
 	submenu            []herdrDashboardItem
 	submenuTitle       string
+	submenuStack       []herdrSubmenuState
 	sandbox            string
 	sandboxes          []string
 	syncedSandboxes    map[string]bool
@@ -225,6 +405,9 @@ type herdrDashboardModel struct {
 	sandboxCursor      int
 	sandboxInput       []rune
 	sandboxInputCursor int
+	projectDir         string
+	processes          []string
+	dashboardItems     []herdrDashboardItem
 	width              int
 	height             int
 	err                string
@@ -243,6 +426,9 @@ func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return m, nil
+	}
+	if m.processMode {
+		return m.updateProcessInput(key)
 	}
 	if m.commandMode {
 		return m.updateCommand(key)
@@ -271,7 +457,7 @@ func (m herdrDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 	case "esc":
-		if len(m.submenu) > 0 {
+		if len(m.submenu) > 0 || len(m.submenuStack) > 0 {
 			return m.closeDashboardSubmenu(), nil
 		}
 		return m, tea.Quit
@@ -321,11 +507,26 @@ func (m herdrDashboardModel) chooseDashboardItem(matches []int) (tea.Model, tea.
 	items := m.activeDashboardItems()
 	item := items[matches[m.cursor]]
 	if len(item.children) > 0 {
+		m.submenuStack = append(m.submenuStack, herdrSubmenuState{
+			items:  m.submenu,
+			title:  m.submenuTitle,
+			cursor: m.cursor,
+		})
 		m.submenu = item.children
 		m.submenuTitle = item.title
 		m.cursor = 0
 		m.filter = nil
 		m.filterMode = false
+		return m, nil
+	}
+	if item.processAction != "" {
+		m.processMode = true
+		m.processAction = item.processAction
+		m.processBase = item.processBase
+		m.processInput = nil
+		m.processInputCursor = 0
+		m.filterMode = false
+		m.err = ""
 		return m, nil
 	}
 	if item.custom {
@@ -423,6 +624,16 @@ func (m herdrDashboardModel) updateSettings(key tea.KeyPressMsg) (tea.Model, tea
 }
 
 func (m herdrDashboardModel) closeDashboardSubmenu() herdrDashboardModel {
+	if len(m.submenuStack) > 0 {
+		last := m.submenuStack[len(m.submenuStack)-1]
+		m.submenuStack = m.submenuStack[:len(m.submenuStack)-1]
+		m.submenu = last.items
+		m.submenuTitle = last.title
+		m.cursor = last.cursor
+		m.filter = nil
+		m.filterMode = false
+		return m
+	}
 	m.submenu = nil
 	m.submenuTitle = ""
 	m.cursor = 0
@@ -479,6 +690,9 @@ func (m herdrDashboardModel) updateFilter(key tea.KeyPressMsg) (tea.Model, tea.C
 func (m herdrDashboardModel) activeDashboardItems() []herdrDashboardItem {
 	if len(m.submenu) > 0 {
 		return m.submenu
+	}
+	if len(m.dashboardItems) > 0 {
+		return m.dashboardItems
 	}
 	return herdrDashboardItems
 }
@@ -565,6 +779,8 @@ func (m herdrDashboardModel) updateSandbox(key tea.KeyPressMsg) (tea.Model, tea.
 		if m.sandboxCursor < len(m.sandboxes) {
 			m.sandbox = m.sandboxes[m.sandboxCursor]
 			m.sandboxMode = false
+			m.processes = detectProcessesList(context.Background(), m.projectDir, m.sandbox)
+			m.dashboardItems = buildDashboardItems(m.processes)
 			return m, nil
 		}
 		m.sandboxMode = false
@@ -614,6 +830,8 @@ func (m herdrDashboardModel) updateSandboxInput(key tea.KeyPressMsg) (tea.Model,
 		m.sandbox = strings.TrimSpace(string(m.sandboxInput))
 		m.sandboxCustomMode = false
 		m.err = ""
+		m.processes = detectProcessesList(context.Background(), m.projectDir, m.sandbox)
+		m.dashboardItems = buildDashboardItems(m.processes)
 	default:
 		runes := []rune(key.Key().Text)
 		if len(runes) > 0 {
@@ -624,6 +842,76 @@ func (m herdrDashboardModel) updateSandboxInput(key tea.KeyPressMsg) (tea.Model,
 			)
 			copy(m.sandboxInput[m.sandboxInputCursor:], runes)
 			m.sandboxInputCursor += len(runes)
+		}
+	}
+	return m, nil
+}
+
+func (m herdrDashboardModel) updateProcessInput(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch key.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.processMode = false
+		m.processInput = nil
+		m.processInputCursor = 0
+		m.err = ""
+		return m, nil
+	case "left":
+		if m.processInputCursor > 0 {
+			m.processInputCursor--
+		}
+	case "right":
+		if m.processInputCursor < len(m.processInput) {
+			m.processInputCursor++
+		}
+	case "home", "ctrl+a":
+		m.processInputCursor = 0
+	case "end", "ctrl+e":
+		m.processInputCursor = len(m.processInput)
+	case "backspace", "ctrl+h":
+		if m.processInputCursor > 0 {
+			m.processInput = append(
+				m.processInput[:m.processInputCursor-1],
+				m.processInput[m.processInputCursor:]...,
+			)
+			m.processInputCursor--
+		}
+	case "delete", "ctrl+d":
+		if m.processInputCursor < len(m.processInput) {
+			m.processInput = append(
+				m.processInput[:m.processInputCursor],
+				m.processInput[m.processInputCursor+1:]...,
+			)
+		}
+	case "enter":
+		name := strings.TrimSpace(string(m.processInput))
+		if name == "" {
+			m.err = "enter a process name"
+			return m, nil
+		}
+		base := m.processBase
+		if len(base) == 0 {
+			base = []string{"processes"}
+		}
+		m.chosen = append(append([]string(nil), base...), m.processAction, name)
+		if m.sandbox != "" && commandSupportsSandbox(m.chosen) {
+			m.chosen = append(m.chosen, "--sandbox", m.sandbox)
+		}
+		m.processMode = false
+		m.err = ""
+		return m, tea.Quit
+	default:
+		runes := []rune(key.Key().Text)
+		if len(runes) > 0 {
+			m.processInput = append(m.processInput, make([]rune, len(runes))...)
+			copy(
+				m.processInput[m.processInputCursor+len(runes):],
+				m.processInput[m.processInputCursor:],
+			)
+			copy(m.processInput[m.processInputCursor:], runes)
+			m.processInputCursor += len(runes)
+			m.err = ""
 		}
 	}
 	return m, nil
@@ -772,6 +1060,19 @@ func (m herdrDashboardModel) View() tea.View {
 		result.AltScreen = true
 		return result
 	}
+	if m.processMode {
+		fmt.Fprintf(&view, "Enter process name to %s\n\n  ", m.processAction)
+		before := string(m.processInput[:m.processInputCursor])
+		after := string(m.processInput[m.processInputCursor:])
+		fmt.Fprintf(&view, "%s█%s\n", before, after)
+		if m.err != "" {
+			fmt.Fprintf(&view, "\n%s\n", m.err)
+		}
+		view.WriteString("\nenter run  •  esc back\n")
+		result := tea.NewView(view.String())
+		result.AltScreen = true
+		return result
+	}
 	if m.commandMode {
 		view.WriteString("Run any Mezha CLI command\n\n  mezha ")
 		before := string(m.input[:m.inputCursor])
@@ -909,7 +1210,13 @@ func runHerdrDashboard(ctx context.Context, _ *cli.Command) error {
 		model.settingsMode = false
 		model.forceInitMode = false
 		model.commandMode = false
+		model.processMode = false
+		model.processAction = ""
+		model.processBase = nil
+		model.processInput = nil
+		model.processInputCursor = 0
 		model.submenu = nil
+		model.submenuStack = nil
 		model.submenuTitle = ""
 		model.cursor = 0
 		model.filter = nil
@@ -960,11 +1267,15 @@ func refreshHerdrDashboard(
 	if err != nil {
 		return err
 	}
+	processes := detectProcessesList(ctx, projectDir, model.sandbox)
 	model.sandboxes = sandboxes
 	model.syncedSandboxes = syncedSandboxes
 	model.repoInitialized = repoInitialized
 	model.settings = settings
 	model.settingsNeedInit = settingsNeedInit
+	model.processes = processes
+	model.projectDir = projectDir
+	model.dashboardItems = buildDashboardItems(processes)
 	return nil
 }
 

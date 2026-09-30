@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestParseCommandLine(t *testing.T) {
@@ -147,6 +149,12 @@ func TestDashboardRoutingMatchesMezhaCLI(t *testing.T) {
 
 	// Verify Sandbox submenu
 	for _, item := range herdrSandboxItems {
+		if len(item.children) > 0 {
+			if item.title != "Processes…" {
+				t.Errorf("unexpected sandbox submenu item with children: %q", item.title)
+			}
+			continue
+		}
 		if len(item.args) < 2 || item.args[0] != "sandbox" {
 			t.Errorf("sandbox item %q has invalid routing args: %v", item.title, item.args)
 		}
@@ -174,10 +182,74 @@ func TestDashboardRoutingMatchesMezhaCLI(t *testing.T) {
 	}
 
 	// Verify Processes submenu
-	for _, item := range herdrProcessesItems {
-		if len(item.args) < 2 || item.args[0] != "processes" {
-			t.Errorf("processes item %q has invalid routing args: %v", item.title, item.args)
+	expectedProcesses := []string{"List processes", "Start…", "Stop…"}
+	if len(herdrProcessesItems) != len(expectedProcesses) {
+		t.Fatalf(
+			"herdrProcessesItems length = %d, want %d",
+			len(herdrProcessesItems),
+			len(expectedProcesses),
+		)
+	}
+	for i, expected := range expectedProcesses {
+		if herdrProcessesItems[i].title != expected {
+			t.Errorf(
+				"processes item[%d].title = %q, want %q",
+				i,
+				herdrProcessesItems[i].title,
+				expected,
+			)
 		}
+	}
+
+	// Verify Start... children
+	processesMenu := buildProcessesSubmenu([]string{"processes"}, []string{"docker", "k3s"})
+	startItem := processesMenu[1]
+	if len(startItem.children) < 4 {
+		t.Fatalf("Start… children count = %d, want >= 4", len(startItem.children))
+	}
+	if startItem.children[0].title != "All" ||
+		!reflect.DeepEqual(startItem.children[0].args, []string{"processes", "start"}) {
+		t.Errorf("Start… children[0] = %+v, want All -> processes start", startItem.children[0])
+	}
+	if startItem.children[1].title != "docker" ||
+		!reflect.DeepEqual(startItem.children[1].args, []string{"processes", "start", "docker"}) {
+		t.Errorf(
+			"Start… children[1] = %+v, want docker -> processes start docker",
+			startItem.children[1],
+		)
+	}
+	if startItem.children[2].title != "k3s" ||
+		!reflect.DeepEqual(startItem.children[2].args, []string{"processes", "start", "k3s"}) {
+		t.Errorf("Start… children[2] = %+v, want k3s -> processes start k3s", startItem.children[2])
+	}
+	lastStartChild := startItem.children[len(startItem.children)-1]
+	if lastStartChild.title != "Custom…" || lastStartChild.processAction != "start" {
+		t.Errorf("Start… last child = %+v, want Custom… with action start", lastStartChild)
+	}
+
+	// Verify Stop... children
+	stopItem := processesMenu[2]
+	if len(stopItem.children) < 4 {
+		t.Fatalf("Stop… children count = %d, want >= 4", len(stopItem.children))
+	}
+	if stopItem.children[0].title != "All" ||
+		!reflect.DeepEqual(stopItem.children[0].args, []string{"processes", "stop"}) {
+		t.Errorf("Stop… children[0] = %+v, want All -> processes stop", stopItem.children[0])
+	}
+	if stopItem.children[1].title != "docker" ||
+		!reflect.DeepEqual(stopItem.children[1].args, []string{"processes", "stop", "docker"}) {
+		t.Errorf(
+			"Stop… children[1] = %+v, want docker -> processes stop docker",
+			stopItem.children[1],
+		)
+	}
+	if stopItem.children[2].title != "k3s" ||
+		!reflect.DeepEqual(stopItem.children[2].args, []string{"processes", "stop", "k3s"}) {
+		t.Errorf("Stop… children[2] = %+v, want k3s -> processes stop k3s", stopItem.children[2])
+	}
+	lastStopChild := stopItem.children[len(stopItem.children)-1]
+	if lastStopChild.title != "Custom…" || lastStopChild.processAction != "stop" {
+		t.Errorf("Stop… last child = %+v, want Custom… with action stop", lastStopChild)
 	}
 }
 
@@ -196,6 +268,10 @@ func TestCommandSupportsSandbox(t *testing.T) {
 		{[]string{"image", "pull"}, false},
 		{[]string{"volume", "list"}, false},
 		{[]string{"processes", "list"}, true},
+		{[]string{"processes", "start"}, true},
+		{[]string{"processes", "stop"}, true},
+		{[]string{"processes", "start", "docker"}, true},
+		{[]string{"processes", "stop", "docker"}, true},
 	}
 
 	for _, tc := range cases {
@@ -203,5 +279,160 @@ func TestCommandSupportsSandbox(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("commandSupportsSandbox(%v) = %v, want %v", tc.args, got, tc.want)
 		}
+	}
+}
+
+func TestParseProcessesListRealOutput(t *testing.T) {
+	output := `docker                         stopped restarts: 0
+herdr                          ready restarts: 0
+k3s                            not_started restarts: 0
+• Validating lock
+✓ Validating lock in 6.80ms
+  evaluating file '«nix-internal»/derivation-internal.nix'
+`
+	got := parseProcessesList(output)
+	want := []string{"docker", "k3s"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseProcessesList() = %v, want %v", got, want)
+	}
+}
+
+func TestParseProcessesListTableOutput(t *testing.T) {
+	output := `
+┌─────────┬─────────┬──────┬─────────┐
+│ NAME    │ STATUS  │ PID  │ AGE     │
+├─────────┼─────────┼──────┼─────────┤
+│ docker  │ Running │ 45   │ 10m23s  │
+│ herdr   │ Running │ 46   │ 10m23s  │
+│ k3s     │ Stopped │ -    │ -       │
+└─────────┴─────────┴──────┴─────────┘
+`
+	got := parseProcessesList(output)
+	want := []string{"docker", "k3s"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseProcessesList() = %v, want %v", got, want)
+	}
+}
+
+func TestDetectProcessesListWithSandbox(t *testing.T) {
+	procs := detectProcessesList(t.Context(), "", "debianv4")
+	if len(procs) == 0 {
+		t.Skip("sandbox debianv4 is not running or binary not found")
+	}
+	t.Logf("detected processes from debianv4: %v", procs)
+	if len(procs) != 2 || procs[0] != "docker" || procs[1] != "k3s" {
+		t.Errorf("detected processes = %v, want [docker k3s]", procs)
+	}
+}
+
+func TestSubmenuStackNavigation(t *testing.T) {
+	model := herdrDashboardModel{
+		width: 80,
+	}
+
+	// Select Processes…
+	processesIndex := -1
+	for i, it := range herdrDashboardItems {
+		if it.title == "Processes…" {
+			processesIndex = i
+			break
+		}
+	}
+	if processesIndex < 0 {
+		t.Fatal("Processes… not found in herdrDashboardItems")
+	}
+
+	model.cursor = processesIndex
+	matches := model.filteredDashboardItems()
+	newModel, _ := model.chooseDashboardItem(matches)
+	m := newModel.(herdrDashboardModel)
+
+	if len(m.submenu) == 0 || m.submenuTitle != "Processes…" {
+		t.Fatalf("expected to enter Processes… submenu, got title %q", m.submenuTitle)
+	}
+	if len(m.submenuStack) != 1 {
+		t.Fatalf("expected submenuStack length 1, got %d", len(m.submenuStack))
+	}
+
+	// Now select Start…
+	startIndex := -1
+	for i, it := range m.submenu {
+		if it.title == "Start…" {
+			startIndex = i
+			break
+		}
+	}
+	if startIndex < 0 {
+		t.Fatal("Start… not found in Processes submenu")
+	}
+
+	m.cursor = startIndex
+	startMatches := m.filteredDashboardItems()
+	newModel2, _ := m.chooseDashboardItem(startMatches)
+	m2 := newModel2.(herdrDashboardModel)
+
+	if len(m2.submenu) == 0 || m2.submenuTitle != "Start…" {
+		t.Fatalf("expected to enter Start… submenu, got title %q", m2.submenuTitle)
+	}
+	if len(m2.submenuStack) != 2 {
+		t.Fatalf("expected submenuStack length 2, got %d", len(m2.submenuStack))
+	}
+
+	// Press Esc to go back to Processes…
+	m3 := m2.closeDashboardSubmenu()
+	if m3.submenuTitle != "Processes…" {
+		t.Fatalf("expected back to Processes…, got %q", m3.submenuTitle)
+	}
+	if len(m3.submenuStack) != 1 {
+		t.Fatalf("expected submenuStack length 1, got %d", len(m3.submenuStack))
+	}
+
+	// Press Esc to go back to root
+	m4 := m3.closeDashboardSubmenu()
+	if m4.submenuTitle != "" || len(m4.submenu) != 0 {
+		t.Fatalf(
+			"expected back to root, got title %q and submenu len %d",
+			m4.submenuTitle,
+			len(m4.submenu),
+		)
+	}
+	if len(m4.submenuStack) != 0 {
+		t.Fatalf("expected empty submenuStack, got %d", len(m4.submenuStack))
+	}
+}
+
+func TestCustomProcessInput(t *testing.T) {
+	model := herdrDashboardModel{
+		processMode:   true,
+		processAction: "start",
+		processBase:   []string{"processes"},
+		sandbox:       "my-box",
+	}
+
+	// Type "redis" into process input
+	for _, ch := range "redis" {
+		newM, _ := model.updateProcessInput(tea.KeyPressMsg{
+			Code: ch,
+			Text: string(ch),
+		})
+		model = newM.(herdrDashboardModel)
+	}
+
+	if string(model.processInput) != "redis" {
+		t.Fatalf("processInput = %q, want %q", string(model.processInput), "redis")
+	}
+
+	// Press Enter
+	newM, cmd := model.updateProcessInput(tea.KeyPressMsg{
+		Code: tea.KeyEnter,
+	})
+	model = newM.(herdrDashboardModel)
+	if cmd == nil {
+		t.Fatal("expected tea.Quit cmd on enter")
+	}
+
+	expectedChosen := []string{"processes", "start", "redis", "--sandbox", "my-box"}
+	if !reflect.DeepEqual(model.chosen, expectedChosen) {
+		t.Fatalf("chosen = %v, want %v", model.chosen, expectedChosen)
 	}
 }
