@@ -18,6 +18,12 @@ contexts = ["workspace"]
 command = ["mezha", "herdr", "execute", "--", "init"]
 
 [[actions]]
+id = "config-check"
+title = "Check Mezha configuration"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--wait", "--", "config", "check"]
+
+[[actions]]
 id = "list"
 title = "List Mezha sandboxes"
 contexts = ["workspace"]

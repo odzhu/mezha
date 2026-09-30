@@ -16,7 +16,7 @@ func UploadPath(
 		return err
 	}
 	params.RemoteRepoDir = remoteRepoDir
-	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
+	if cfg, err := rc.EffectiveConfig(); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		return uploadPathMicrosandbox(ctx, rc, params, localPath, remotePath)
 	}
 	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
@@ -33,7 +33,7 @@ func DownloadPath(
 		return err
 	}
 	params.RemoteRepoDir = remoteRepoDir
-	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
+	if cfg, err := rc.EffectiveConfig(); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		return downloadPathMicrosandbox(ctx, rc, params, remotePath, localPath)
 	}
 	return fmt.Errorf("microsandbox configuration missing in mezha.toml")

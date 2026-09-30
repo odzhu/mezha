@@ -1450,9 +1450,9 @@ func herdrRepoInitialized(projectDir string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if config, _, err := LoadConfig(repoRoot); err != nil {
+	if _, configPath, err := LoadConfig(repoRoot); err != nil {
 		return false, fmt.Errorf("load Mezha configuration: %w", err)
-	} else if config != nil {
+	} else if configPath != "" {
 		return true, nil
 	}
 	paths := []string{

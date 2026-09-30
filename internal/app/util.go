@@ -46,6 +46,11 @@ func ResolveRepoContext(_ context.Context) (RepoContext, error) {
 		return RepoContext{}, err
 	}
 
+	cfg, configPath, loadedConfigs, err := LoadConfigLayers(repoRoot)
+	if err != nil {
+		return RepoContext{}, fmt.Errorf("load configuration: %w", err)
+	}
+
 	return RepoContext{
 		RepoRoot:           repoRoot,
 		PrimaryRepoRoot:    primaryRepoRoot,
@@ -54,7 +59,22 @@ func ResolveRepoContext(_ context.Context) (RepoContext, error) {
 		GitRef:             gitRef,
 		DefaultSandboxName: slugify(filepath.Base(primaryRepoRoot)),
 		InvocationCWD:      cwd,
+		Config:             cfg,
+		ConfigPath:         configPath,
+		LoadedConfigs:      loadedConfigs,
 	}, nil
+}
+
+// EffectiveConfig returns the cached configuration or loads it from RepoRoot.
+func (rc RepoContext) EffectiveConfig() (*MezhaConfig, error) {
+	if rc.Config != nil {
+		return rc.Config, nil
+	}
+	cfg, _, err := LoadConfig(rc.RepoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("load configuration: %w", err)
+	}
+	return cfg, nil
 }
 
 func findRepoRoot(path string) (string, error) {

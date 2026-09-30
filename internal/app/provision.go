@@ -12,12 +12,15 @@ func Provision(ctx context.Context, rc RepoContext, params ProvisionParams) erro
 		return err
 	}
 	params.RemoteRepoDir = remoteRepoDir
-	cfg, _, err := LoadConfig(rc.RepoRoot)
+	cfg, err := rc.EffectiveConfig()
 	if err != nil {
 		return fmt.Errorf("load mezha configuration: %w", err)
 	}
 	if cfg == nil || cfg.Microsandbox == nil {
 		return fmt.Errorf("microsandbox configuration missing in mezha.toml")
+	}
+	if err := cfg.Validate(); err != nil {
+		return err
 	}
 	closeSecrets, err := loadSecretSpec(cfg.SecretSpec)
 	if err != nil {

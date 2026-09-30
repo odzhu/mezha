@@ -1,18 +1,21 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/BurntSushi/toml"
 	cli "github.com/urfave/cli/v3"
 )
 
 const rootUsageText = `Usage:
   mezha [run-options] [-- command...]
   mezha run [run-options] [-- command...]
+  mezha config <show|check|path> [options]
   mezha init [options]
   mezha sandbox <list|create|recreate|start|stop|destroy|status|logs|processes> [options]
   mezha processes [options] [-- devenv-processes-args...]
@@ -49,6 +52,7 @@ func New() *cli.Command {
 		Commands: []*cli.Command{
 			newRunCommand(),
 			newInitCommand(),
+			newConfigCommand(),
 			newSandboxCommand(),
 			newProcessesCommand(),
 			newImageCommand(),
@@ -143,58 +147,10 @@ func newRunCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			cfg, _, err := LoadConfig(rc.RepoRoot)
-			if err != nil {
-				return fmt.Errorf("load mezha configuration: %w", err)
-			}
-			if cfg == nil {
-				cfg = &MezhaConfig{}
-			}
-
-			remoteArgs := commandArgs(cmd)
-			herdr := resolveHerdrParam(cmd, cfg.Sandbox.Herdr)
-			volumesFlush := cmd.Bool("volumes-flush")
-			if cmd.Bool("tty") && cmd.Bool("no-tty") {
-				return errors.New("--tty cannot be used together with --no-tty")
-			}
-			var tty *bool
-			if cmd.Bool("tty") {
-				value := true
-				tty = &value
-			} else if cmd.Bool("no-tty") {
-				value := false
-				tty = &value
-			}
-
-			recreate := resolveBoolParam(cmd, "recreate", cfg.Sandbox.Recreate)
-			if volumesFlush && !recreate {
-				return errors.New("--volumes-flush requires --recreate")
-			}
-
-			remoteRepoDir, err := resolveSandboxProjectDir(cmd, cfg, rc)
+			params, err := resolveRunParams(cmd, rc)
 			if err != nil {
 				return err
 			}
-			params := RunParams{
-				SandboxName: resolveSandboxParam(
-					cmd,
-					cfg.Sandbox.Name,
-					rc.DefaultSandboxName,
-				),
-				RemoteRepoDir:        remoteRepoDir,
-				Recreate:             recreate,
-				ReplaceSandboxRemote: cmd.Bool("replace-sandbox-remote"),
-				RemoteCommand:        remoteArgs,
-				TTY:                  tty,
-				NoLoginShell: resolveBoolParam(
-					cmd,
-					"no-login-shell",
-					cfg.Sandbox.NoLoginShell,
-				),
-				Herdr:        herdr,
-				VolumesFlush: volumesFlush,
-			}
-
 			return Run(ctx, rc, params)
 		},
 	}
@@ -229,30 +185,11 @@ func newProvisionCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			cfg, _, err := LoadConfig(rc.RepoRoot)
-			if err != nil {
-				return fmt.Errorf("load mezha configuration: %w", err)
-			}
-			if cfg == nil {
-				cfg = &MezhaConfig{}
-			}
-			herdr := resolveHerdrParam(cmd, cfg.Sandbox.Herdr)
-			volumesFlush := cmd.Bool("volumes-flush")
-			recreate := resolveBoolParam(cmd, "recreate", cfg.Sandbox.Recreate)
-			if volumesFlush && !recreate {
-				return errors.New("--volumes-flush requires --recreate")
-			}
-			remoteRepoDir, err := resolveSandboxProjectDir(cmd, cfg, rc)
+			params, err := resolveProvisionParams(cmd, rc)
 			if err != nil {
 				return err
 			}
-			return Provision(ctx, rc, ProvisionParams{
-				SandboxName:   resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
-				RemoteRepoDir: remoteRepoDir,
-				Recreate:      recreate,
-				Herdr:         herdr,
-				VolumesFlush:  volumesFlush,
-			})
+			return Provision(ctx, rc, params)
 		},
 	}
 }
@@ -278,25 +215,13 @@ func newRecreateCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			cfg, _, err := LoadConfig(rc.RepoRoot)
-			if err != nil {
-				return fmt.Errorf("load mezha configuration: %w", err)
-			}
-			if cfg == nil {
-				cfg = &MezhaConfig{}
-			}
-			herdr := resolveHerdrParam(cmd, cfg.Sandbox.Herdr)
-			remoteRepoDir, err := resolveSandboxProjectDir(cmd, cfg, rc)
+			params, err := resolveProvisionParams(cmd, rc)
 			if err != nil {
 				return err
 			}
-			return Provision(ctx, rc, ProvisionParams{
-				SandboxName:   resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
-				RemoteRepoDir: remoteRepoDir,
-				Recreate:      true,
-				Herdr:         herdr,
-				VolumesFlush:  true,
-			})
+			params.Recreate = true
+			params.VolumesFlush = true
+			return Provision(ctx, rc, params)
 		},
 	}
 }
@@ -322,16 +247,7 @@ func newLifecycleCommand(
 			if err != nil {
 				return err
 			}
-			cfg, _, err := LoadConfig(rc.RepoRoot)
-			if err != nil {
-				return fmt.Errorf("load mezha configuration: %w", err)
-			}
-			if cfg == nil {
-				cfg = &MezhaConfig{}
-			}
-			return action(ctx, LifecycleParams{
-				SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
-			})
+			return action(ctx, resolveLifecycleParams(cmd, rc))
 		},
 	}
 }
@@ -406,19 +322,7 @@ func newDestroyCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			cfg, _, err := LoadConfig(rc.RepoRoot)
-			if err != nil {
-				return fmt.Errorf("load mezha configuration: %w", err)
-			}
-			if cfg == nil {
-				cfg = &MezhaConfig{}
-			}
-			params := DestroyParams{
-				SandboxName:  resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
-				Force:        cmd.Bool("force"),
-				VolumesFlush: cmd.Bool("volumes-flush"),
-			}
-			return Destroy(ctx, rc, params)
+			return Destroy(ctx, rc, resolveDestroyParams(cmd, rc))
 		},
 	}
 }
@@ -450,14 +354,8 @@ func transferCommandFlags(includeRecreate bool) []cli.Flag {
 	return flags
 }
 
-func loadTransferParams(cmd *cli.Command, rc RepoContext) (TransferParams, error) {
-	cfg, _, err := LoadConfig(rc.RepoRoot)
-	if err != nil {
-		return TransferParams{}, fmt.Errorf("load mezha configuration: %w", err)
-	}
-	if cfg == nil {
-		cfg = &MezhaConfig{}
-	}
+func resolveTransferParams(cmd *cli.Command, rc RepoContext) (TransferParams, error) {
+	cfg := effectiveConfigOrEmpty(rc)
 	remoteRepoDir, err := resolveSandboxProjectDir(cmd, cfg, rc)
 	if err != nil {
 		return TransferParams{}, err
@@ -483,7 +381,7 @@ func newUploadCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			params, err := loadTransferParams(cmd, rc)
+			params, err := resolveTransferParams(cmd, rc)
 			if err != nil {
 				return err
 			}
@@ -513,7 +411,7 @@ func newDownloadCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			params, err := loadTransferParams(cmd, rc)
+			params, err := resolveTransferParams(cmd, rc)
 			if err != nil {
 				return err
 			}
@@ -538,14 +436,8 @@ func gitCommandFlags() []cli.Flag {
 	}
 }
 
-func loadGitParams(cmd *cli.Command, rc RepoContext) (GitParams, error) {
-	cfg, _, err := LoadConfig(rc.RepoRoot)
-	if err != nil {
-		return GitParams{}, fmt.Errorf("load mezha configuration: %w", err)
-	}
-	if cfg == nil {
-		cfg = &MezhaConfig{}
-	}
+func resolveGitParams(cmd *cli.Command, rc RepoContext) (GitParams, error) {
+	cfg := effectiveConfigOrEmpty(rc)
 	remoteRepoDir, err := resolveSandboxProjectDir(cmd, cfg, rc)
 	if err != nil {
 		return GitParams{}, err
@@ -566,7 +458,7 @@ func newPullCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			params, err := loadGitParams(cmd, rc)
+			params, err := resolveGitParams(cmd, rc)
 			if err != nil {
 				return err
 			}
@@ -591,7 +483,7 @@ func newPushCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			params, err := loadGitParams(cmd, rc)
+			params, err := resolveGitParams(cmd, rc)
 			if err != nil {
 				return err
 			}
@@ -610,7 +502,7 @@ func newStatusCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			params, err := loadGitParams(cmd, rc)
+			params, err := resolveGitParams(cmd, rc)
 			if err != nil {
 				return err
 			}
@@ -639,7 +531,7 @@ func newRemoteCommand() *cli.Command {
 					if err != nil {
 						return err
 					}
-					params, err := loadGitParams(cmd, rc)
+					params, err := resolveGitParams(cmd, rc)
 					if err != nil {
 						return err
 					}
@@ -661,7 +553,7 @@ func newRemoteCommand() *cli.Command {
 					if err != nil {
 						return err
 					}
-					params, err := loadGitParams(cmd, rc)
+					params, err := resolveGitParams(cmd, rc)
 					if err != nil {
 						return err
 					}
@@ -683,7 +575,7 @@ func newRemoteCommand() *cli.Command {
 					if err != nil {
 						return err
 					}
-					params, err := loadGitParams(cmd, rc)
+					params, err := resolveGitParams(cmd, rc)
 					if err != nil {
 						return err
 					}
@@ -727,18 +619,7 @@ func newLogsCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			cfg, _, _ := LoadConfig(rc.RepoRoot)
-			if cfg == nil {
-				cfg = &MezhaConfig{}
-			}
-			return Logs(ctx, rc, LogsParams{
-				SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
-				Tail:        cmd.Uint("tail"),
-				Follow:      cmd.Bool("follow"),
-				Since:       cmd.Duration("since"),
-				Sources:     cmd.StringSlice("source"),
-				MinLevel:    cmd.String("level"),
-			})
+			return Logs(ctx, rc, resolveLogsParams(cmd, rc))
 		},
 	}
 }
@@ -754,19 +635,240 @@ func newProcessesCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			cfg, _, _ := LoadConfig(rc.RepoRoot)
-			if cfg == nil {
-				cfg = &MezhaConfig{}
-			}
-			args := commandArgs(cmd)
-			sandboxName := resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName)
-			sandboxName, cleanArgs := extractSandboxFlag(args, sandboxName)
-			return Processes(ctx, rc, ProcessesParams{
-				SandboxName: sandboxName,
-				Args:        cleanArgs,
-			})
+			return Processes(ctx, rc, resolveProcessesParams(cmd, rc))
 		},
 	}
+}
+
+func effectiveConfigOrEmpty(rc RepoContext) *MezhaConfig {
+	if rc.Config != nil {
+		return rc.Config
+	}
+	return &MezhaConfig{}
+}
+
+func resolveRunParams(cmd *cli.Command, rc RepoContext) (RunParams, error) {
+	cfg := effectiveConfigOrEmpty(rc)
+
+	remoteArgs := commandArgs(cmd)
+	herdr := resolveHerdrParam(cmd, cfg.Sandbox.Herdr)
+	volumesFlush := cmd.Bool("volumes-flush")
+	if cmd.Bool("tty") && cmd.Bool("no-tty") {
+		return RunParams{}, errors.New("--tty cannot be used together with --no-tty")
+	}
+	var tty *bool
+	if cmd.Bool("tty") {
+		value := true
+		tty = &value
+	} else if cmd.Bool("no-tty") {
+		value := false
+		tty = &value
+	}
+
+	recreate := resolveBoolParam(cmd, "recreate", cfg.Sandbox.Recreate)
+	if volumesFlush && !recreate {
+		return RunParams{}, errors.New("--volumes-flush requires --recreate")
+	}
+
+	remoteRepoDir, err := resolveSandboxProjectDir(cmd, cfg, rc)
+	if err != nil {
+		return RunParams{}, err
+	}
+	return RunParams{
+		SandboxName: resolveSandboxParam(
+			cmd,
+			cfg.Sandbox.Name,
+			rc.DefaultSandboxName,
+		),
+		RemoteRepoDir:        remoteRepoDir,
+		Recreate:             recreate,
+		ReplaceSandboxRemote: cmd.Bool("replace-sandbox-remote"),
+		RemoteCommand:        remoteArgs,
+		TTY:                  tty,
+		NoLoginShell: resolveBoolParam(
+			cmd,
+			"no-login-shell",
+			cfg.Sandbox.NoLoginShell,
+		),
+		Herdr:        herdr,
+		VolumesFlush: volumesFlush,
+	}, nil
+}
+
+func resolveProvisionParams(cmd *cli.Command, rc RepoContext) (ProvisionParams, error) {
+	cfg := effectiveConfigOrEmpty(rc)
+	herdr := resolveHerdrParam(cmd, cfg.Sandbox.Herdr)
+	volumesFlush := cmd.Bool("volumes-flush")
+	recreate := resolveBoolParam(cmd, "recreate", cfg.Sandbox.Recreate)
+	if volumesFlush && !recreate {
+		return ProvisionParams{}, errors.New("--volumes-flush requires --recreate")
+	}
+	remoteRepoDir, err := resolveSandboxProjectDir(cmd, cfg, rc)
+	if err != nil {
+		return ProvisionParams{}, err
+	}
+	return ProvisionParams{
+		SandboxName:   resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
+		RemoteRepoDir: remoteRepoDir,
+		Recreate:      recreate,
+		Herdr:         herdr,
+		VolumesFlush:  volumesFlush,
+	}, nil
+}
+
+func resolveLifecycleParams(cmd *cli.Command, rc RepoContext) LifecycleParams {
+	cfg := effectiveConfigOrEmpty(rc)
+	return LifecycleParams{
+		SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
+	}
+}
+
+func resolveDestroyParams(cmd *cli.Command, rc RepoContext) DestroyParams {
+	cfg := effectiveConfigOrEmpty(rc)
+	return DestroyParams{
+		SandboxName:  resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
+		Force:        cmd.Bool("force"),
+		VolumesFlush: cmd.Bool("volumes-flush"),
+	}
+}
+
+func resolveLogsParams(cmd *cli.Command, rc RepoContext) LogsParams {
+	cfg := effectiveConfigOrEmpty(rc)
+	return LogsParams{
+		SandboxName: resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName),
+		Tail:        cmd.Uint("tail"),
+		Follow:      cmd.Bool("follow"),
+		Since:       cmd.Duration("since"),
+		Sources:     cmd.StringSlice("source"),
+		MinLevel:    cmd.String("level"),
+	}
+}
+
+func resolveProcessesParams(cmd *cli.Command, rc RepoContext) ProcessesParams {
+	cfg := effectiveConfigOrEmpty(rc)
+	args := commandArgs(cmd)
+	sandboxName := resolveSandboxParam(cmd, cfg.Sandbox.Name, rc.DefaultSandboxName)
+	sandboxName, cleanArgs := extractSandboxFlag(args, sandboxName)
+	return ProcessesParams{
+		SandboxName: sandboxName,
+		Args:        cleanArgs,
+	}
+}
+
+func newConfigCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "config",
+		Usage: "Inspect and validate Mezha configuration",
+		Commands: []*cli.Command{
+			newConfigShowCommand(),
+			newConfigCheckCommand(),
+			newConfigPathCommand(),
+		},
+	}
+}
+
+func newConfigShowCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "show",
+		Usage: "Print effective configuration with secrets redacted",
+		Action: func(ctx context.Context, _ *cli.Command) error {
+			rc, err := ResolveRepoContext(ctx)
+			if err != nil {
+				return err
+			}
+			cfg, err := rc.EffectiveConfig()
+			if err != nil {
+				return fmt.Errorf("load configuration: %w", err)
+			}
+			if cfg == nil {
+				return fmt.Errorf("microsandbox configuration missing in mezha.toml")
+			}
+			var buf bytes.Buffer
+			if err := toml.NewEncoder(&buf).Encode(cfg.Redacted()); err != nil {
+				return fmt.Errorf("encode configuration: %w", err)
+			}
+			fmt.Print(buf.String())
+			return nil
+		},
+	}
+}
+
+func newConfigCheckCommand() *cli.Command {
+	return &cli.Command{
+		Name:    "check",
+		Aliases: []string{"validate"},
+		Usage:   "Validate configuration file semantics",
+		Action: func(ctx context.Context, _ *cli.Command) error {
+			rc, err := ResolveRepoContext(ctx)
+			if err != nil {
+				return err
+			}
+			cfg, err := rc.EffectiveConfig()
+			if err != nil {
+				return fmt.Errorf("load configuration: %w", err)
+			}
+			if cfg == nil {
+				return fmt.Errorf("microsandbox configuration missing in mezha.toml")
+			}
+			if err := cfg.Validate(); err != nil {
+				return err
+			}
+			fmt.Println("Configuration is valid.")
+			return nil
+		},
+	}
+}
+
+func newConfigPathCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "path",
+		Usage: "Show active configuration path or candidate paths",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:  "all",
+				Usage: "Show all candidate configuration paths and their status",
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			rc, err := ResolveRepoContext(ctx)
+			if err != nil {
+				return err
+			}
+			if cmd.Bool("all") {
+				candidates := CandidateConfigPaths(rc.RepoRoot)
+				for _, p := range candidates {
+					status := "missing"
+					if _, err := os.Stat(p); err == nil {
+						if sliceContains(rc.LoadedConfigs, p) {
+							if p == rc.ConfigPath {
+								status = "active"
+							} else {
+								status = "layer"
+							}
+						} else {
+							status = "shadowed"
+						}
+					}
+					fmt.Printf("%-10s %s\n", status, p)
+				}
+				return nil
+			}
+			if rc.ConfigPath != "" {
+				fmt.Println(rc.ConfigPath)
+				return nil
+			}
+			return fmt.Errorf("no active configuration found")
+		},
+	}
+}
+
+func sliceContains(slice []string, val string) bool {
+	for _, item := range slice {
+		if item == val {
+			return true
+		}
+	}
+	return false
 }
 
 func commandArgs(cmd *cli.Command) []string {

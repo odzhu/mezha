@@ -230,3 +230,155 @@ func TestWaitDelay(t *testing.T) {
 		t.Errorf("waitDelay returned non-positive duration: %v", d)
 	}
 }
+
+func TestRepoContextEffectiveConfig(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "mezha.toml")
+	content := "version = 1\n[sandbox]\nname = \"effective-sandbox\"\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	// Returns cached Config when non-nil.
+	cachedCfg := &MezhaConfig{Sandbox: SandboxConfig{Name: "cached-box"}}
+	rcWithConfig := RepoContext{
+		RepoRoot: tempDir,
+		Config:   cachedCfg,
+	}
+	effective, err := rcWithConfig.EffectiveConfig()
+	if err != nil {
+		t.Fatalf("EffectiveConfig with cached config: %v", err)
+	}
+	if effective.Sandbox.Name != "cached-box" {
+		t.Errorf("expected cached-box, got %q", effective.Sandbox.Name)
+	}
+
+	// Falls back to LoadConfig when Config is nil.
+	rcWithoutConfig := RepoContext{
+		RepoRoot: tempDir,
+	}
+	effectiveLoaded, err := rcWithoutConfig.EffectiveConfig()
+	if err != nil {
+		t.Fatalf("EffectiveConfig with nil config: %v", err)
+	}
+	if effectiveLoaded.Sandbox.Name != "effective-sandbox" {
+		t.Errorf("expected effective-sandbox, got %q", effectiveLoaded.Sandbox.Name)
+	}
+}
+
+func TestResolveRepoContextConfigAttached(t *testing.T) {
+	tempDir := t.TempDir()
+	_, err := git.PlainInit(tempDir, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+
+	configPath := filepath.Join(tempDir, "mezha.toml")
+	content := "version = 1\n[sandbox]\nname = \"repo-attached-sandbox\"\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatal(err)
+	}
+
+	repoCtx, err := ResolveRepoContext(context.Background())
+	if err != nil {
+		t.Fatalf("ResolveRepoContext failed: %v", err)
+	}
+
+	if repoCtx.Config == nil {
+		t.Fatal("expected repoCtx.Config to be populated")
+	}
+	if repoCtx.Config.Sandbox.Name != "repo-attached-sandbox" {
+		t.Errorf(
+			"Config.Sandbox.Name = %q, want repo-attached-sandbox",
+			repoCtx.Config.Sandbox.Name,
+		)
+	}
+	evalConfigPath, _ := filepath.EvalSymlinks(configPath)
+	if repoCtx.ConfigPath != evalConfigPath {
+		t.Errorf("ConfigPath = %q, want %q", repoCtx.ConfigPath, evalConfigPath)
+	}
+	if len(repoCtx.LoadedConfigs) == 0 {
+		t.Fatal("expected repoCtx.LoadedConfigs to contain active config path")
+	}
+	if repoCtx.LoadedConfigs[len(repoCtx.LoadedConfigs)-1] != evalConfigPath {
+		t.Errorf(
+			"last LoadedConfigs = %q, want %q",
+			repoCtx.LoadedConfigs[len(repoCtx.LoadedConfigs)-1],
+			evalConfigPath,
+		)
+	}
+}
+
+func TestResolveRepoContextInvalidConfigError(t *testing.T) {
+	tempDir := t.TempDir()
+	_, err := git.PlainInit(tempDir, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+
+	configPath := filepath.Join(tempDir, "mezha.toml")
+	content := "[services.docker]\nenabled = true\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = ResolveRepoContext(context.Background())
+	if err == nil {
+		t.Fatal("expected ResolveRepoContext to fail with invalid config, got nil")
+	}
+	if !strings.Contains(err.Error(), "load configuration:") {
+		t.Errorf("expected error wrapping 'load configuration:', got %v", err)
+	}
+}
+
+func TestResolveSandboxProjectDirDefault(t *testing.T) {
+	tempDir := t.TempDir()
+	_, err := git.PlainInit(tempDir, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatal(err)
+	}
+
+	rc, err := ResolveRepoContext(context.Background())
+	if err != nil {
+		t.Fatalf("ResolveRepoContext failed: %v", err)
+	}
+
+	cmd := New()
+	remoteDir, err := resolveSandboxProjectDir(cmd, rc.Config, rc)
+	if err != nil {
+		t.Fatalf("resolveSandboxProjectDir failed with default config: %v", err)
+	}
+	if filepath.Base(remoteDir) != rc.RepoName {
+		t.Errorf("remoteDir %q does not end with repo name %q", remoteDir, rc.RepoName)
+	}
+}

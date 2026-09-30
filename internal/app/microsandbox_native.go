@@ -19,12 +19,15 @@ func openMicrosandbox(
 	params TransferParams,
 	recreate bool,
 ) (*msb.Sandbox, *MicrosandboxSpec, func(), error) {
-	cfg, _, err := LoadConfig(rc.RepoRoot)
+	cfg, err := rc.EffectiveConfig()
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	if cfg == nil || cfg.Microsandbox == nil {
 		return nil, nil, nil, fmt.Errorf("microsandbox configuration is missing")
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, nil, nil, err
 	}
 	if _, err := msb.EnsureRuntime(ctx, msb.RuntimeConfig{}, msb.InstallOptions{}); err != nil {
 		return nil, nil, nil, fmt.Errorf("install Microsandbox runtime: %w", err)

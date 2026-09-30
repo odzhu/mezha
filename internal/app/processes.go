@@ -7,7 +7,7 @@ import (
 )
 
 func Processes(ctx context.Context, rc RepoContext, params ProcessesParams) error {
-	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
+	if cfg, err := rc.EffectiveConfig(); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		return processesMicrosandbox(ctx, params)
 	}
 	return fmt.Errorf("microsandbox configuration missing in mezha.toml")

@@ -27,7 +27,7 @@ func PullSandboxBranch(
 	rc RepoContext,
 	params GitParams,
 ) error {
-	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
+	if cfg, err := rc.EffectiveConfig(); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		if err := RepairSandboxGitRemote(ctx, rc, params, false); err != nil {
 			return err
 		}
@@ -42,7 +42,7 @@ func PushSandboxBranch(
 	params GitParams,
 	forceWithLease bool,
 ) error {
-	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
+	if cfg, err := rc.EffectiveConfig(); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		if err := RepairSandboxGitRemote(ctx, rc, params, false); err != nil {
 			return err
 		}
@@ -66,7 +66,7 @@ func RepairSandboxGitRemote(
 		return err
 	}
 	params.RemoteRepoDir = remoteRepoDir
-	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
+	if cfg, err := rc.EffectiveConfig(); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		return repairMicrosandboxGitRemote(ctx, rc, params, replace)
 	}
 	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
@@ -77,7 +77,7 @@ func SandboxGitStatus(ctx context.Context, rc RepoContext, params GitParams) err
 	if err != nil {
 		return err
 	}
-	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
+	if cfg, err := rc.EffectiveConfig(); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		if err := RepairSandboxGitRemote(ctx, rc, params, false); err != nil {
 			return err
 		}

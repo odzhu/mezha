@@ -10,6 +10,9 @@ type RepoContext struct {
 	GitRef             string
 	DefaultSandboxName string
 	InvocationCWD      string
+	Config             *MezhaConfig
+	ConfigPath         string
+	LoadedConfigs      []string
 }
 
 type RunParams struct {
