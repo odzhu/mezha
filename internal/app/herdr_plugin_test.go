@@ -436,3 +436,63 @@ func TestCustomProcessInput(t *testing.T) {
 		t.Fatalf("chosen = %v, want %v", model.chosen, expectedChosen)
 	}
 }
+
+func TestCustomProcessInputEscapeToProcessesPlate(t *testing.T) {
+	processesItems := buildProcessesSubmenu([]string{"processes"}, []string{"docker"})
+	model := herdrDashboardModel{
+		processMode:   true,
+		processAction: "start",
+		processBase:   []string{"processes"},
+		submenuTitle:  "Start…",
+		submenuStack: []herdrSubmenuState{
+			{items: nil, title: "", cursor: 3},
+			{items: processesItems, title: "Processes…", cursor: 1},
+		},
+	}
+
+	// Press Esc
+	newM, cmd := model.updateProcessInput(tea.KeyPressMsg{
+		Code: tea.KeyEsc,
+	})
+	m := newM.(herdrDashboardModel)
+	if cmd != nil {
+		t.Fatal("expected nil cmd on esc")
+	}
+	if m.processMode {
+		t.Fatal("expected processMode to be false")
+	}
+	if m.submenuTitle != "Processes…" {
+		t.Fatalf("expected submenuTitle to be Processes…, got %q", m.submenuTitle)
+	}
+	if len(m.submenu) != len(processesItems) {
+		t.Fatalf("expected submenu to be processes items, len = %d", len(m.submenu))
+	}
+}
+
+func TestRestoreSubmenuForProcessesCommand(t *testing.T) {
+	model := herdrDashboardModel{
+		dashboardItems: buildDashboardItems([]string{"docker", "k3s"}),
+	}
+
+	restoreSubmenuForCommand(&model, []string{"processes", "start", "docker"})
+
+	if model.submenuTitle != "Processes…" {
+		t.Fatalf("expected submenuTitle = Processes…, got %q", model.submenuTitle)
+	}
+	if len(model.submenu) == 0 {
+		t.Fatal("expected submenu to be populated")
+	}
+	if len(model.submenuStack) != 1 {
+		t.Fatalf("expected submenuStack len = 1, got %d", len(model.submenuStack))
+	}
+
+	// Pressing esc from Processes… plate returns to main plate
+	m := model.closeDashboardSubmenu()
+	if m.submenuTitle != "" || len(m.submenu) != 0 {
+		t.Fatalf(
+			"expected main plate, got title %q and submenu len %d",
+			m.submenuTitle,
+			len(m.submenu),
+		)
+	}
+}

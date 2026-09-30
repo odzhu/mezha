@@ -856,6 +856,15 @@ func (m herdrDashboardModel) updateProcessInput(key tea.KeyPressMsg) (tea.Model,
 		m.processInput = nil
 		m.processInputCursor = 0
 		m.err = ""
+		if len(m.submenuStack) > 0 {
+			last := m.submenuStack[len(m.submenuStack)-1]
+			if last.title == "Processes…" {
+				m.submenuStack = m.submenuStack[:len(m.submenuStack)-1]
+				m.submenu = last.items
+				m.submenuTitle = last.title
+				m.cursor = last.cursor
+			}
+		}
 		return m, nil
 	case "left":
 		if m.processInputCursor > 0 {
@@ -1179,6 +1188,48 @@ func (m herdrDashboardModel) View() tea.View {
 	return result
 }
 
+func restoreSubmenuForCommand(model *herdrDashboardModel, command []string) {
+	if len(command) == 0 {
+		return
+	}
+	targetTitle := ""
+	if command[0] == "processes" ||
+		(len(command) > 1 && command[0] == "sandbox" && command[1] == "processes") {
+		targetTitle = "Processes…"
+	} else {
+		switch command[0] {
+		case "sandbox":
+			targetTitle = "Sandbox…"
+		case "sync":
+			targetTitle = "Sync…"
+		case "volume":
+			targetTitle = "Volume…"
+		case "image":
+			targetTitle = "Image…"
+		}
+	}
+	if targetTitle == "" {
+		return
+	}
+	for i, item := range model.dashboardItems {
+		if item.title == targetTitle {
+			model.submenuStack = []herdrSubmenuState{
+				{
+					items:  nil,
+					title:  "",
+					cursor: i,
+				},
+			}
+			model.submenu = item.children
+			model.submenuTitle = item.title
+			model.cursor = 0
+			model.filter = nil
+			model.filterMode = false
+			return
+		}
+	}
+}
+
 func runHerdrDashboard(ctx context.Context, _ *cli.Command) error {
 	projectDir, err := herdrProjectDir()
 	if err != nil {
@@ -1189,9 +1240,13 @@ func runHerdrDashboard(ctx context.Context, _ *cli.Command) error {
 		return err
 	}
 	model := herdrDashboardModel{}
+	var lastCommand []string
 	for {
 		if err := refreshHerdrDashboard(ctx, projectDir, &model); err != nil {
 			return err
+		}
+		if len(lastCommand) > 0 {
+			restoreSubmenuForCommand(&model, lastCommand)
 		}
 		result, err := tea.NewProgram(model).Run()
 		if err != nil {
@@ -1205,6 +1260,7 @@ func runHerdrDashboard(ctx context.Context, _ *cli.Command) error {
 		chosenSetting := model.chosenSetting
 		settingsNeedInit := model.settingsNeedInit
 		command := append([]string(nil), model.chosen...)
+		lastCommand = append([]string(nil), model.chosen...)
 		model.chosenSetting = ""
 		model.chosen = nil
 		model.settingsMode = false
