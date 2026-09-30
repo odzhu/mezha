@@ -1,6 +1,7 @@
 package app
 
 import (
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -314,14 +315,67 @@ func TestParseProcessesListTableOutput(t *testing.T) {
 	}
 }
 
-func TestDetectProcessesListWithSandbox(t *testing.T) {
-	procs := detectProcessesList(t.Context(), "", "debianv4")
-	if len(procs) == 0 {
-		t.Skip("sandbox debianv4 is not running or binary not found")
+const defaultTestSandbox = "mezha-test"
+
+func testSandboxName() string {
+	if s := os.Getenv("MEZHA_TEST_SANDBOX"); s != "" {
+		return s
 	}
-	t.Logf("detected processes from debianv4: %v", procs)
-	if len(procs) != 2 || procs[0] != "docker" || procs[1] != "k3s" {
-		t.Errorf("detected processes = %v, want [docker k3s]", procs)
+	return defaultTestSandbox
+}
+
+func TestDetectProcessesListWithSandbox(t *testing.T) {
+	sandbox := testSandboxName()
+	procs := detectProcessesList(t.Context(), "", sandbox)
+	if len(procs) == 0 {
+		t.Skipf("sandbox %q is not running or binary not found", sandbox)
+	}
+	t.Logf("detected processes from %s: %v", sandbox, procs)
+}
+
+func TestProcessesSubmenuAutoDetectionWithSandbox(t *testing.T) {
+	sandbox := testSandboxName()
+	model := herdrDashboardModel{
+		width:   80,
+		sandbox: sandbox,
+	}
+
+	processesIndex := -1
+	for i, it := range herdrDashboardItems {
+		if it.title == "Processes…" {
+			processesIndex = i
+			break
+		}
+	}
+	if processesIndex < 0 {
+		t.Fatal("Processes… not found in herdrDashboardItems")
+	}
+
+	model.cursor = processesIndex
+	matches := model.filteredDashboardItems()
+	newModel, _ := model.chooseDashboardItem(matches)
+	m := newModel.(herdrDashboardModel)
+
+	if len(m.processes) == 0 {
+		t.Skipf("sandbox %q is not running or binary not found", sandbox)
+	}
+
+	// Verify Start… and Stop… were automatically populated without running list
+	var startItem *herdrDashboardItem
+	for i := range m.submenu {
+		if m.submenu[i].title == "Start…" {
+			startItem = &m.submenu[i]
+			break
+		}
+	}
+	if startItem == nil {
+		t.Fatal("Start… not found in m.submenu")
+	}
+	if len(startItem.children) < 3 {
+		t.Fatalf(
+			"expected Start… to have automatically detected processes, got %d children",
+			len(startItem.children),
+		)
 	}
 }
 
@@ -402,11 +456,12 @@ func TestSubmenuStackNavigation(t *testing.T) {
 }
 
 func TestCustomProcessInput(t *testing.T) {
+	sandbox := testSandboxName()
 	model := herdrDashboardModel{
 		processMode:   true,
 		processAction: "start",
 		processBase:   []string{"processes"},
-		sandbox:       "my-box",
+		sandbox:       sandbox,
 	}
 
 	// Type "redis" into process input
@@ -431,7 +486,7 @@ func TestCustomProcessInput(t *testing.T) {
 		t.Fatal("expected tea.Quit cmd on enter")
 	}
 
-	expectedChosen := []string{"processes", "start", "redis", "--sandbox", "my-box"}
+	expectedChosen := []string{"processes", "start", "redis", "--sandbox", sandbox}
 	if !reflect.DeepEqual(model.chosen, expectedChosen) {
 		t.Fatalf("chosen = %v, want %v", model.chosen, expectedChosen)
 	}

@@ -138,6 +138,11 @@ func parseProcessesList(output string) []string {
 }
 
 func detectProcessesList(ctx context.Context, projectDir string, sandbox string) []string {
+	if projectDir == "" {
+		if dir, err := herdrProjectDir(); err == nil {
+			projectDir = dir
+		}
+	}
 	binary, err := os.Executable()
 	if err != nil || strings.HasSuffix(binary, ".test") {
 		if path, err := exec.LookPath("mezha"); err == nil {
@@ -158,12 +163,14 @@ func detectProcessesList(ctx context.Context, projectDir string, sandbox string)
 	args = append(args, "list")
 
 	cmd := exec.CommandContext(ctx, binary, args...)
-	cmd.Dir = projectDir
+	if projectDir != "" {
+		cmd.Dir = projectDir
+	}
 	out, _ := cmd.CombinedOutput()
 	return parseProcessesList(string(out))
 }
 
-func buildProcessesSubmenu(baseArgs []string, processes []string) []herdrDashboardItem {
+func buildStartChildren(baseArgs []string, processes []string) []herdrDashboardItem {
 	startChildren := make([]herdrDashboardItem, 0, len(processes)+2)
 	startChildren = append(startChildren, herdrDashboardItem{
 		args:        append(append([]string(nil), baseArgs...), "start"),
@@ -183,7 +190,10 @@ func buildProcessesSubmenu(baseArgs []string, processes []string) []herdrDashboa
 		processAction: "start",
 		processBase:   baseArgs,
 	})
+	return startChildren
+}
 
+func buildStopChildren(baseArgs []string, processes []string) []herdrDashboardItem {
 	stopChildren := make([]herdrDashboardItem, 0, len(processes)+2)
 	stopChildren = append(stopChildren, herdrDashboardItem{
 		args:        append(append([]string(nil), baseArgs...), "stop"),
@@ -203,7 +213,10 @@ func buildProcessesSubmenu(baseArgs []string, processes []string) []herdrDashboa
 		processAction: "stop",
 		processBase:   baseArgs,
 	})
+	return stopChildren
+}
 
+func buildProcessesSubmenu(baseArgs []string, processes []string) []herdrDashboardItem {
 	return []herdrDashboardItem{
 		{
 			args:        append(append([]string(nil), baseArgs...), "list"),
@@ -213,12 +226,12 @@ func buildProcessesSubmenu(baseArgs []string, processes []string) []herdrDashboa
 		{
 			title:       "Start…",
 			description: "Start all or individual background processes",
-			children:    startChildren,
+			children:    buildStartChildren(baseArgs, processes),
 		},
 		{
 			title:       "Stop…",
 			description: "Stop all or individual background processes",
-			children:    stopChildren,
+			children:    buildStopChildren(baseArgs, processes),
 		},
 	}
 }
@@ -507,12 +520,40 @@ func (m herdrDashboardModel) chooseDashboardItem(matches []int) (tea.Model, tea.
 	items := m.activeDashboardItems()
 	item := items[matches[m.cursor]]
 	if len(item.children) > 0 {
+		children := item.children
+		if item.title == "Processes…" || item.title == "Start…" || item.title == "Stop…" {
+			detected := detectProcessesList(context.Background(), m.projectDir, m.sandbox)
+			if len(detected) > 0 {
+				m.processes = detected
+			}
+			base := []string{"processes"}
+			if len(item.args) > 0 {
+				base = item.args
+			} else if len(m.submenuStack) > 0 {
+				for _, prev := range m.submenuStack {
+					if len(prev.items) > 0 && len(prev.items[0].args) > 0 &&
+						prev.items[0].args[0] == "sandbox" {
+						base = []string{"sandbox", "processes"}
+						break
+					}
+				}
+			}
+			switch item.title {
+			case "Processes…":
+				children = buildProcessesSubmenu(base, m.processes)
+			case "Start…":
+				children = buildStartChildren(base, m.processes)
+			case "Stop…":
+				children = buildStopChildren(base, m.processes)
+			}
+		}
+
 		m.submenuStack = append(m.submenuStack, herdrSubmenuState{
 			items:  m.submenu,
 			title:  m.submenuTitle,
 			cursor: m.cursor,
 		})
-		m.submenu = item.children
+		m.submenu = children
 		m.submenuTitle = item.title
 		m.cursor = 0
 		m.filter = nil
@@ -1211,6 +1252,13 @@ func restoreSubmenuForCommand(model *herdrDashboardModel, command []string) {
 	if targetTitle == "" {
 		return
 	}
+	if targetTitle == "Processes…" {
+		detected := detectProcessesList(context.Background(), model.projectDir, model.sandbox)
+		if len(detected) > 0 {
+			model.processes = detected
+		}
+		model.dashboardItems = buildDashboardItems(model.processes)
+	}
 	for i, item := range model.dashboardItems {
 		if item.title == targetTitle {
 			model.submenuStack = []herdrSubmenuState{
@@ -1239,7 +1287,9 @@ func runHerdrDashboard(ctx context.Context, _ *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	model := herdrDashboardModel{}
+	model := herdrDashboardModel{
+		projectDir: projectDir,
+	}
 	var lastCommand []string
 	for {
 		if err := refreshHerdrDashboard(ctx, projectDir, &model); err != nil {
