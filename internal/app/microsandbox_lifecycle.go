@@ -10,7 +10,7 @@ import (
 )
 
 func startMicrosandbox(ctx context.Context, name string) error {
-	if err := msb.EnsureInstalled(ctx); err != nil {
+	if _, err := msb.EnsureRuntime(ctx, msb.RuntimeConfig{}, msb.InstallOptions{}); err != nil {
 		return fmt.Errorf("install Microsandbox runtime: %w", err)
 	}
 	handle, err := msb.GetSandbox(ctx, name)
@@ -35,7 +35,7 @@ func startMicrosandbox(ctx context.Context, name string) error {
 }
 
 func stopMicrosandbox(ctx context.Context, name string) error {
-	if err := msb.EnsureInstalled(ctx); err != nil {
+	if _, err := msb.EnsureRuntime(ctx, msb.RuntimeConfig{}, msb.InstallOptions{}); err != nil {
 		return fmt.Errorf("install Microsandbox runtime: %w", err)
 	}
 	handle, err := msb.GetSandbox(ctx, name)

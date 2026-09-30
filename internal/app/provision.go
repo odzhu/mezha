@@ -7,12 +7,25 @@ import (
 
 // Provision creates and initializes a sandbox without synchronizing repository data.
 func Provision(ctx context.Context, rc RepoContext, params ProvisionParams) error {
-	cfg, _, err := LoadConfig(rc.RepoRoot)
+	remoteRepoDir, err := sandboxProjectDir(rc, params.RemoteRepoDir)
+	if err != nil {
+		return err
+	}
+	params.RemoteRepoDir = remoteRepoDir
+	cfg, err := rc.EffectiveConfig()
 	if err != nil {
 		return fmt.Errorf("load mezha configuration: %w", err)
 	}
 	if cfg == nil || cfg.Microsandbox == nil {
 		return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 	}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	closeSecrets, err := loadSecretSpec(cfg.SecretSpec)
+	if err != nil {
+		return err
+	}
+	defer closeSecrets()
 	return provisionMicrosandbox(ctx, rc, params, cfg)
 }

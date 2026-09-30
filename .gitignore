@@ -16,10 +16,11 @@ bin
 coverage.out
 cover.out
 .cache
+.secretspec-static.work
 
 # Mezha project-local state
-.mezha/tmp/
-.mezha/dirty-sync-untracked.json
+.mezha*
+/mezha.*
 docs
 .pi
 upstream/

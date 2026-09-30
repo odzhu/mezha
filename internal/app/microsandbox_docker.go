@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,111 +13,199 @@ import (
 	msb "github.com/superradcompany/microsandbox/sdk/go"
 )
 
-const managedDevenvPath = "/sandbox"
-const managedDevenvConfig = managedDevenvPath + "/devenv.nix"
-const nativeDevenvPath = "/home/devenv/.nix-profile/bin/devenv"
-const managedDevenvUserConfig = managedDevenvPath + "/.mezha/user-devenv.nix"
-const managedDevenvWrapperMarker = "# Mezha managed devenv services wrapper v3"
-const managedDevenvWrapperPrefix = "# Mezha managed devenv services wrapper"
+const managedDevenvPath = "/root/.config/mezha/services/devenv"
+const managedDevenvProfileBin = managedDevenvPath + "/.devenv/profile/bin"
+const managedDevenvUserExtensions = managedDevenvPath + "/extensions-user"
+const persistentRuntimeBin = "/nix/mezha/root/.mezha/runtime-bin"
+const nativeDevenvPath = persistentRuntimeBin + "/devenv"
 
-const managedDevenvWrapper = `# Mezha managed devenv services wrapper v3
-args@{ pkgs, ... }:
-let
-  user = import /sandbox/.mezha/user-devenv.nix;
-  base = user args;
-in
-base // {
-  packages = (base.packages or []) ++ [ pkgs.docker pkgs.k3s pkgs.kubectl ];
-  env = (base.env or {}) // {
-    KUBECONFIG = "/var/lib/rancher/k3s/k3s.yaml";
-  };
-  processes = (base.processes or {}) // {
-    mezha-docker = {
-      start.enable = false;
-      exec = ''
-        rm -f /var/run/docker.pid
-        exec dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs
-      '';
-      ready.exec = "docker info >/dev/null";
-      restart.on = "always";
-      shutdown.grace = 30;
-    };
-    mezha-k3s = {
-      start.enable = false;
-      after = [ "devenv:processes:mezha-docker" ];
-      exec = ''
-        exec k3s server \
-          --data-dir /var/lib/rancher/k3s \
-          --node-name mezha-k3s \
-          --https-listen-port=16443 \
-          --docker \
-          --write-kubeconfig /var/lib/rancher/k3s/k3s.yaml \
-          --write-kubeconfig-mode 644
-      '';
-      ready.exec = ''
-        kubectl --kubeconfig /var/lib/rancher/k3s/k3s.yaml get nodes --no-headers |
-          awk '$2 ~ /^Ready/ { ready=1 } END { exit !ready }'
-      '';
-      restart.on = "always";
-      shutdown.grace = 30;
-    };
-  };
-}
-`
-
-// dockerCommand runs a command in the managed devenv environment. Docker and
-// k3s are long-lived devenv processes, never daemons started by a session.
-func dockerCommand(command string, args []string, _ bool) (string, []string) {
-	commandLine := shellQuote(command)
-	for _, arg := range args {
-		commandLine += " " + shellQuote(arg)
-	}
-	return "devenv", []string{
+// devenvDirectCommand keeps managed tools on PATH without activating the
+// managed environment as the command's project.
+func devenvDirectCommand(command string, commandArgs []string) (string, []string) {
+	args := []string{
 		"shell",
-		"--from", "path:" + managedDevenvPath,
+		"--reload",
+		"--from",
+		"path:" + managedDevenvPath,
 		"--",
-		"sh", "-c", commandLine,
+		"sh",
+		"-c",
+		"export HOME=/root SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt; unset DEVENV_ROOT _DEVENV_HOOK_DIR; exec \"$@\"",
+		"mezha-direct",
+		command,
 	}
+	return nativeDevenvPath, append(args, commandArgs...)
+}
+
+// devenvBashCommand starts Bash with the shared direct-session environment.
+func devenvBashCommand(bashArgs []string) (string, []string) {
+	return devenvDirectCommand("bash", bashArgs)
+}
+
+func devenvInteractiveShellCommand() (string, []string) {
+	return devenvBashCommand([]string{"-il"})
 }
 
 // ensureDevenvServices starts the singleton devenv process manager and waits
 // until its requested services pass their configured readiness probes.
-func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox, kubernetes bool) error {
-	processes := []string{"mezha-docker"}
-	if kubernetes {
-		processes = append(processes, "mezha-k3s")
+func ensureDevenvServices(ctx context.Context, sandbox *msb.Sandbox, herdrEnabled bool) error {
+	hasProcesses, err := devenvHasEnabledProcesses(ctx, sandbox, herdrEnabled)
+	if err != nil {
+		return err
+	}
+	if !hasProcesses {
+		return nil
 	}
 	args := []string{"up", "--detach", "--from", "path:" + managedDevenvPath}
-	args = append(args, processes...)
-	fmt.Println("Starting devenv services...")
-	code, err := sandbox.AttachWith(ctx, "devenv", args, msb.WithAttachCwd(managedDevenvPath))
-	if err != nil {
-		return fmt.Errorf("start devenv services: %w", err)
+	if herdrEnabled {
+		args = append(args, "--option", "processes.herdr.start.enable:bool", "true")
 	}
-	if code != 0 {
+	attachEnv := msb.WithAttachEnv(map[string]string{
+		"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+		"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+		"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+		"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
+	})
+	fmt.Println("Starting devenv services...")
+	code, err := sandbox.AttachWith(
+		ctx,
+		nativeDevenvPath,
+		args,
+		attachEnv,
+		msb.WithAttachCwd(managedDevenvPath),
+	)
+	if err != nil {
+		execEnv := map[string]string{
+			"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+			"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+			"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+			"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
+		}
+		if streamErr := execStreaming(
+			ctx,
+			sandbox,
+			nativeDevenvPath,
+			args,
+			msb.WithExecCwd(managedDevenvPath),
+			msb.WithExecEnv(execEnv),
+		); streamErr != nil {
+			printDevenvDaemonLog(ctx, sandbox)
+			return fmt.Errorf("start devenv services: %w", streamErr)
+		}
+	} else if code != 0 {
 		printDevenvDaemonLog(ctx, sandbox)
 		return fmt.Errorf("start devenv services exited with code %d", code)
 	}
 
 	fmt.Println("Waiting for devenv services to become ready...")
-	code, err = sandbox.AttachWith(ctx, "devenv", []string{
-		"processes", "wait", "--from", "path:" + managedDevenvPath, "--timeout", "120",
-	}, msb.WithAttachCwd(managedDevenvPath))
-	if err != nil {
-		return fmt.Errorf("wait for devenv services: %w", err)
+	waitArgs := []string{
+		"processes",
+		"wait",
+		"--from",
+		"path:" + managedDevenvPath,
+		"--timeout",
+		"120",
 	}
-	if code != 0 {
+	if herdrEnabled {
+		waitArgs = append(waitArgs, "--option", "processes.herdr.start.enable:bool", "true")
+	}
+	code, err = sandbox.AttachWith(
+		ctx,
+		nativeDevenvPath,
+		waitArgs,
+		attachEnv,
+		msb.WithAttachCwd(managedDevenvPath),
+	)
+	if err != nil {
+		execEnv := map[string]string{
+			"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+			"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+			"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+			"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
+		}
+		if streamErr := execStreaming(
+			ctx,
+			sandbox,
+			nativeDevenvPath,
+			waitArgs,
+			msb.WithExecCwd(managedDevenvPath),
+			msb.WithExecEnv(execEnv),
+		); streamErr != nil {
+			printDevenvDaemonLog(ctx, sandbox)
+			return fmt.Errorf("wait for devenv services: %w", streamErr)
+		}
+	} else if code != 0 {
 		printDevenvDaemonLog(ctx, sandbox)
 		return fmt.Errorf("wait for devenv services exited with code %d", code)
 	}
 	return nil
 }
 
+func devenvHasEnabledProcesses(
+	ctx context.Context,
+	sandbox *msb.Sandbox,
+	herdrEnabled bool,
+) (bool, error) {
+	if herdrEnabled {
+		return true, nil
+	}
+	output, err := sandbox.Exec(
+		ctx,
+		nativeDevenvPath,
+		[]string{
+			"eval",
+			"--quiet",
+			"--no-tui",
+			"--from",
+			"path:" + managedDevenvPath,
+			"--",
+			"processes",
+		},
+		persistentRuntimeExecEnv(),
+		msb.WithExecCwd(managedDevenvPath),
+	)
+	if err != nil {
+		return false, fmt.Errorf("evaluate devenv processes: %w", err)
+	}
+	if !output.Success() {
+		return false, fmt.Errorf(
+			"evaluate devenv processes: %s",
+			strings.TrimSpace(output.Stderr()),
+		)
+	}
+	return parseDevenvHasEnabledProcesses(output.Stdout())
+}
+
+func parseDevenvHasEnabledProcesses(stdout string) (bool, error) {
+	stdout = strings.TrimSpace(stdout)
+	start := strings.Index(stdout, "{")
+	end := strings.LastIndex(stdout, "}")
+	if start < 0 || end <= start {
+		return false, nil
+	}
+	var res struct {
+		Processes map[string]struct {
+			Start struct {
+				Enable bool `json:"enable"`
+			} `json:"start"`
+		} `json:"processes"`
+	}
+	if err := json.Unmarshal([]byte(stdout[start:end+1]), &res); err != nil {
+		return false, fmt.Errorf("parse devenv processes evaluation: %w", err)
+	}
+	for _, proc := range res.Processes {
+		if proc.Start.Enable {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func printDevenvDaemonLog(ctx context.Context, sandbox *msb.Sandbox) {
 	output, err := sandbox.Exec(ctx, "sh", []string{
 		"-c",
-		"for log in /tmp/devenv-*/processes/daemon.log; do [ -f \"$log\" ] || continue; echo \"--- $log ---\" >&2; tail -n 200 \"$log\" >&2; done",
-	})
+		"for log in /tmp/devenv-*/processes/daemon.log /tmp/devenv-*/processes/logs/*; do [ -f \"$log\" ] && [ -s \"$log\" ] || continue; echo \"--- $log ---\" >&2; tail -n 200 \"$log\" >&2; done",
+	}, persistentRuntimeExecEnv())
 	if err != nil {
 		return
 	}
@@ -124,60 +213,21 @@ func printDevenvDaemonLog(ctx context.Context, sandbox *msb.Sandbox) {
 	_, _ = fmt.Fprint(os.Stderr, output.Stderr())
 }
 
-// ensureManagedDevenvConfig repairs existing sandboxes that predate the managed file.
+// ensureManagedDevenvConfig installs the service configuration below root's config directory.
 func ensureManagedDevenvConfig(
 	ctx context.Context,
 	sandbox *msb.Sandbox,
-	provision ProvisionConfig,
+	repoRoot string,
 ) error {
-	output, err := sandbox.Exec(ctx, "test", []string{"-f", managedDevenvConfig})
-	if err != nil {
-		return fmt.Errorf("inspect managed devenv configuration: %w", err)
+	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
+		return err
 	}
-	if !output.Success() {
-		for _, add := range provision.Add {
-			target := add.Target
-			if strings.HasSuffix(target, "/") {
-				info, statErr := os.Stat(add.Source)
-				if statErr != nil || info.IsDir() {
-					continue
-				}
-				target = filepath.ToSlash(filepath.Join(target, filepath.Base(add.Source)))
-			}
-			if filepath.Clean(target) != managedDevenvConfig {
-				continue
-			}
-			if err := nativeUpload(ctx, sandbox, add.Source, target); err != nil {
-				return fmt.Errorf("restore managed devenv configuration: %w", err)
-			}
-			break
-		}
-		output, err = sandbox.Exec(ctx, "test", []string{"-f", managedDevenvConfig})
-		if err != nil {
-			return fmt.Errorf("inspect restored managed devenv configuration: %w", err)
-		}
-		if !output.Success() {
-			return fmt.Errorf(
-				"managed devenv configuration %s is missing; add it to provision.add or recreate the sandbox",
-				managedDevenvConfig,
-			)
-		}
-	}
-
-	return ensureManagedDevenvServicesConfig(ctx, sandbox)
-}
-
-// ensureManagedDevenvServicesConfig preserves the project configuration and
-// wraps it with the singleton services Mezha requires.
-func ensureManagedDevenvServicesConfig(ctx context.Context, sandbox *msb.Sandbox) error {
-	content, err := sandbox.FS().ReadString(ctx, managedDevenvConfig)
-	if err != nil {
-		return fmt.Errorf("read managed devenv configuration: %w", err)
-	}
-	if strings.HasPrefix(content, managedDevenvWrapperMarker) {
-		return nil
-	}
-	output, err := sandbox.Exec(ctx, "mkdir", []string{"-p", filepath.Dir(managedDevenvUserConfig)})
+	output, err := sandbox.Exec(
+		ctx,
+		persistentRuntimeBin+"/mkdir",
+		[]string{"-p", managedDevenvPath, managedDevenvUserExtensions},
+		persistentRuntimeExecEnv(),
+	)
 	if err != nil {
 		return fmt.Errorf("create managed devenv configuration directory: %w", err)
 	}
@@ -187,13 +237,118 @@ func ensureManagedDevenvServicesConfig(ctx context.Context, sandbox *msb.Sandbox
 			strings.TrimSpace(output.Stderr()),
 		)
 	}
-	if !strings.HasPrefix(content, managedDevenvWrapperPrefix) {
-		if err := sandbox.FS().WriteString(ctx, managedDevenvUserConfig, content); err != nil {
-			return fmt.Errorf("preserve project devenv configuration: %w", err)
+
+	if err := syncBaseProvisionFiles(ctx, sandbox); err != nil {
+		return fmt.Errorf("sync base managed devenv configuration: %w", err)
+	}
+
+	extensionsDir := resolveExtensionsDir(repoRoot)
+	if err := syncExtensionsDir(
+		ctx,
+		sandbox,
+		extensionsDir,
+		managedDevenvUserExtensions,
+	); err != nil {
+		return fmt.Errorf("sync managed user extensions: %w", err)
+	}
+
+	return nil
+}
+
+// syncBaseProvisionFiles writes embedded base devenv files to the sandbox.
+func syncBaseProvisionFiles(ctx context.Context, sandbox *msb.Sandbox) error {
+	files, err := defaultProvisionFiles()
+	if err != nil {
+		return err
+	}
+	parents := make(map[string]bool)
+	for _, file := range files {
+		parent := filepath.ToSlash(filepath.Dir(filepath.Join(managedDevenvPath, file.relPath)))
+		parents[parent] = true
+	}
+	parentList := make([]string, 0, len(parents)+1)
+	parentList = append(parentList, "-p")
+	for p := range parents {
+		parentList = append(parentList, p)
+	}
+	if len(parentList) > 1 {
+		output, err := sandbox.Exec(
+			ctx,
+			persistentRuntimeBin+"/mkdir",
+			parentList,
+			persistentRuntimeExecEnv(),
+		)
+		if err != nil {
+			return fmt.Errorf("create base provision directories: %w", err)
+		}
+		if !output.Success() {
+			return fmt.Errorf(
+				"create base provision directories: %s",
+				strings.TrimSpace(output.Stderr()),
+			)
 		}
 	}
-	if err := sandbox.FS().WriteString(ctx, managedDevenvConfig, managedDevenvWrapper); err != nil {
-		return fmt.Errorf("write managed devenv services configuration: %w", err)
+	for _, file := range files {
+		guestPath := filepath.ToSlash(filepath.Join(managedDevenvPath, file.relPath))
+		if existing, err := sandbox.FS().
+			ReadString(ctx, guestPath); err == nil &&
+			existing == file.content {
+			continue
+		}
+		if err := sandbox.FS().WriteString(ctx, guestPath, file.content); err != nil {
+			return fmt.Errorf("write %s: %w", guestPath, err)
+		}
 	}
 	return nil
+}
+
+// syncExtensionsDir uploads the user extensions directory excluding lock files.
+func syncExtensionsDir(ctx context.Context, sandbox *msb.Sandbox, local, remote string) error {
+	info, err := os.Lstat(local)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("extensions path is not a directory: %s", local)
+	}
+	output, err := sandbox.Exec(
+		ctx,
+		persistentRuntimeBin+"/sh",
+		[]string{
+			"-c",
+			"mkdir -p \"$1\" && find \"$1\" -mindepth 1 ! -name \"*.lock\" -delete 2>/dev/null || true",
+			"mezha-clean-dir",
+			remote,
+		},
+		persistentRuntimeExecEnv(),
+	)
+	if err != nil {
+		return fmt.Errorf("prepare remote extensions directory: %w", err)
+	}
+	if !output.Success() {
+		return fmt.Errorf(
+			"prepare remote extensions directory: %s",
+			strings.TrimSpace(output.Stderr()),
+		)
+	}
+	return filepath.Walk(local, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !info.IsDir() && strings.HasSuffix(info.Name(), ".lock") {
+			return nil
+		}
+		rel, err := filepath.Rel(local, path)
+		if err != nil {
+			return err
+		}
+		guestPath := filepath.ToSlash(filepath.Join(remote, rel))
+		if info.IsDir() {
+			return sandbox.FS().Mkdir(ctx, guestPath)
+		}
+		return sandbox.FS().CopyFromHost(ctx, path, guestPath)
+	})
 }

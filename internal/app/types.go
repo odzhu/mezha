@@ -4,22 +4,24 @@ import "time"
 
 type RepoContext struct {
 	RepoRoot           string
+	PrimaryRepoRoot    string
+	IsLinkedWorktree   bool
 	RepoName           string
 	GitRef             string
 	DefaultSandboxName string
 	InvocationCWD      string
+	Config             *MezhaConfig
+	ConfigPath         string
+	LoadedConfigs      []string
 }
 
 type RunParams struct {
 	SandboxName          string
 	RemoteRepoDir        string
 	Recreate             bool
-	Kubernetes           bool
 	ReplaceSandboxRemote bool
-	Editor               string
 	RemoteCommand        []string
 	TTY                  *bool
-	PolicyAdvisor        *bool
 	NoLoginShell         bool
 	Herdr                bool
 	VolumesFlush         bool
@@ -72,7 +74,11 @@ type ProvisionParams struct {
 	SandboxName   string
 	RemoteRepoDir string
 	Recreate      bool
-	Kubernetes    bool
 	Herdr         bool
 	VolumesFlush  bool
+}
+
+type ProcessesParams struct {
+	SandboxName string
+	Args        []string
 }

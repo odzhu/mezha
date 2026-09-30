@@ -5,7 +5,11 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
+	"github.com/odzhu/mezha/internal/execx"
 	msb "github.com/superradcompany/microsandbox/sdk/go"
 )
 
@@ -15,7 +19,7 @@ func provisionMicrosandbox(
 	params ProvisionParams,
 	cfg *MezhaConfig,
 ) error {
-	if err := msb.EnsureInstalled(ctx); err != nil {
+	if _, err := msb.EnsureRuntime(ctx, msb.RuntimeConfig{}, msb.InstallOptions{}); err != nil {
 		return fmt.Errorf("install Microsandbox runtime: %w", err)
 	}
 	_, lookupErr := msb.GetSandbox(ctx, params.SandboxName)
@@ -31,8 +35,11 @@ func provisionMicrosandbox(
 		if err != nil {
 			return fmt.Errorf("find Microsandbox %q: %w", params.SandboxName, err)
 		}
-		if err := handle.Destroy(ctx, msb.WithDestroyForce()); err != nil {
+		if err := stopAndDestroySandbox(handle); err != nil {
 			return fmt.Errorf("recreate sandbox %q: %w", params.SandboxName, err)
+		}
+		if err := clearHerdrSSHControlSockets(); err != nil {
+			return err
 		}
 		sandboxExisted = false
 	}
@@ -42,9 +49,6 @@ func provisionMicrosandbox(
 		}
 	}
 	if !sandboxExisted {
-		if err := ensureDevenvImage(ctx, rc.RepoRoot); err != nil {
-			return fmt.Errorf("import Microsandbox image: %w", err)
-		}
 		if err := ensureStateVolume(ctx, params.SandboxName, *cfg.Microsandbox); err != nil {
 			return err
 		}
@@ -64,33 +68,24 @@ func provisionMicrosandbox(
 	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
 		return err
 	}
-	if !sandboxExisted {
-		if err := applyProvisionConfig(ctx, sandbox, cfg.Provision); err != nil {
-			return err
-		}
-	}
-	useDevenv := cfg.Services.Docker.Enabled || params.Kubernetes
+
 	herdrEnabled := params.Herdr && herdrCommandAvailable()
-	if useDevenv || herdrEnabled {
-		if err := ensureManagedDevenvConfig(ctx, sandbox, cfg.Provision); err != nil {
-			return err
-		}
+
+	if err := ensureManagedDevenvConfig(ctx, sandbox, rc.RepoRoot); err != nil {
+		return err
 	}
-	if useDevenv {
-		fmt.Println("Starting core devenv services...")
-		if err := ensureDevenvServices(ctx, sandbox, params.Kubernetes); err != nil {
-			return err
-		}
+	repoDir := params.RemoteRepoDir
+	if repoDir == "" {
+		repoDir = "/workspace"
+	}
+	if err := runMezhaInitSandboxTask(ctx, sandbox, rc, repoDir, herdrEnabled); err != nil {
+		return err
+	}
+	if err := ensureDevenvServices(ctx, sandbox, herdrEnabled); err != nil {
+		return err
 	}
 	if herdrEnabled {
-		workdir := cfg.Microsandbox.Workdir
-		if workdir == "" {
-			workdir = "/sandbox"
-		}
-		if err := ensureSandboxHerdr(ctx, sandbox, workdir, useDevenv); err != nil {
-			return err
-		}
-		if err := registerHerdrMachine(ctx, params.SandboxName, !sandboxExisted); err != nil {
+		if err := registerHerdrMachine(ctx, params.SandboxName); err != nil {
 			return err
 		}
 		if err := syncHerdrPlugins(ctx, sandbox); err != nil {
@@ -98,5 +93,119 @@ func provisionMicrosandbox(
 		}
 	}
 	fmt.Printf("Provisioned Microsandbox: %s\n", params.SandboxName)
+	return nil
+}
+
+func runMezhaInitSandboxTask(
+	ctx context.Context,
+	sandbox *msb.Sandbox,
+	rc RepoContext,
+	repoDir string,
+	herdrEnabled bool,
+) error {
+	env := map[string]string{
+		"HOME":               "/root",
+		"USER":               "root",
+		"MSB_WORKDIR":        repoDir,
+		"PATH":               managedDevenvProfileBin + ":" + persistentRuntimeBin + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+		"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+		"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+		"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
+	}
+
+	primaryRoot, linkedWorktree, err := linkedWorktreePrimaryRepoRoot(rc.RepoRoot)
+	if err != nil {
+		return err
+	}
+	primaryName := filepath.Base(primaryRoot)
+	worktreeName := filepath.Base(rc.RepoRoot)
+	primaryDir := filepath.ToSlash(filepath.Join("/nix/mezha/projects", primaryName))
+	projectDir := primaryDir
+	if linkedWorktree {
+		projectDir = filepath.ToSlash(
+			filepath.Join("/nix/mezha/worktrees", primaryName, worktreeName),
+		)
+	}
+
+	hostHome, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve host home directory: %w", err)
+	}
+	homeRelative := func(path string) string {
+		rel, relErr := filepath.Rel(hostHome, path)
+		if relErr != nil || rel == "." || rel == ".." ||
+			strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return ""
+		}
+		return filepath.ToSlash(rel)
+	}
+
+	env["MSB_PROJECT"] = projectDir
+	env["MSB_PRIMARY"] = primaryDir
+	env["MSB_REMOTE"] = repoDir
+	env["MSB_HOST_PROJECT"] = rc.RepoRoot
+	env["MSB_HOST_PRIMARY"] = primaryRoot
+	env["MSB_HOME_PROJECT"] = homeRelative(rc.RepoRoot)
+	env["MSB_HOME_PRIMARY"] = homeRelative(primaryRoot)
+
+	if herdrEnabled {
+		versionOutput, err := execx.Output(ctx, "herdr", "--version")
+		if err != nil {
+			return fmt.Errorf("get Herdr version: %w", err)
+		}
+		matches := herdrVersion.FindStringSubmatch(strings.TrimSpace(string(versionOutput)))
+		if matches == nil {
+			return fmt.Errorf(
+				"unrecognized Herdr version %q",
+				strings.TrimSpace(string(versionOutput)),
+			)
+		}
+		env["MSB_HERDR_VERSION"] = matches[1]
+	}
+
+	fmt.Printf("Running mezha:init-sandbox task...\n")
+	taskCmd := persistentRuntimeBin + "/sh"
+	taskArgs := []string{
+		"-c",
+		`exec "$@" >/dev/null`,
+		"devenv-task",
+		nativeDevenvPath,
+		"tasks",
+		"run",
+		"mezha:init-sandbox",
+		"--show-output",
+		"--from",
+		"path:" + managedDevenvPath,
+	}
+	code, err := sandbox.AttachWith(
+		ctx,
+		taskCmd,
+		taskArgs,
+		msb.WithAttachCwd(managedDevenvPath),
+		msb.WithAttachEnv(env),
+	)
+	if err != nil {
+		execOpts := []msb.ExecOption{
+			msb.WithExecCwd(managedDevenvPath),
+			msb.WithExecEnv(env),
+		}
+		if streamErr := execStreaming(
+			ctx,
+			sandbox,
+			taskCmd,
+			taskArgs,
+			execOpts...,
+		); streamErr != nil {
+			return fmt.Errorf("run mezha:init-sandbox task: %w", streamErr)
+		}
+	} else if code != 0 {
+		return fmt.Errorf("run mezha:init-sandbox task exited with code %d", code)
+	}
+	if herdrEnabled {
+		if err := syncSandboxHerdrConfig(ctx, sandbox); err != nil {
+			return err
+		}
+	}
 	return nil
 }

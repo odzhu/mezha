@@ -25,16 +25,20 @@ herdr plugin install odzhu/mezha/herdr
 The `dev.mezha.dashboard` action opens a Herdr-managed overlay pane. Like
 herdr-plus, the action is only a launcher; the interactive Bubble Tea interface
 runs in the plugin pane declared by the manifest. The manifest also exposes
-first-class Herdr actions for Mezha's public commands, including lifecycle,
-synchronization, remote repair, logs, and sandbox or volume listing. Actions
-that need a terminal use their corresponding plugin pane.
+first-class Herdr actions for Mezha's public commands, including configuration
+validation (`dev.mezha.config-check`), lifecycle,
+background process management, synchronization, remote management, logs, and
+sandbox or volume listing. Actions that need a terminal use their
+corresponding plugin pane.
 
 The dashboard provides:
 
-- editing for the active Mezha configuration, including `MEZHA_HOME` project,
-  worktree, and sandbox configuration layers
+- editing for the active Mezha configuration
+- inspecting and validating configuration (`mezha config <show|check|path>`)
 - an interactive sandbox shell in a new tab
 - sandbox and persistent-volume listings
+- pull the latest native Debian image
+- devenv background process inspection and management
 - sandbox create, start, and stop operations
 - repository synchronization status
 - upload, download, pull, and push operations

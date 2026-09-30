@@ -7,9 +7,9 @@ import (
 	"fmt"
 )
 
-func uploadDirtyRepoToMicrosandbox(context.Context, string, string, string, dirtyPaths) error {
+func uploadDirtyRepoToMicrosandbox(context.Context, string, string, RepoContext, dirtyPaths) error {
 	return fmt.Errorf("local Microsandbox transfer requires a CGO-enabled Mezha build")
 }
-func downloadDirtyRepoFromMicrosandbox(context.Context, string, string, string) error {
+func downloadDirtyRepoFromMicrosandbox(context.Context, string, string, RepoContext) error {
 	return fmt.Errorf("local Microsandbox transfer requires a CGO-enabled Mezha build")
 }

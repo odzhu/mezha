@@ -9,17 +9,35 @@ import (
 )
 
 func Run(ctx context.Context, rc RepoContext, params RunParams) error {
-	cfg, _, err := LoadConfig(rc.RepoRoot)
+	remoteRepoDir, err := sandboxProjectDir(rc, params.RemoteRepoDir)
+	if err != nil {
+		return err
+	}
+	params.RemoteRepoDir = remoteRepoDir
+	cfg, err := rc.EffectiveConfig()
 	if err != nil {
 		return fmt.Errorf("load mezha configuration: %w", err)
 	}
 	if cfg == nil || cfg.Microsandbox == nil {
 		return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 	}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	closeSecrets, err := loadSecretSpec(cfg.SecretSpec)
+	if err != nil {
+		return err
+	}
+	defer closeSecrets()
 	return runMicrosandbox(ctx, rc, params, cfg)
 }
 func Upload(ctx context.Context, rc RepoContext, params UploadParams) error {
-	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
+	remoteRepoDir, err := sandboxProjectDir(rc, params.RemoteRepoDir)
+	if err != nil {
+		return err
+	}
+	params.RemoteRepoDir = remoteRepoDir
+	if cfg, err := rc.EffectiveConfig(); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		dirty, err := trackedDirtyPaths(ctx, rc.RepoRoot)
 		if err != nil {
 			return err
@@ -28,19 +46,24 @@ func Upload(ctx context.Context, rc RepoContext, params UploadParams) error {
 			ctx,
 			params.SandboxName,
 			params.RemoteRepoDir,
-			rc.RepoRoot,
+			rc,
 			dirty,
 		)
 	}
 	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
 }
 func Download(ctx context.Context, rc RepoContext, params DownloadParams) error {
-	if cfg, _, err := LoadConfig(rc.RepoRoot); err == nil && cfg != nil && cfg.Microsandbox != nil {
+	remoteRepoDir, err := sandboxProjectDir(rc, params.RemoteRepoDir)
+	if err != nil {
+		return err
+	}
+	params.RemoteRepoDir = remoteRepoDir
+	if cfg, err := rc.EffectiveConfig(); err == nil && cfg != nil && cfg.Microsandbox != nil {
 		return downloadDirtyRepoFromMicrosandbox(
 			ctx,
 			params.SandboxName,
 			params.RemoteRepoDir,
-			rc.RepoRoot,
+			rc,
 		)
 	}
 	return fmt.Errorf("microsandbox configuration missing in mezha.toml")
