@@ -115,35 +115,9 @@ make fmt
 make test
 ```
 
+## Configuration template
+
+See the [`mezha.toml` template](internal/app/templates/mezha.toml) for the full
+configuration reference and examples.
+
 Licensed under [Apache 2.0](LICENSE).
-
-## `mezha.yaml` spec (illustrative)
-
-Mezha currently reads `mezha.toml`, **not** `mezha.yaml`. The following is a
-YAML sketch of the existing configuration concepts, not a supported config file:
-
-```yaml
-version: 1
-microsandbox:
-  memory_mib: 4096
-  volumes:
-    - name: state
-      target: /nix
-      mode: ensure-exists
-      kind: disk
-      size_mib: 51200
-  secrets:
-    - env: GITHUB_TOKEN
-      value_from_env: GITHUB_TOKEN
-      allow_hosts: [api.github.com]
-      require_tls: true
-secretspec:
-  enabled: true
-  provider: keyring
-  profile: devtools
-  path: secretspec.toml
-sandbox:
-  herdr: false
-```
-
-For a working configuration, use the [TOML template](internal/app/templates/mezha.toml).
