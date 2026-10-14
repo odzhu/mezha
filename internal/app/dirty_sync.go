@@ -25,7 +25,7 @@ type dirtyPaths struct {
 }
 
 func localWorktreeStatus(repoRoot string) (git.Status, error) {
-	repo, err := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	repo, err := openGitRepo(repoRoot)
 	if err != nil {
 		return nil, fmt.Errorf("open git repository: %w", err)
 	}

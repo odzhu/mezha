@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -158,6 +159,64 @@ func TestResolveRepoContextWithCommitAndDetachedHead(t *testing.T) {
 	expectedShortHash := commitHash.String()[:7]
 	if repoCtxDetached.GitRef != expectedShortHash {
 		t.Errorf("GitRef = %q, want %q", repoCtxDetached.GitRef, expectedShortHash)
+	}
+}
+
+func TestResolveRepoContextWorktree(t *testing.T) {
+	tempDir := t.TempDir()
+	cmd := exec.Command("git", "init", tempDir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v, %s", err, out)
+	}
+	cmd = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester")
+	_ = cmd.Run()
+	cmd = exec.Command("git", "-C", tempDir, "config", "user.email", "tester@example.com")
+	_ = cmd.Run()
+	if err := os.WriteFile(filepath.Join(tempDir, "file.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command("git", "-C", tempDir, "add", "file.txt")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v, %s", err, out)
+	}
+	cmd = exec.Command("git", "-C", tempDir, "commit", "-m", "init")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v, %s", err, out)
+	}
+
+	worktreeDir := filepath.Join(t.TempDir(), "wt")
+	cmd = exec.Command("git", "-C", tempDir, "worktree", "add", "-b", "feature-wt", worktreeDir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v, %s", err, out)
+	}
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	if err := os.Chdir(worktreeDir); err != nil {
+		t.Fatal(err)
+	}
+
+	repoCtx, err := ResolveRepoContext(context.Background())
+	if err != nil {
+		t.Fatalf("ResolveRepoContext on worktree: %v", err)
+	}
+	if !repoCtx.IsLinkedWorktree {
+		t.Errorf("expected IsLinkedWorktree to be true")
+	}
+	if repoCtx.GitRef != "feature-wt" {
+		t.Errorf("GitRef = %q, want %q", repoCtx.GitRef, "feature-wt")
+	}
+	evalTempDir, _ := filepath.EvalSymlinks(tempDir)
+	evalWorktreeDir, _ := filepath.EvalSymlinks(worktreeDir)
+	if repoCtx.PrimaryRepoRoot != evalTempDir {
+		t.Errorf("PrimaryRepoRoot = %q, want %q", repoCtx.PrimaryRepoRoot, evalTempDir)
+	}
+	if repoCtx.RepoRoot != evalWorktreeDir {
+		t.Errorf("RepoRoot = %q, want %q", repoCtx.RepoRoot, evalWorktreeDir)
 	}
 }
 

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -176,6 +177,66 @@ func TestCurrentBranch(t *testing.T) {
 	}
 	if branch != "master" && branch != "main" {
 		t.Errorf("got branch %q, want master or main", branch)
+	}
+}
+
+func TestWorktreeBranchAndStatus(t *testing.T) {
+	tempDir := t.TempDir()
+	cmd := exec.Command("git", "init", tempDir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v, %s", err, out)
+	}
+	cmd = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester")
+	_ = cmd.Run()
+	cmd = exec.Command("git", "-C", tempDir, "config", "user.email", "tester@example.com")
+	_ = cmd.Run()
+	if err := os.WriteFile(filepath.Join(tempDir, "file.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command("git", "-C", tempDir, "add", "file.txt")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v, %s", err, out)
+	}
+	cmd = exec.Command("git", "-C", tempDir, "commit", "-m", "init")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v, %s", err, out)
+	}
+
+	worktreeDir := filepath.Join(t.TempDir(), "wt")
+	cmd = exec.Command("git", "-C", tempDir, "worktree", "add", "-b", "feature-wt", worktreeDir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v, %s", err, out)
+	}
+
+	branch, err := currentBranch(context.Background(), worktreeDir)
+	if err != nil {
+		t.Fatalf("currentBranch on worktree: %v", err)
+	}
+	if branch != "feature-wt" {
+		t.Errorf("got branch %q, want %q", branch, "feature-wt")
+	}
+
+	status, err := localWorktreeStatus(worktreeDir)
+	if err != nil {
+		t.Fatalf("localWorktreeStatus on clean worktree: %v", err)
+	}
+	if len(status) != 0 {
+		t.Errorf("expected clean status on new worktree, got: %v", status)
+	}
+
+	remoteName := "sandbox-test"
+	remoteURL := "ssh://root@sandbox-test//workspace"
+	if err := setSandboxGitRemote(
+		context.Background(),
+		worktreeDir,
+		remoteName,
+		remoteURL,
+		false,
+	); err != nil {
+		t.Fatalf("setSandboxGitRemote on worktree: %v", err)
+	}
+	if err := requireSandboxGitRemote(context.Background(), worktreeDir, remoteName); err != nil {
+		t.Fatalf("requireSandboxGitRemote on worktree: %v", err)
 	}
 }
 

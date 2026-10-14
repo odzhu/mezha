@@ -15,7 +15,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/go-git/go-git/v5"
 	cli "github.com/urfave/cli/v3"
 )
 
@@ -1479,7 +1478,7 @@ func listHerdrDashboardSandboxes(
 	seen := make(map[string]struct{})
 	synced := make(map[string]bool)
 	var sandboxes []string
-	repo, _ := git.PlainOpenWithOptions(projectDir, &git.PlainOpenOptions{DetectDotGit: true})
+	repo, _ := openGitRepo(projectDir)
 	for _, machine := range machines {
 		if !strings.HasPrefix(machine.Target, "mezha-sandbox-") {
 			continue

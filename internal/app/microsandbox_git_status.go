@@ -21,7 +21,7 @@ func sandboxGitStatusMicrosandbox(
 	params GitParams,
 	branch string,
 ) error {
-	repo, err := git.PlainOpenWithOptions(rc.RepoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	repo, err := openGitRepo(rc.RepoRoot)
 	if err != nil {
 		return fmt.Errorf("open git repository: %w", err)
 	}

@@ -32,7 +32,7 @@ func ResolveRepoContext(_ context.Context) (RepoContext, error) {
 	if err != nil {
 		return RepoContext{}, err
 	}
-	repo, err := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	repo, err := openGitRepo(repoRoot)
 	if err != nil {
 		return RepoContext{}, fmt.Errorf("open git repository: %w", err)
 	}

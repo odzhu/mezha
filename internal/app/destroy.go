@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	"github.com/go-git/go-git/v5"
 )
 
 // Destroy removes the project's Microsandbox and its Git remote.
@@ -39,7 +37,7 @@ func UnregisterSandboxGitRemote(ctx context.Context, rc RepoContext, params GitP
 }
 
 func unregisterSandboxGitRemote(_ context.Context, repoRoot, remoteName string) error {
-	repo, err := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	repo, err := openGitRepo(repoRoot)
 	if err != nil {
 		return fmt.Errorf("open git repository: %w", err)
 	}

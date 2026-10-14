@@ -94,7 +94,7 @@ func SSHProxy(ctx context.Context, sandboxName string) error {
 }
 
 func currentBranch(_ context.Context, repoRoot string) (string, error) {
-	repo, err := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	repo, err := openGitRepo(repoRoot)
 	if err != nil {
 		return "", fmt.Errorf("open git repository: %w", err)
 	}
@@ -118,7 +118,7 @@ func currentBranch(_ context.Context, repoRoot string) (string, error) {
 }
 
 func gitIdentityValue(_ context.Context, repoRoot, key string) (string, error) {
-	repo, err := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	repo, err := openGitRepo(repoRoot)
 	if err != nil {
 		return "", nil
 	}
@@ -149,7 +149,7 @@ func setSandboxGitRemote(
 	if err := validateSandboxGitRemoteName(remoteName); err != nil {
 		return err
 	}
-	repo, err := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	repo, err := openGitRepo(repoRoot)
 	if err != nil {
 		return fmt.Errorf("open git repository: %w", err)
 	}
@@ -292,7 +292,7 @@ func pushSandboxBranchInternal(
 	remoteName, branch string,
 	forceWithLease bool,
 ) error {
-	repo, err := git.PlainOpenWithOptions(rc.RepoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	repo, err := openGitRepo(rc.RepoRoot)
 	if err != nil {
 		return fmt.Errorf("open git repository: %w", err)
 	}
@@ -347,7 +347,7 @@ func pullSandboxBranchInternal(
 	if err != nil {
 		return err
 	}
-	repo, err := git.PlainOpenWithOptions(rc.RepoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	repo, err := openGitRepo(rc.RepoRoot)
 	if err != nil {
 		return fmt.Errorf("open git repository: %w", err)
 	}
@@ -452,7 +452,7 @@ func requireSandboxGitRemote(_ context.Context, repoRoot, remoteName string) err
 	if err := validateSandboxGitRemoteName(remoteName); err != nil {
 		return err
 	}
-	repo, err := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	repo, err := openGitRepo(repoRoot)
 	if err != nil {
 		return fmt.Errorf("open git repository: %w", err)
 	}
