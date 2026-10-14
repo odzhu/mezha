@@ -14,16 +14,17 @@ import (
 
 func uploadDirtyRepoToMicrosandbox(
 	ctx context.Context,
-	sandboxName, remoteRepoDir, repoRoot string,
+	sandboxName, remoteRepoDir string,
+	rc RepoContext,
 	dirty dirtyPaths,
 ) error {
-	knownUntracked, err := loadSyncedUntrackedPaths(repoRoot)
+	knownUntracked, err := loadSyncedUntrackedPaths(rc.RepoRoot)
 	if err != nil {
 		return err
 	}
 	for _, relativePath := range knownUntracked {
 		if _, err := os.Lstat(
-			filepath.Join(repoRoot, filepath.FromSlash(relativePath)),
+			filepath.Join(rc.RepoRoot, filepath.FromSlash(relativePath)),
 		); os.IsNotExist(
 			err,
 		) {
@@ -43,9 +44,18 @@ func uploadDirtyRepoToMicrosandbox(
 		return err
 	}
 	defer func() { _ = sandbox.Detach(context.Background()) }()
+	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
+		return err
+	}
+	if err := ensureManagedDevenvConfig(ctx, sandbox, rc.RepoRoot); err != nil {
+		return err
+	}
+	if err := runMezhaInitSandboxTask(ctx, sandbox, rc, remoteRepoDir, false); err != nil {
+		return err
+	}
 	createdDirs := make(map[string]struct{})
 	for _, relativePath := range dirty.copy {
-		local := filepath.Join(repoRoot, filepath.FromSlash(relativePath))
+		local := filepath.Join(rc.RepoRoot, filepath.FromSlash(relativePath))
 		remote := filepath.ToSlash(filepath.Join(remoteRepoDir, relativePath))
 		info, err := os.Lstat(local)
 		if os.IsNotExist(err) {
@@ -81,16 +91,17 @@ func uploadDirtyRepoToMicrosandbox(
 		fmt.Printf("Removing %s...\n", relativePath)
 		_ = sandbox.FS().Remove(ctx, remote)
 	}
-	untracked, err := localUntrackedPaths(ctx, repoRoot)
+	untracked, err := localUntrackedPaths(ctx, rc.RepoRoot)
 	if err != nil {
 		return err
 	}
-	return saveSyncedUntrackedPaths(repoRoot, untracked)
+	return saveSyncedUntrackedPaths(rc.RepoRoot, untracked)
 }
 
 func downloadDirtyRepoFromMicrosandbox(
 	ctx context.Context,
-	sandboxName, remoteRepoDir, repoRoot string,
+	sandboxName, remoteRepoDir string,
+	rc RepoContext,
 ) error {
 	handle, err := msb.GetSandbox(ctx, sandboxName)
 	if err != nil {
@@ -101,6 +112,15 @@ func downloadDirtyRepoFromMicrosandbox(
 		return err
 	}
 	defer func() { _ = sandbox.Detach(context.Background()) }()
+	if err := ensurePersistentLinks(ctx, sandbox); err != nil {
+		return err
+	}
+	if err := ensureManagedDevenvConfig(ctx, sandbox, rc.RepoRoot); err != nil {
+		return err
+	}
+	if err := runMezhaInitSandboxTask(ctx, sandbox, rc, remoteRepoDir, false); err != nil {
+		return err
+	}
 	out, err := sandbox.Exec(
 		ctx,
 		"git",
@@ -145,7 +165,7 @@ func downloadDirtyRepoFromMicrosandbox(
 		return nil
 	}
 	for _, relativePath := range dirty.copy {
-		local := filepath.Join(repoRoot, filepath.FromSlash(relativePath))
+		local := filepath.Join(rc.RepoRoot, filepath.FromSlash(relativePath))
 		remote := filepath.ToSlash(filepath.Join(remoteRepoDir, relativePath))
 		fmt.Printf("Downloading %s...\n", relativePath)
 		if err := os.MkdirAll(filepath.Dir(local), 0o755); err != nil {
@@ -156,7 +176,7 @@ func downloadDirtyRepoFromMicrosandbox(
 		}
 	}
 	for _, relativePath := range dirty.delete {
-		local := filepath.Join(repoRoot, filepath.FromSlash(relativePath))
+		local := filepath.Join(rc.RepoRoot, filepath.FromSlash(relativePath))
 		fmt.Printf("Removing %s...\n", relativePath)
 		_ = os.Remove(local)
 	}

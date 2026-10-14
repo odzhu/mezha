@@ -13,7 +13,7 @@ import (
 // flushMicrosandboxVolumes removes volumes managed by a sandbox, including
 // Nix, Docker, Kubernetes, and cache volumes retained across recreation.
 func listMicrosandboxVolumes(ctx context.Context) error {
-	if err := msb.EnsureInstalled(ctx); err != nil {
+	if _, err := msb.EnsureRuntime(ctx, msb.RuntimeConfig{}, msb.InstallOptions{}); err != nil {
 		return fmt.Errorf("install Microsandbox runtime: %w", err)
 	}
 	volumes, err := msb.ListVolumes(ctx)
@@ -60,7 +60,7 @@ func formatVolumeBytes(bytes uint64) string {
 }
 
 func destroyMicrosandboxVolume(ctx context.Context, name string) error {
-	if err := msb.EnsureInstalled(ctx); err != nil {
+	if _, err := msb.EnsureRuntime(ctx, msb.RuntimeConfig{}, msb.InstallOptions{}); err != nil {
 		return fmt.Errorf("install Microsandbox runtime: %w", err)
 	}
 	volume, err := msb.GetVolume(ctx, name)

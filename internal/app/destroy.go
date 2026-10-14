@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	"github.com/odzhu/mezha/internal/execx"
 )
 
 // Destroy removes the project's Microsandbox and its Git remote.
@@ -33,21 +31,23 @@ func Destroy(ctx context.Context, rc RepoContext, params DestroyParams) error {
 	return nil
 }
 
-func unregisterSandboxGitRemote(ctx context.Context, repoRoot, remoteName string) error {
-	remotes, err := execx.Output(ctx, "git", "-C", repoRoot, "remote")
+// UnregisterSandboxGitRemote removes the sandbox Git remote from the local repository.
+func UnregisterSandboxGitRemote(ctx context.Context, rc RepoContext, params GitParams) error {
+	return unregisterSandboxGitRemote(ctx, rc.RepoRoot, params.SandboxName)
+}
+
+func unregisterSandboxGitRemote(_ context.Context, repoRoot, remoteName string) error {
+	repo, err := openGitRepo(repoRoot)
 	if err != nil {
-		return fmt.Errorf("list Git remotes: %w", err)
+		return fmt.Errorf("open git repository: %w", err)
 	}
-	for _, remote := range strings.Fields(string(remotes)) {
-		if remote != remoteName {
-			continue
-		}
-		if err := execx.Stream(ctx, repoRoot, "git", "remote", "remove", remoteName); err != nil {
-			return fmt.Errorf("unregister sandbox Git remote: %w", err)
-		}
-		fmt.Printf("Unregistered sandbox Git remote: %s\n", remoteName)
-		break
+	if _, err := repo.Remote(remoteName); err != nil {
+		return nil
 	}
+	if err := repo.DeleteRemote(remoteName); err != nil {
+		return fmt.Errorf("unregister sandbox Git remote: %w", err)
+	}
+	fmt.Printf("Unregistered sandbox Git remote: %s\n", remoteName)
 	return nil
 }
 

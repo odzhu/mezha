@@ -36,7 +36,7 @@ func listMicrosandboxes(ctx context.Context) error {
 }
 
 func listMicrosandboxSandboxHandles(ctx context.Context) ([]*msb.SandboxHandle, error) {
-	if err := msb.EnsureInstalled(ctx); err != nil {
+	if _, err := msb.EnsureRuntime(ctx, msb.RuntimeConfig{}, msb.InstallOptions{}); err != nil {
 		return nil, fmt.Errorf("install Microsandbox runtime: %w", err)
 	}
 

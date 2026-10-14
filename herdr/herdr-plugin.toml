@@ -18,10 +18,22 @@ contexts = ["workspace"]
 command = ["mezha", "herdr", "execute", "--", "init"]
 
 [[actions]]
+id = "config-check"
+title = "Check Mezha configuration"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--wait", "--", "config", "check"]
+
+[[actions]]
 id = "list"
 title = "List Mezha sandboxes"
 contexts = ["workspace"]
 command = ["mezha", "herdr", "execute", "--", "sandbox", "list"]
+
+[[actions]]
+id = "pull-image"
+title = "Pull latest Mezha image"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "image", "pull"]
 
 [[actions]]
 id = "volumes"
@@ -96,10 +108,34 @@ contexts = ["workspace"]
 command = ["mezha", "herdr", "execute", "--", "sync", "remote", "repair"]
 
 [[actions]]
+id = "remote-deregister"
+title = "Deregister Mezha remote"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--", "sync", "remote", "deregister"]
+
+[[actions]]
 id = "logs"
 title = "Show Mezha logs"
 contexts = ["workspace"]
 command = ["mezha", "herdr", "execute", "--", "sandbox", "logs"]
+
+[[actions]]
+id = "processes"
+title = "Show Mezha processes"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--wait", "--", "processes", "list"]
+
+[[actions]]
+id = "processes-start"
+title = "Start Mezha processes"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--wait", "--", "processes", "start"]
+
+[[actions]]
+id = "processes-stop"
+title = "Stop Mezha processes"
+contexts = ["workspace"]
+command = ["mezha", "herdr", "execute", "--wait", "--", "processes", "stop"]
 
 [[actions]]
 id = "destroy"

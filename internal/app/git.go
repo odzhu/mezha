@@ -6,8 +6,15 @@ import (
 	"github.com/go-git/go-git/v5"
 )
 
+func openGitRepo(repoRoot string) (*git.Repository, error) {
+	return git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{
+		DetectDotGit:          true,
+		EnableDotGitCommonDir: true,
+	})
+}
+
 func gitTrackedAndUntracked(repoRoot string) ([]string, error) {
-	repo, err := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	repo, err := openGitRepo(repoRoot)
 	if err != nil {
 		return nil, fmt.Errorf("open git repository: %w", err)
 	}

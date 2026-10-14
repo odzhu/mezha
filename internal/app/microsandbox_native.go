@@ -19,28 +19,33 @@ func openMicrosandbox(
 	params TransferParams,
 	recreate bool,
 ) (*msb.Sandbox, *MicrosandboxSpec, func(), error) {
-	cfg, _, err := LoadConfig(rc.RepoRoot)
+	cfg, err := rc.EffectiveConfig()
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	if cfg == nil || cfg.Microsandbox == nil {
 		return nil, nil, nil, fmt.Errorf("microsandbox configuration is missing")
 	}
-	if err := msb.EnsureInstalled(ctx); err != nil {
+	if err := cfg.Validate(); err != nil {
+		return nil, nil, nil, err
+	}
+	if _, err := msb.EnsureRuntime(ctx, msb.RuntimeConfig{}, msb.InstallOptions{}); err != nil {
 		return nil, nil, nil, fmt.Errorf("install Microsandbox runtime: %w", err)
 	}
-	if recreate {
-		if h, e := msb.GetSandbox(ctx, params.SandboxName); e == nil {
-			if e = h.Destroy(ctx, msb.WithDestroyForce()); e != nil {
-				return nil, nil, nil, e
+	sandboxExists := false
+	if handle, err := msb.GetSandbox(ctx, params.SandboxName); err == nil {
+		if recreate {
+			if err := stopAndDestroySandbox(handle); err != nil {
+				return nil, nil, nil, fmt.Errorf("recreate sandbox %q: %w", params.SandboxName, err)
 			}
+		} else {
+			sandboxExists = true
 		}
 	}
-	if err := ensureDevenvImage(ctx, rc.RepoRoot); err != nil {
-		return nil, nil, nil, fmt.Errorf("import Microsandbox image: %w", err)
-	}
-	if err := ensureStateVolume(ctx, params.SandboxName, *cfg.Microsandbox); err != nil {
-		return nil, nil, nil, err
+	if !sandboxExists {
+		if err := ensureStateVolume(ctx, params.SandboxName, *cfg.Microsandbox); err != nil {
+			return nil, nil, nil, err
+		}
 	}
 	opts, err := cfg.Microsandbox.sandboxOptions(rc.RepoRoot, params.SandboxName)
 	if err != nil {
@@ -57,7 +62,7 @@ func openMicrosandbox(
 	return sandbox, cfg.Microsandbox, func() { _ = sandbox.Detach(context.Background()) }, nil
 }
 
-// ensureStateVolume seeds the shared persistent volume from the native image.
+// ensureStateVolume seeds the shared persistent volume by installing Nix and devenv into Debian.
 func ensureStateVolume(
 	ctx context.Context,
 	sandboxName string,
@@ -74,13 +79,16 @@ func ensureStateVolume(
 		}
 	}
 	name := sandboxName + "-" + volume.Name
-	if ready, err := stateVolumeReady(ctx, name, ".mezha-state-v2"); err != nil {
+	if ready, err := stateVolumeReady(ctx, name, ".mezha-state-v4", volume); err != nil {
 		return err
 	} else if ready {
 		return nil
 	}
 
-	fmt.Printf("Seeding persistent Nix state volume: %s (this may take several minutes)...\n", name)
+	fmt.Printf(
+		"Seeding persistent Nix state volume: %s (this may take 2-3 minutes on first use)...\n",
+		name,
+	)
 	bootstrapName := sandboxName + "-state-seed"
 	if sandbox, err := msb.GetSandbox(ctx, bootstrapName); err == nil {
 		if err := sandbox.Destroy(ctx, msb.WithDestroyForce()); err != nil {
@@ -95,41 +103,133 @@ func ensureStateVolume(
 		return fmt.Errorf("configure state volume bootstrap sandbox: %w", err)
 	}
 	bootstrapOpts := []msb.SandboxOption{
-		msb.WithImage(defaultDevenvImage),
+		msb.WithImage(defaultDebianImage),
 		msb.WithDetached(),
+		msb.WithPullPolicy(msb.PullPolicyIfMissing),
 		msb.WithUser("0"),
-		msb.WithMounts(map[string]msb.MountConfig{"/mnt/mezha": mount}),
+		msb.WithReplace(),
+		msb.WithMounts(map[string]msb.MountConfig{"/nix": mount}),
+	}
+	if spec.CPUs != 0 {
+		bootstrapOpts = append(bootstrapOpts, msb.WithCPUs(spec.CPUs))
+	}
+	if spec.MemoryMiB != 0 {
+		bootstrapOpts = append(bootstrapOpts, msb.WithMemory(spec.MemoryMiB))
+	} else {
+		bootstrapOpts = append(bootstrapOpts, msb.WithMemory(4096))
 	}
 	bootstrapOpts = append(bootstrapOpts, runtimeOpts...)
 	bootstrap, err := msb.CreateSandbox(ctx, bootstrapName, bootstrapOpts...)
 	if err != nil {
 		return fmt.Errorf("create state volume bootstrap sandbox: %w", err)
 	}
-	pulse := progressPulse("Seeding persistent Nix state volume is still running")
-	output, err := bootstrap.Exec(ctx, "sh", []string{"-c", `set -eu
+
+	steps := []struct {
+		desc string
+		cmd  string
+		env  map[string]string
+	}{
+		{
+			desc: "[1/4] Installing Debian prerequisites (curl, xz-utils, ca-certificates)...",
+			cmd: `set -eu
 set -o pipefail
-rm -rf /mnt/mezha/* /mnt/mezha/.[!.]* /mnt/mezha/..?*
-tar -C /nix -cf - . | tar -C /mnt/mezha -xpf -
-mkdir -p /mnt/mezha/mezha/root /mnt/mezha/mezha/home /mnt/mezha/mezha/sandbox /mnt/mezha/mezha/docker /mnt/mezha/mezha/k3s
-cp -a /home/. /mnt/mezha/mezha/home/
-touch /mnt/mezha/.mezha-state-v2
-sync`})
-	pulse()
-	if err != nil {
-		stopAndDestroySandbox(bootstrap)
-		return fmt.Errorf("seed state volume: %w", err)
+rm -rf /nix/* /nix/.[!.]* /nix/..?* 2>/dev/null || true
+apt-get update -qq
+apt-get install -y -qq --no-install-recommends curl xz-utils ca-certificates
+mkdir -m 0755 -p /nix
+mkdir -p /etc/nix
+cat << "EOF" > /etc/nix/nix.conf
+build-users-group =
+experimental-features = nix-command flakes
+trusted-users = root
+EOF
+for ca in /.msb/tls/ca.pem /.msb/tls/host-cas.pem; do
+  if [ -f "$ca" ] && [ -s "$ca" ]; then
+    printf '\n' >> /etc/ssl/certs/ca-certificates.crt
+    cat "$ca" >> /etc/ssl/certs/ca-certificates.crt
+  fi
+done`,
+			env: map[string]string{
+				"DEBIAN_FRONTEND":    "noninteractive",
+				"PATH":               "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+				"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+				"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+				"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+				"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
+			},
+		},
+		{
+			desc: "[2/4] Installing Nix into persistent state volume...",
+			cmd: `set -eu
+if [ ! -d /nix/store ]; then
+  curl --proto "=https" --tlsv1.2 -sSf -L https://nixos.org/nix/install | sh -s -- --no-daemon
+fi`,
+			env: map[string]string{
+				"DEBIAN_FRONTEND":    "noninteractive",
+				"PATH":               "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+				"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+				"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+				"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+				"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
+			},
+		},
+		{
+			desc: "[3/4] Installing devenv and git into Nix profile...",
+			cmd: `set -eu
+export PATH="/root/.nix-profile/bin:$PATH"
+nix-env --install --attr devenv git -f "<nixpkgs>" || nix-env --install --attr devenv git -f https://github.com/NixOS/nixpkgs/tarball/nixpkgs-unstable`,
+			env: map[string]string{
+				"DEBIAN_FRONTEND":    "noninteractive",
+				"PATH":               "/root/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+				"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+				"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+				"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+				"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
+			},
+		},
+		{
+			desc: "[4/4] Finalizing persistent runtime environment...",
+			cmd: `set -eu
+mkdir -p /nix/mezha/root/.mezha/runtime-bin /nix/mezha/services/docker /nix/mezha/services/k3s /nix/mezha/etc/nix /nix/mezha/etc/ssl
+cp -a /root/.nix-profile/bin/. /nix/mezha/root/.mezha/runtime-bin/
+ln -sf /bin/sh /nix/mezha/root/.mezha/runtime-bin/sh
+ln -sf /bin/mkdir /nix/mezha/root/.mezha/runtime-bin/mkdir
+cp -a /etc/nix/. /nix/mezha/etc/nix/
+cp -a /etc/ssl/. /nix/mezha/etc/ssl/ 2>/dev/null || true
+cp -a /root/. /nix/mezha/root/
+touch /nix/.mezha-state-v4
+sync`,
+			env: map[string]string{
+				"PATH": "/root/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+			},
+		},
 	}
-	if !output.Success() {
-		stopAndDestroySandbox(bootstrap)
-		return fmt.Errorf("seed state volume: %s", strings.TrimSpace(output.Stderr()))
+
+	for _, step := range steps {
+		fmt.Printf("  %s\n", step.desc)
+		if err := execStreaming(
+			ctx,
+			bootstrap,
+			"sh",
+			[]string{"-c", step.cmd},
+			msb.WithExecEnv(step.env),
+		); err != nil {
+			_ = stopAndDestroySandbox(bootstrap)
+			return fmt.Errorf("seed state volume (%s): %w", step.desc, err)
+		}
 	}
-	stopAndDestroySandbox(bootstrap)
+
+	_ = stopAndDestroySandbox(bootstrap)
 	fmt.Printf("Seeded persistent Nix state volume: %s\n", name)
 	return nil
 }
 
 // stateVolumeReady checks a disk-backed volume from inside a sandbox.
-func stateVolumeReady(ctx context.Context, name, marker string) (bool, error) {
+func stateVolumeReady(
+	ctx context.Context,
+	name, marker string,
+	volume MicrosandboxVolume,
+) (bool, error) {
 	if _, err := msb.GetVolume(ctx, name); err != nil {
 		return false, nil
 	}
@@ -142,24 +242,45 @@ func stateVolumeReady(ctx context.Context, name, marker string) (bool, error) {
 	probe, err := msb.CreateSandbox(
 		ctx,
 		probeName,
-		msb.WithImage(defaultDevenvImage),
+		msb.WithImage(defaultDebianImage),
 		msb.WithDetached(),
+		msb.WithPullPolicy(msb.PullPolicyIfMissing),
 		msb.WithUser("0"),
+		msb.WithReplace(),
 		msb.WithMounts(map[string]msb.MountConfig{
-			"/mnt/mezha": msb.Mount.Named(name, msb.MountOptions{}),
+			"/nix": msb.Mount.NamedWith(
+				name,
+				msb.MountOptions{
+					Readonly: volume.ReadOnly,
+					Noexec:   volume.NoExec,
+					Nosuid:   volume.NoSUID,
+					Nodev:    volume.NoDev,
+				},
+				msb.NamedVolumeOptions{
+					Mode:     volume.Mode,
+					Kind:     volume.Kind,
+					SizeMiB:  volume.SizeMiB,
+					QuotaMiB: volume.QuotaMiB,
+				},
+			),
 		}),
 	)
 	if err != nil {
 		return false, fmt.Errorf("create state volume probe: %w", err)
 	}
-	defer stopAndDestroySandbox(probe)
+	defer func() { _ = stopAndDestroySandbox(probe) }()
 	output, err := probe.Exec(
 		ctx,
 		"sh",
 		[]string{
 			"-c",
-			"set -eu; target=$(readlink /home/devenv/.nix-profile/bin/devenv); test -f /mnt/mezha/" + marker + " && test -x /mnt/mezha/store/${target#/nix/store/}",
+			"set -eu; test -f /nix/" + marker + " && test -d /nix/mezha/root/.mezha/runtime-bin && test -x /nix/mezha/root/.mezha/runtime-bin/devenv",
 		},
+		msb.WithExecEnv(
+			map[string]string{
+				"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+			},
+		),
 	)
 	if err != nil {
 		return false, fmt.Errorf("inspect state volume %q: %w", name, err)
@@ -167,10 +288,21 @@ func stateVolumeReady(ctx context.Context, name, marker string) (bool, error) {
 	return output.Success(), nil
 }
 
-// ensurePersistentLinks runs before any devenv shell or initialization command.
+// persistentRuntimeExecEnv makes the seeded Nix profile available to exec sessions.
+func persistentRuntimeExecEnv() msb.ExecOption {
+	return msb.WithExecEnv(map[string]string{
+		"PATH":               managedDevenvProfileBin + ":" + persistentRuntimeBin + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"SSL_CERT_FILE":      "/etc/ssl/certs/ca-certificates.crt",
+		"NIX_SSL_CERT_FILE":  "/etc/ssl/certs/ca-certificates.crt",
+		"CURL_CA_BUNDLE":     "/etc/ssl/certs/ca-certificates.crt",
+		"REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
+	})
+}
+
+// ensurePersistentLinks runs before any devenv command or managed config sync.
 func ensurePersistentLinks(ctx context.Context, sandbox *msb.Sandbox) error {
-	output, err := sandbox.Exec(ctx, "sh", []string{"-c", `set -eu
-if [ ! -f /nix/.mezha-state-v2 ]; then
+	output, err := sandbox.Exec(ctx, persistentRuntimeBin+"/sh", []string{"-c", `set -eu
+if [ ! -f /nix/.mezha-state-v4 ]; then
   echo "shared persistent /nix volume is not mounted; recreate the sandbox" >&2
   exit 1
 fi
@@ -178,22 +310,158 @@ persist_link() {
   target="$1"
   source="$2"
   mkdir -p "$source" "$(dirname "$target")"
-  if [ -L "$target" ] && [ "$(readlink "$target")" = "$source" ]; then
-    return
+  if [ -L "$target" ]; then
+    target_link=$(readlink "$target")
+    if [ "$target_link" = "$source" ] || { [ "$target" = "/root" ] && [ "$target_link" = "/nix/root" ]; }; then
+      return
+    fi
+  fi
+  if [ -d "$target" ] && [ ! -L "$target" ]; then
+    cp -an "$target/." "$source/" 2>/dev/null || cp -a "$target/." "$source/" 2>/dev/null || true
   fi
   rm -rf "$target"
   ln -s "$source" "$target"
 }
-home_source=/nix/mezha/home
-mkdir -p "$home_source"
-if [ -d /home ] && [ -z "$(find "$home_source" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
-  cp -a /home/. "$home_source"/
+persist_link /var/lib/docker /nix/mezha/services/docker
+persist_link /var/lib/rancher/k3s /nix/mezha/services/k3s
+persist_link /root /nix/mezha/root
+persist_link /etc/nix /nix/mezha/etc/nix
+persist_link /etc/ssl /nix/mezha/etc/ssl
+if [ ! -e /nix/root ]; then
+  ln -s /nix/mezha/root /nix/root
 fi
-persist_link /home "$home_source"
-persist_link /sandbox /nix/mezha/sandbox
-persist_link /var/lib/docker /nix/mezha/docker
-persist_link /var/lib/rancher/k3s /nix/mezha/k3s
-persist_link /root /nix/mezha/root`}, msb.WithExecCwd("/"))
+if [ -e /root/.bashrc ] && [ ! -f /root/.bashrc ]; then rm -rf /root/.bashrc; fi
+if [ -f /root/.bashrc ] && [ "$(wc -c < /root/.bashrc)" -ne "$(tr -d '\0' < /root/.bashrc | wc -c)" ]; then
+  if [ -f /etc/skel/.bashrc ]; then
+    cp /etc/skel/.bashrc /root/.bashrc
+  else
+    : > /root/.bashrc
+  fi
+fi
+if [ -e /root/.bash_profile ] && [ ! -f /root/.bash_profile ]; then rm -rf /root/.bash_profile; fi
+if [ -f /root/.bash_profile ] && [ "$(wc -c < /root/.bash_profile)" -ne "$(tr -d '\0' < /root/.bash_profile | wc -c)" ]; then
+  : > /root/.bash_profile
+fi
+mkdir -p /etc/ssl/certs
+if [ -L /etc/ssl/certs/ca-certificates.crt ]; then
+  target=$(readlink -f /etc/ssl/certs/ca-certificates.crt 2>/dev/null || readlink /etc/ssl/certs/ca-certificates.crt 2>/dev/null || :)
+  rm -f /etc/ssl/certs/ca-certificates.crt
+  if [ -n "$target" ] && [ -f "$target" ]; then
+    cp -fL "$target" /etc/ssl/certs/ca-certificates.crt
+  fi
+fi
+if [ ! -f /etc/ssl/certs/ca-certificates.crt ] || [ ! -s /etc/ssl/certs/ca-certificates.crt ]; then
+  cacert=$(find /nix/store -name "ca-bundle.crt" -print -quit 2>/dev/null)
+  if [ -n "$cacert" ]; then
+    cp -fL "$cacert" /etc/ssl/certs/ca-certificates.crt
+  fi
+fi
+if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+  chmod 644 /etc/ssl/certs/ca-certificates.crt
+fi
+ln -sf ca-certificates.crt /etc/ssl/certs/ca-bundle.crt 2>/dev/null || true
+ln -sf certs/ca-certificates.crt /etc/ssl/cert.pem 2>/dev/null || true
+append_pem() {
+  src="$1"
+  bundle="$2"
+  [ -f "$src" ] && [ -s "$src" ] || return 0
+  [ -f "$bundle" ] || return 0
+  awk -v bundle="$bundle" '
+    BEGIN {
+      while ((getline line < bundle) > 0) {
+        if (line != "" && index(line, "-----") == 0) {
+          existing[line] = 1
+        }
+      }
+      close(bundle)
+      in_cert = 0
+      cert = ""
+      first_data = ""
+    }
+    /-----BEGIN [A-Z ]*CERTIFICATE-----/ {
+      in_cert = 1
+      cert = $0 "\n"
+      first_data = ""
+      next
+    }
+    /-----END [A-Z ]*CERTIFICATE-----/ {
+      if (in_cert) {
+        cert = cert $0 "\n"
+        if (first_data != "" && !(first_data in existing)) {
+          printf "\n%s", cert >> bundle
+          existing[first_data] = 1
+        }
+        in_cert = 0
+        cert = ""
+        first_data = ""
+      }
+      next
+    }
+    {
+      if (in_cert) {
+        cert = cert $0 "\n"
+        if (first_data == "" && $0 !~ /^[[:space:]]*$/) {
+          first_data = $0
+        }
+      }
+    }
+  ' "$src"
+}
+append_pem /.msb/tls/ca.pem /etc/ssl/certs/ca-certificates.crt
+append_pem /.msb/tls/host-cas.pem /etc/ssl/certs/ca-certificates.crt
+for extra in /usr/local/share/ca-certificates/*.crt /usr/local/share/ca-certificates/*.pem; do
+  append_pem "$extra" /etc/ssl/certs/ca-certificates.crt
+done
+if [ -f /etc/profile ]; then
+  sed -i -e 's|PATH="/usr/local/sbin|PATH="${PATH:+$PATH:}/usr/local/sbin|' \
+         -e 's|PATH="/usr/local/bin|PATH="${PATH:+$PATH:}/usr/local/bin|' /etc/profile
+fi
+mkdir -p /etc/profile.d
+cat << 'EOF' > /etc/profile.d/mezha.sh
+if [ -d "/root/.config/mezha/services/devenv/.devenv/profile/bin" ]; then
+  case ":$PATH:" in
+    *:/root/.config/mezha/services/devenv/.devenv/profile/bin:*) ;;
+    *) PATH="/root/.config/mezha/services/devenv/.devenv/profile/bin:$PATH" ;;
+  esac
+fi
+if [ -d "/nix/mezha/root/.mezha/runtime-bin" ]; then
+  case ":$PATH:" in
+    *:/nix/mezha/root/.mezha/runtime-bin:*) ;;
+    *) PATH="/nix/mezha/root/.mezha/runtime-bin:$PATH" ;;
+  esac
+fi
+export PATH
+export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+export NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+export CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+if [ -f "/.msb/tls/ca.pem" ]; then
+  export NODE_EXTRA_CA_CERTS="/.msb/tls/ca.pem"
+fi
+EOF
+link_runtime_bins() {
+  dir="$1"
+  [ -d "$dir" ] || return 0
+  for b in "$dir"/*; do
+    [ -x "$b" ] || continue
+    name=$(basename "$b")
+    case "$name" in
+      sh|bash|bashbug) continue ;;
+    esac
+    ln -sf "$b" "/nix/mezha/root/.mezha/runtime-bin/$name"
+    ln -sf "$b" "/usr/local/bin/$name" 2>/dev/null || true
+  done
+}
+link_runtime_bins /root/.config/mezha/services/devenv/.devenv/profile/bin
+for b in /nix/mezha/root/.mezha/runtime-bin/*; do
+  [ -x "$b" ] && ln -sf "$b" "/usr/local/bin/$(basename "$b")" 2>/dev/null || true
+done
+PATH=/root/.config/mezha/services/devenv/.devenv/profile/bin:/nix/mezha/root/.mezha/runtime-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+rm -rf /home
+mkdir -p /home/devenv`},
+		msb.WithExecCwd("/"),
+		persistentRuntimeExecEnv(),
+	)
 	if err != nil {
 		return fmt.Errorf("create persistent state symlinks: %w", err)
 	}
@@ -210,10 +478,15 @@ persist_link /root /nix/mezha/root`}, msb.WithExecCwd("/"))
 // and flush disk-backed volumes before the sandbox is force-destroyed as a
 // fallback. Force-destroying immediately after a write can drop recent
 // writes on disk-backed volumes.
-func stopAndDestroySandbox(sandbox *msb.Sandbox) {
+type stoppableSandbox interface {
+	Stop(ctx context.Context, opts ...msb.StopOption) error
+	Destroy(ctx context.Context, opts ...msb.DestroyOption) error
+}
+
+func stopAndDestroySandbox(sandbox stoppableSandbox) error {
 	_ = sandbox.Stop(context.Background())
 	time.Sleep(500 * time.Millisecond)
-	_ = sandbox.Destroy(context.Background(), msb.WithDestroyForce())
+	return sandbox.Destroy(context.Background(), msb.WithDestroyForce())
 }
 
 func nativeUpload(ctx context.Context, sandbox *msb.Sandbox, local, remote string) error {
@@ -269,4 +542,44 @@ func nativeDownload(ctx context.Context, sandbox *msb.Sandbox, remote, local str
 		return err
 	}
 	return sandbox.FS().CopyToHost(ctx, remote, local)
+}
+
+func execStreaming(
+	ctx context.Context,
+	sandbox *msb.Sandbox,
+	cmd string,
+	args []string,
+	opts ...msb.ExecOption,
+) error {
+	handle, err := sandbox.ExecStream(ctx, cmd, args, opts...)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = handle.Close() }()
+
+	var exitCode int
+	for {
+		event, err := handle.Recv(ctx)
+		if err != nil {
+			return err
+		}
+		switch event.Kind {
+		case msb.ExecEventStdout:
+			_, _ = os.Stdout.Write(event.Data)
+		case msb.ExecEventStderr:
+			_, _ = os.Stderr.Write(event.Data)
+		case msb.ExecEventExited:
+			exitCode = event.ExitCode
+		case msb.ExecEventFailed:
+			if event.Failure != nil {
+				return fmt.Errorf("exec failed: %s (%s)", event.Failure.Message, event.Failure.Kind)
+			}
+			return fmt.Errorf("exec failed")
+		case msb.ExecEventDone:
+			if exitCode != 0 {
+				return fmt.Errorf("command exited with code %d", exitCode)
+			}
+			return nil
+		}
+	}
 }

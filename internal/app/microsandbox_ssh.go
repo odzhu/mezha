@@ -15,6 +15,9 @@ import (
 func nativeMicrosandboxConfigured() bool { return true }
 
 func microsandboxSSHProxy(ctx context.Context, name string) error {
+	if err := ensureMicrosandboxSSHAuthorizedKeys(ctx); err != nil {
+		return fmt.Errorf("ensure Microsandbox SSH authorized keys: %w", err)
+	}
 	handle, err := msb.GetSandbox(ctx, name)
 	if err != nil {
 		return fmt.Errorf("find Microsandbox %q: %w", name, err)
@@ -24,7 +27,11 @@ func microsandboxSSHProxy(ctx context.Context, name string) error {
 		return fmt.Errorf("connect to Microsandbox %q: %w", name, err)
 	}
 	defer func() { _ = sandbox.Detach(context.Background()) }()
-	server, err := sandbox.SSH().PrepareServer(ctx)
+	authKeysPath, err := microsandboxAuthorizedKeysPath()
+	if err != nil {
+		return fmt.Errorf("resolve Microsandbox SSH authorized keys path: %w", err)
+	}
+	server, err := sandbox.SSH().PrepareServer(ctx, msb.WithSSHAuthorizedKeysPath(authKeysPath))
 	if err != nil {
 		return fmt.Errorf("prepare Microsandbox SSH server: %w", err)
 	}
