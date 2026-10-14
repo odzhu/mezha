@@ -61,7 +61,7 @@ if [[ ! -f "$archive" || ! -f "$stage_marker" || "$(<"$stage_marker")" != "$stag
   printf '%s\n' "$stage_id" > "$stage_marker"
 fi
 
-# On macOS, Go's cgo runner automatically links libSystem; remove redundant -lSystem to avoid ld warnings.
+# Ensure macOS frameworks are linked even when Cargo omits cached native-static-libs output.
 ldflags_file="$sdk_dir/cgo_ldflags_${goos}_${goarch}.go"
 if [[ "$goos" == "darwin" && -f "$ldflags_file" ]]; then
   python3 - "$ldflags_file" <<'PY'
@@ -69,9 +69,23 @@ from pathlib import Path
 import sys
 
 path = Path(sys.argv[1])
-content = path.read_text()
-if " -lSystem" in content:
-    path.write_text(content.replace(" -lSystem", ""))
+content = path.read_text().replace(" -lSystem", "")
+lines = content.splitlines(keepends=True)
+for index, line in enumerate(lines):
+    if line.startswith("#cgo LDFLAGS:"):
+        flags = line.rstrip("\n")
+        for framework in ("SystemConfiguration", "CoreFoundation", "Security"):
+            flag = f"-framework {framework}"
+            if flag not in flags:
+                flags += f" {flag}"
+        lines[index] = flags + "\n"
+        break
+else:
+    raise SystemExit("missing SecretSpec cgo LDFLAGS declaration")
+
+updated = "".join(lines)
+if updated != path.read_text():
+    path.write_text(updated)
 PY
 fi
 
