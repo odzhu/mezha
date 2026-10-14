@@ -13,7 +13,24 @@ project—keeping commands, dependencies, and services away from the host.
 
 ## Quickstart
 
-### 1. Build and install
+### 1. Install
+
+Download a binary for your platform from [GitHub Releases](https://github.com/odzhu/mezha/releases):
+`mezha-linux-amd64`, `mezha-linux-arm64`, or `mezha-darwin-arm64`.
+Verify its SHA-256 against the release's `checksums.txt`, then install it
+(for example, on Linux amd64):
+
+```sh
+mkdir -p "$HOME/.local/bin"
+install -m 0755 ./mezha-linux-amd64 "$HOME/.local/bin/mezha"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Supported hosts are Linux with KVM or Apple Silicon macOS. Linux release binaries
+are built on Ubuntu 24.04 and require a compatible glibc (2.39 or newer).
+SecretSpec is linked into the binary; no separate SecretSpec installation is needed.
+
+#### Build from source
 
 Requirements: Linux with KVM or Apple Silicon macOS; Go (the version specified in
 [`go.mod`](go.mod)), a C compiler, Rust/Cargo, Python 3, Git, and Make.
@@ -114,6 +131,25 @@ and sync controls. See [`herdr/README.md`](herdr/README.md) for details.
 make fmt
 make test
 ```
+
+### CI and releases
+
+[GitHub Actions](.github/workflows/ci.yml) checks formatting and module consistency,
+runs tests, builds the CGO-enabled CLI, and checks `--help` on Linux amd64,
+Linux arm64, and Apple Silicon macOS. It runs for pull requests to `main`, pushes
+to `main`, `v*` tags, and manual dispatches. Each build uploads a standalone binary
+as a workflow artifact; no archives or installer packages are produced.
+
+Push a version tag to publish all three binaries and `checksums.txt` to a GitHub
+Release after the checks pass:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Tags containing a hyphen (such as `v0.1.0-rc.1`) create prereleases. Releases use
+the workflow's `GITHUB_TOKEN`; no additional publishing secret is required.
 
 ## Configuration template
 
