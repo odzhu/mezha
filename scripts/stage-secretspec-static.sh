@@ -61,23 +61,33 @@ if [[ ! -f "$archive" || ! -f "$stage_marker" || "$(<"$stage_marker")" != "$stag
   printf '%s\n' "$stage_id" > "$stage_marker"
 fi
 
-# Ensure macOS frameworks are linked even when Cargo omits cached native-static-libs output.
+# Ensure required native libraries are linked even when Cargo omits native-static-libs output.
 ldflags_file="$sdk_dir/cgo_ldflags_${goos}_${goarch}.go"
-if [[ "$goos" == "darwin" && -f "$ldflags_file" ]]; then
-  python3 - "$ldflags_file" <<'PY'
+if [[ "$goos" == "darwin" || "$goos" == "linux" ]]; then
+  python3 - "$ldflags_file" "$goos" <<'PY'
 from pathlib import Path
+import shlex
 import sys
 
 path = Path(sys.argv[1])
-content = path.read_text().replace(" -lSystem", "")
+goos = sys.argv[2]
+content = path.read_text()
+if goos == "darwin":
+    content = content.replace(" -lSystem", "")
+    required = [f"-framework {name}" for name in ("SystemConfiguration", "CoreFoundation", "Security")]
+else:
+    required = ["-lm"]
+
 lines = content.splitlines(keepends=True)
 for index, line in enumerate(lines):
     if line.startswith("#cgo LDFLAGS:"):
         flags = line.rstrip("\n")
-        for framework in ("SystemConfiguration", "CoreFoundation", "Security"):
-            flag = f"-framework {framework}"
-            if flag not in flags:
+        tokens = shlex.split(flags)
+        for flag in required:
+            parts = shlex.split(flag)
+            if not any(tokens[start:start + len(parts)] == parts for start in range(len(tokens))):
                 flags += f" {flag}"
+                tokens.extend(parts)
         lines[index] = flags + "\n"
         break
 else:
