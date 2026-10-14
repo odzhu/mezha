@@ -7,6 +7,7 @@ project—keeping commands, dependencies, and services away from the host.
 
 - **[Microsandbox](https://docs.microsandbox.dev/getting-started/introduction):** lightweight microVMs with their own kernel and configurable network, secret, and resource policies.
 - **[devenv](https://devenv.sh/basics/):** Nix-based tooling and background services, with persistent caches and state.
+- **[SecretSpec](https://secretspec.dev/llms.txt):** minimal native integration to resolve secrets on the host before starting the sandbox.
 - **Git integration:** publish branches, synchronize working-tree changes, and support linked worktrees or a shared sandbox.
 - **[Herdr](https://herdr.dev):** optional sandbox access and a terminal dashboard for managing your development environment.
 
@@ -55,6 +56,11 @@ Use `mezha.toml` for sandbox resources, volumes, network rules, and explicit sec
 allowlists. See the [configuration template](internal/app/templates/mezha.toml)
 for examples. `mezha init --home` creates user defaults in `~/.mezha` (or
 `$MEZHA_HOME`); project configuration overrides those defaults.
+
+To use SecretSpec, enable `[secretspec]` in `mezha.toml` and declare the secrets
+in `secretspec.toml`. Mezha resolves them through the native SDK into its host
+process; pass selected values into the sandbox with `[[microsandbox.secrets]]`
+entries (see the [configuration template](internal/app/templates/mezha.toml)).
 
 Add tools, environment variables, and services through
 `.mezha/extensions/<name>/devenv.nix`. For example:
@@ -110,3 +116,34 @@ make test
 ```
 
 Licensed under [Apache 2.0](LICENSE).
+
+## `mezha.yaml` spec (illustrative)
+
+Mezha currently reads `mezha.toml`, **not** `mezha.yaml`. The following is a
+YAML sketch of the existing configuration concepts, not a supported config file:
+
+```yaml
+version: 1
+microsandbox:
+  memory_mib: 4096
+  volumes:
+    - name: state
+      target: /nix
+      mode: ensure-exists
+      kind: disk
+      size_mib: 51200
+  secrets:
+    - env: GITHUB_TOKEN
+      value_from_env: GITHUB_TOKEN
+      allow_hosts: [api.github.com]
+      require_tls: true
+secretspec:
+  enabled: true
+  provider: keyring
+  profile: devtools
+  path: secretspec.toml
+sandbox:
+  herdr: false
+```
+
+For a working configuration, use the [TOML template](internal/app/templates/mezha.toml).
